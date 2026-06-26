@@ -1,7 +1,6 @@
 #ifndef TENSORLIB_TENSOR_H
 #define TENSORLIB_TENSOR_H
 
-#define MAX_DIM  768
 
 typedef struct {
     float* data;

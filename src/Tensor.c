@@ -205,10 +205,7 @@ Storage* s_alloc(int ndim, const int* dims) {
 
 tensor* t_alloc(int ndim, const int* dims) {
     if (ndim < 0 || (ndim > 0 && dims == NULL)) return NULL;
-    if (ndim > MAX_DIM) {
-        fprintf(stderr, "ERROR: ndim exceeds MAX_DIM.\n");
-        return NULL;
-    }
+
 
     tensor* a = (tensor*)malloc(sizeof(tensor));
     if (a == NULL) return NULL;
