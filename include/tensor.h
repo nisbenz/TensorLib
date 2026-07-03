@@ -29,5 +29,6 @@ void t_free(tensor* t);
 tensor* t_clone(tensor* t);
 int is_contiguous(tensor* t);
 tensor* t_contiguous(tensor* t);
+void calc_strides(int ndim, int* dims, int* strides);
 
 #endif //TENSORLIB_TENSOR_H
