@@ -146,3 +146,62 @@ tensor* t_reshape(tensor* a, int new_ndim, int* new_dims) {
 
     return view;
 }
+tensor* t_slice(tensor* a, int dim, int start, int end) {
+    if (a == NULL) return NULL;
+
+    if (dim < 0 || dim >= a->ndim) {
+        fprintf(stderr, "ERROR: Invalid dimension for slice.\n");
+        return NULL;
+    }
+    if (start < 0 || end > a->dims[dim] || start >= end) {
+        fprintf(stderr, "ERROR: Invalid start/end for slice.\n");
+        return NULL;
+    }
+
+    // 1. Work out b's shape: same as a, except dim shrinks to (end - start)
+    int* new_dims = (int*)malloc(a->ndim * sizeof(int));
+    if (new_dims == NULL) return NULL;
+
+    for (int i = 0; i < a->ndim; i++) {
+        new_dims[i] = (i == dim) ? (end - start) : a->dims[i];
+    }
+
+    // 2. Allocate a brand new, independent, contiguous tensor of that shape
+    tensor* b = t_alloc(a->ndim, new_dims);
+    free(new_dims);
+    if (b == NULL) return NULL;
+
+    int total_elements = b->storage->size;
+
+    // 3. Walk every coordinate of b, map it back to the corresponding
+    //    coordinate in a (shifted by 'start' along 'dim'), and copy.
+    int* coords = (int*)calloc(b->ndim, sizeof(int));
+    if (coords == NULL) {
+        t_free(b);
+        return NULL;
+    }
+
+    int* src_coords = (int*)malloc(a->ndim * sizeof(int));
+    if (src_coords == NULL) {
+        free(coords);
+        t_free(b);
+        return NULL;
+    }
+
+    for (int i = 0; i < total_elements; i++) {
+        for (int d = 0; d < a->ndim; d++) {
+            src_coords[d] = coords[d] + (d == dim ? start : 0);
+        }
+
+        int idx_a = get_flat_index_nd(a, src_coords);
+        int idx_b = get_flat_index_nd(b, coords);
+
+        b->storage->data[idx_b] = a->storage->data[idx_a];
+
+        advance_coords(coords, b->dims, b->ndim);
+    }
+
+    free(src_coords);
+    free(coords);
+    return b;
+}
