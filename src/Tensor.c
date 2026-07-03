@@ -2,7 +2,15 @@
 #include <stdlib.h>
 #include "../include/tensor.h"
 #include <string.h>
+void calc_strides(int ndim, int* dims, int* strides) {
+    if (ndim > 0) {
+        strides[ndim - 1] = 1;
 
+        for (int i = ndim - 2; i >= 0; --i) {
+            strides[i] = strides[i + 1] * dims[i + 1];
+        }
+    }
+}
 void add_ref_count(Storage* a, tensor* b) {
     if (a != NULL && b != NULL) {
         a->ref_count++;
@@ -338,4 +346,37 @@ tensor* t_contiguous(tensor* t) {
 
     free(coords);
     return flat_tensor;
+}
+tensor* t_reshape(tensor* a, int new_ndim, int* new_dims) {
+    // 1. Safety Check: Verify total elements match exactly
+    int new_size = 1;
+    for (int i = 0; i < new_ndim; ++i) {
+        new_size *= new_dims[i];
+    }
+    if (new_size != a->storage->size) {
+        fprintf(stderr, "ERROR: Reshape dimensions must match total element count.\n");
+        return NULL;
+    }
+
+    a= t_contiguous(a);
+
+    // 3. Allocate wrapper for the view
+    tensor* view = (tensor*)malloc(sizeof(tensor));
+    view->ndim = new_ndim;
+
+    // 4. Link storage and increment ref count for zero-copy view
+    view->storage = a->storage;
+    view->storage->ref_count++;
+    view->dims = malloc(view->ndim*sizeof(int));
+    view->strides = malloc(view->ndim*sizeof(int));
+
+    // 5. Copy new dimensions
+    for (int i = 0; i < new_ndim; ++i) {
+        view->dims[i] = new_dims[i];
+    }
+
+    // 6. Automatically recalculate row-major strides using our helper!
+    calc_strides(view->ndim, view->dims, view->strides);
+
+    return view;
 }
