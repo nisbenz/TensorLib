@@ -90,7 +90,10 @@ tensor* t_contiguous(tensor* t) {
 }
 
 tensor* t_reshape(tensor* a, int new_ndim, int* new_dims) {
-    // 1. Safety Check: Verify total elements match exactly
+    if (a == NULL || a->storage == NULL) return NULL;
+    if (new_ndim < 0) return NULL;
+    if (new_ndim > 0 && new_dims == NULL) return NULL;
+
     int new_size = 1;
     for (int i = 0; i < new_ndim; ++i) {
         new_size *= new_dims[i];
@@ -100,23 +103,46 @@ tensor* t_reshape(tensor* a, int new_ndim, int* new_dims) {
         return NULL;
     }
 
-    a = t_contiguous(a);
+
+    tensor* contig = t_contiguous(a);
+    if (contig == NULL) return NULL;
 
     // 3. Allocate wrapper for the view
     tensor* view = (tensor*)malloc(sizeof(tensor));
+    if (view == NULL) {
+        t_free(contig);
+        return NULL;
+    }
     view->ndim = new_ndim;
+    view->dims = NULL;
+    view->strides = NULL;
 
-    // 4. Link storage and increment ref count for zero-copy view
-    view->storage = a->storage;
-    view->storage->ref_count++;
 
-    // 5. Copy new dimensions
-    for (int i = 0; i < new_ndim; ++i) {
-        view->dims[i] = new_dims[i];
+    view->storage = contig->storage;
+
+    // 5. Allocate and copy new dimensions
+    if (new_ndim > 0) {
+        view->dims = (int*)malloc(new_ndim * sizeof(int));
+        view->strides = (int*)malloc(new_ndim * sizeof(int));
+        if (view->dims == NULL || view->strides == NULL) {
+
+            free(view->dims);
+            free(view->strides);
+            free(view);
+            t_free(contig);
+            return NULL;
+        }
+        for (int i = 0; i < new_ndim; ++i) {
+            view->dims[i] = new_dims[i];
+        }
+
+        // 6. Automatically recalculate row-major strides using our helper!
+        calc_strides(view->ndim, view->dims, view->strides);
     }
 
-    // 6. Automatically recalculate row-major strides using our helper!
-    calc_strides(view->ndim, view->dims, view->strides);
+    free(contig->dims);
+    free(contig->strides);
+    free(contig);
 
     return view;
 }
