@@ -3,7 +3,10 @@ project(tensorlib C)
 
 set(CMAKE_C_STANDARD 99)
 
-add_library(tensorlib STATIC src/Tensor.c include/tensor.h)
+add_library(tensorlib STATIC src/tensor_core.c include/tensor.h
+        src/tensor_ops.c
+        src/tensor_alloc.c
+        src/tensor_view.c)
 target_include_directories(tensorlib PUBLIC include)
 
 enable_testing()
