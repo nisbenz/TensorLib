@@ -30,5 +30,5 @@ tensor* t_clone(tensor* t);
 int is_contiguous(tensor* t);
 tensor* t_contiguous(tensor* t);
 void calc_strides(int ndim, int* dims, int* strides);
-
+tensor* t_reshape(tensor* a, int new_ndim, int* new_dims);
 #endif //TENSORLIB_TENSOR_H
