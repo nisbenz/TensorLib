@@ -257,3 +257,27 @@ tensor* t_log(tensor* t) {
 
     return out;
 }
+tensor* t_relu(tensor* t) {
+    tensor* contig_t = t;
+    int is_temp_view = 0;
+
+    if (!is_contiguous(t)) {
+        contig_t = t_contiguous(t);
+        is_temp_view = 1;
+    }
+
+    tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
+
+    for (int i = 0; i < out->storage->size; ++i) {
+        float x = contig_t->storage->data[i];
+        if (x < 0) {
+            out->storage->data[i] = 0;
+        }
+    }
+
+    if (is_temp_view) {
+        t_free(contig_t);
+    }
+
+    return out;
+}
