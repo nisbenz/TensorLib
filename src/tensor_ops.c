@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "../include/tensor.h"
+#include <math.h>
 // In your tensor/storage struct definition, or just at the point of use:
 static inline void add_contiguous(float* restrict c,
                                   const float* restrict a,
@@ -211,4 +212,26 @@ tensor* t_div(tensor* a, tensor* b) {
     }
 
     return c;
+}
+tensor* t_exp(tensor* t) {
+    tensor* contig_t = t;
+    int is_temp_view = 0;
+
+    if (!is_contiguous(t)) {
+        contig_t = t_contiguous(t);
+        is_temp_view = 1;
+    }
+
+    tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
+
+    for (int i = 0; i < out->storage->size; ++i) {
+        float x = contig_t->storage->data[i];
+        out->storage->data[i] = expf(x);
+    }
+
+    if (is_temp_view) {
+        t_free(contig_t);
+    }
+
+    return out;
 }
