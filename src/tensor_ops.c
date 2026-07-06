@@ -391,3 +391,25 @@ tensor* t_sqrt(tensor* t) {
 
     return out;
 }
+tensor* t_gelu(tensor* t) {
+    tensor* contig_t = t;
+    int is_temp_view = 0;
+
+    if (!is_contiguous(t)) {
+        contig_t = t_contiguous(t);
+        is_temp_view = 1;
+    }
+
+    tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
+
+    for (int i = 0; i < out->storage->size; ++i) {
+        float x = contig_t->storage->data[i];
+        out->storage->data[i] =(float)0.5*(1+ tanhf(sqrt((2/M_PI))*(x+0.044715*x*x*x)));
+    }
+
+    if (is_temp_view) {
+        t_free(contig_t);
+    }
+
+    return out;
+}
