@@ -2,6 +2,37 @@
 #include <stdlib.h>
 #include "../include/tensor.h"
 
+static tensor* make_view(tensor* base, int ndim, const int* dims, const int* strides, int offset) {
+    if (base == NULL || base->storage == NULL) return NULL;
+    if (ndim < 0 || (ndim > 0 && (dims == NULL || strides == NULL))) return NULL;
+
+    tensor* view = (tensor*)malloc(sizeof(tensor));
+    if (view == NULL) return NULL;
+
+    view->storage = NULL;
+    view->dims = NULL;
+    view->strides = NULL;
+    view->ndim = ndim;
+    view->offset = offset;
+
+    if (ndim > 0) {
+        view->dims = (int*)malloc(ndim * sizeof(int));
+        view->strides = (int*)malloc(ndim * sizeof(int));
+        if (view->dims == NULL || view->strides == NULL) {
+            t_free(view);
+            return NULL;
+        }
+
+        for (int i = 0; i < ndim; i++) {
+            view->dims[i] = dims[i];
+            view->strides[i] = strides[i];
+        }
+    }
+
+    add_ref_count(base->storage, view);
+    return view;
+}
+
 tensor* t_transpose(tensor* a, int dim0, int dim1) {
     if (a == NULL) return NULL;
     if (dim0 < 0 || dim0 >= a->ndim || dim1 < 0 || dim1 >= a->ndim) {
@@ -9,143 +40,100 @@ tensor* t_transpose(tensor* a, int dim0, int dim1) {
         return NULL;
     }
 
-    tensor* b = (tensor*)malloc(sizeof(tensor));
-    if (b == NULL) return NULL;
-
-    b->storage = NULL;
-    b->dims = NULL;
-    b->strides = NULL;
-    b->ndim = a->ndim;
-
+    int* dims = NULL;
+    int* strides = NULL;
     if (a->ndim > 0) {
-        b->dims = (int*)malloc(a->ndim * sizeof(int));
-        b->strides = (int*)malloc(a->ndim * sizeof(int));
-        if (b->dims == NULL || b->strides == NULL) {
-            t_free(b);
+        dims = (int*)malloc(a->ndim * sizeof(int));
+        strides = (int*)malloc(a->ndim * sizeof(int));
+        if (dims == NULL || strides == NULL) {
+            free(dims);
+            free(strides);
             return NULL;
         }
 
         for (int i = 0; i < a->ndim; i++) {
-            b->dims[i] = a->dims[i];
-            b->strides[i] = a->strides[i];
+            dims[i] = a->dims[i];
+            strides[i] = a->strides[i];
         }
 
-        b->dims[dim0] = a->dims[dim1];
-        b->dims[dim1] = a->dims[dim0];
-
-        b->strides[dim0] = a->strides[dim1];
-        b->strides[dim1] = a->strides[dim0];
+        dims[dim0] = a->dims[dim1];
+        dims[dim1] = a->dims[dim0];
+        strides[dim0] = a->strides[dim1];
+        strides[dim1] = a->strides[dim0];
     }
 
-    add_ref_count(a->storage, b);
-    return b;
+    tensor* view = make_view(a, a->ndim, dims, strides, a->offset);
+    free(dims);
+    free(strides);
+    return view;
 }
 
 tensor* t_contiguous(tensor* t) {
     if (t == NULL) return NULL;
     if (is_contiguous(t)) {
-        tensor* view = (tensor*)malloc(sizeof(tensor));
-        if (view == NULL) return NULL;
-
-        view->storage = NULL;
-        view->dims = NULL;
-        view->strides = NULL;
-        view->ndim = t->ndim;
-
-        if (t->ndim > 0) {
-            view->dims = (int*)malloc(t->ndim * sizeof(int));
-            view->strides = (int*)malloc(t->ndim * sizeof(int));
-            if (view->dims == NULL || view->strides == NULL) {
-                t_free(view);
-                return NULL;
-            }
-            for(int i = 0; i < t->ndim; i++) {
-                view->dims[i] = t->dims[i];
-                view->strides[i] = t->strides[i];
-            }
-        }
-
-        add_ref_count(t->storage, view);
-        return view;
+        return make_view(t, t->ndim, t->dims, t->strides, t->offset);
     }
 
-    tensor* flat_tensor = t_alloc(t->ndim, t->dims);
-    if (flat_tensor == NULL) return NULL;
-
-    int* coords = (int*)calloc(t->ndim, sizeof(int));
-    if (coords == NULL) {
-        t_free(flat_tensor);
-        return NULL;
-    }
-
-    int total_elements = flat_tensor->storage->size;
-    for (int i = 0; i < total_elements; i++) {
-        int old_flat_idx = get_flat_index_nd(t, coords);
-        flat_tensor->storage->data[i] = t->storage->data[old_flat_idx];
-        advance_coords(coords, t->dims, t->ndim);
-    }
-
-    free(coords);
-    return flat_tensor;
+    return t_clone(t);
 }
 
 tensor* t_reshape(tensor* a, int new_ndim, int* new_dims) {
     if (a == NULL || a->storage == NULL) return NULL;
-    if (new_ndim < 0) return NULL;
-    if (new_ndim > 0 && new_dims == NULL) return NULL;
+    if (new_ndim < 0 || (new_ndim > 0 && new_dims == NULL)) return NULL;
 
     int new_size = 1;
     for (int i = 0; i < new_ndim; ++i) {
         new_size *= new_dims[i];
     }
-    if (new_size != a->storage->size) {
+    if (new_size != tensor_numel(a)) {
         fprintf(stderr, "ERROR: Reshape dimensions must match total element count.\n");
         return NULL;
     }
 
-
-    tensor* contig = t_contiguous(a);
-    if (contig == NULL) return NULL;
-
-    // 3. Allocate wrapper for the view
-    tensor* view = (tensor*)malloc(sizeof(tensor));
-    if (view == NULL) {
-        t_free(contig);
-        return NULL;
-    }
-    view->ndim = new_ndim;
-    view->dims = NULL;
-    view->strides = NULL;
-
-
-    view->storage = contig->storage;
-
-    // 5. Allocate and copy new dimensions
+    int* new_strides = NULL;
     if (new_ndim > 0) {
-        view->dims = (int*)malloc(new_ndim * sizeof(int));
-        view->strides = (int*)malloc(new_ndim * sizeof(int));
-        if (view->dims == NULL || view->strides == NULL) {
+        new_strides = (int*)malloc(new_ndim * sizeof(int));
+        if (new_strides == NULL) return NULL;
+        calc_strides(new_ndim, new_dims, new_strides);
+    }
 
-            free(view->dims);
-            free(view->strides);
-            free(view);
-            t_free(contig);
-            return NULL;
-        }
-        for (int i = 0; i < new_ndim; ++i) {
-            view->dims[i] = new_dims[i];
-        }
+    if (is_contiguous(a)) {
+        tensor* view = make_view(a, new_ndim, new_dims, new_strides, a->offset);
+        free(new_strides);
+        return view;
+    }
 
-        // 6. Automatically recalculate row-major strides using our helper!
-        calc_strides(view->ndim, view->dims, view->strides);
+    tensor* contig = t_clone(a);
+    if (contig == NULL) {
+        free(new_strides);
+        return NULL;
     }
 
     free(contig->dims);
     free(contig->strides);
-    free(contig);
+    contig->dims = NULL;
+    contig->strides = NULL;
+    contig->ndim = new_ndim;
+    contig->offset = 0;
 
-    return view;
+    if (new_ndim > 0) {
+        contig->dims = (int*)malloc(new_ndim * sizeof(int));
+        contig->strides = (int*)malloc(new_ndim * sizeof(int));
+        if (contig->dims == NULL || contig->strides == NULL) {
+            free(new_strides);
+            t_free(contig);
+            return NULL;
+        }
+        for (int i = 0; i < new_ndim; i++) {
+            contig->dims[i] = new_dims[i];
+            contig->strides[i] = new_strides[i];
+        }
+    }
+
+    free(new_strides);
+    return contig;
 }
+
 tensor* t_slice(tensor* a, int dim, int start, int end) {
     if (a == NULL) return NULL;
 
@@ -158,7 +146,6 @@ tensor* t_slice(tensor* a, int dim, int start, int end) {
         return NULL;
     }
 
-    // 1. Work out b's shape: same as a, except dim shrinks to (end - start)
     int* new_dims = (int*)malloc(a->ndim * sizeof(int));
     if (new_dims == NULL) return NULL;
 
@@ -166,42 +153,7 @@ tensor* t_slice(tensor* a, int dim, int start, int end) {
         new_dims[i] = (i == dim) ? (end - start) : a->dims[i];
     }
 
-    // 2. Allocate a brand new, independent, contiguous tensor of that shape
-    tensor* b = t_alloc(a->ndim, new_dims);
+    tensor* view = make_view(a, a->ndim, new_dims, a->strides, a->offset + start * a->strides[dim]);
     free(new_dims);
-    if (b == NULL) return NULL;
-
-    int total_elements = b->storage->size;
-
-    // 3. Walk every coordinate of b, map it back to the corresponding
-    //    coordinate in a (shifted by 'start' along 'dim'), and copy.
-    int* coords = (int*)calloc(b->ndim, sizeof(int));
-    if (coords == NULL) {
-        t_free(b);
-        return NULL;
-    }
-
-    int* src_coords = (int*)malloc(a->ndim * sizeof(int));
-    if (src_coords == NULL) {
-        free(coords);
-        t_free(b);
-        return NULL;
-    }
-
-    for (int i = 0; i < total_elements; i++) {
-        for (int d = 0; d < a->ndim; d++) {
-            src_coords[d] = coords[d] + (d == dim ? start : 0);
-        }
-
-        int idx_a = get_flat_index_nd(a, src_coords);
-        int idx_b = get_flat_index_nd(b, coords);
-
-        b->storage->data[idx_b] = a->storage->data[idx_a];
-
-        advance_coords(coords, b->dims, b->ndim);
-    }
-
-    free(src_coords);
-    free(coords);
-    return b;
+    return view;
 }

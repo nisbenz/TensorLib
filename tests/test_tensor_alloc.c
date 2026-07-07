@@ -31,10 +31,10 @@ TEST(test_t_alloc_basic_shape_and_strides) {
     tensor* t = t_alloc(3, dims);
     ASSERT_NOT_NULL(t);
     ASSERT_EQ_INT(t->ndim, 3);
+    ASSERT_EQ_INT(t->offset, 0);
     ASSERT_EQ_INT(t->dims[0], 2);
     ASSERT_EQ_INT(t->dims[1], 3);
     ASSERT_EQ_INT(t->dims[2], 4);
-    /* strides should be row-major */
     ASSERT_EQ_INT(t->strides[0], 12);
     ASSERT_EQ_INT(t->strides[1], 4);
     ASSERT_EQ_INT(t->strides[2], 1);
@@ -48,6 +48,7 @@ TEST(test_t_alloc_scalar_ndim_zero) {
     tensor* t = t_alloc(0, NULL);
     ASSERT_NOT_NULL(t);
     ASSERT_EQ_INT(t->ndim, 0);
+    ASSERT_EQ_INT(t->offset, 0);
     ASSERT_NULL(t->dims);
     ASSERT_NULL(t->strides);
     ASSERT_NOT_NULL(t->storage);
@@ -66,7 +67,7 @@ TEST(test_t_alloc_rejects_null_dims_with_positive_ndim) {
 }
 
 TEST(test_t_free_null_is_safe) {
-    t_free(NULL); /* should not crash */
+    t_free(NULL);
     ASSERT_TRUE(1);
 }
 
@@ -75,20 +76,20 @@ TEST(test_t_free_decrements_shared_storage_ref_count) {
     tensor* a = t_alloc(2, dims);
     ASSERT_NOT_NULL(a);
 
-    /* create a second tensor sharing a's storage, like a view would */
     tensor* b = (tensor*)malloc(sizeof(tensor));
     b->dims = NULL;
     b->strides = NULL;
     b->ndim = 0;
+    b->offset = 0;
     b->storage = NULL;
     add_ref_count(a->storage, b);
 
     ASSERT_EQ_INT(a->storage->ref_count, 2);
 
-    t_free(b); /* should decrement, not free the underlying data */
+    t_free(b);
     ASSERT_EQ_INT(a->storage->ref_count, 1);
 
-    t_free(a); /* now actually frees storage */
+    t_free(a);
     ASSERT_TRUE(1);
 }
 
@@ -99,11 +100,13 @@ TEST(test_init_t_copies_shape_and_zero_fills) {
     ref.dims = dims;
     ref.strides = strides;
     ref.ndim = 2;
+    ref.offset = 0;
 
     tensor* c = (tensor*)malloc(sizeof(tensor));
     int rc = init_t(c, &ref);
     ASSERT_EQ_INT(rc, 0);
     ASSERT_EQ_INT(c->ndim, 2);
+    ASSERT_EQ_INT(c->offset, 0);
     ASSERT_EQ_INT(c->dims[0], 2);
     ASSERT_EQ_INT(c->dims[1], 3);
     ASSERT_EQ_INT(c->strides[0], 3);
@@ -128,17 +131,41 @@ TEST(test_t_clone_deep_copies_data) {
 
     tensor* b = t_clone(a);
     ASSERT_NOT_NULL(b);
-    ASSERT_TRUE(b->storage != a->storage); /* independent storage */
+    ASSERT_TRUE(b->storage != a->storage);
+    ASSERT_EQ_INT(is_contiguous(b), 1);
+    ASSERT_EQ_INT(b->offset, 0);
     for (int i = 0; i < 4; i++) {
         ASSERT_EQ_FLOAT(b->storage->data[i], a->storage->data[i]);
     }
 
-    /* mutating the clone must not affect the original */
     b->storage->data[0] = 999.0f;
     ASSERT_EQ_FLOAT(a->storage->data[0], 1.0f);
 
     t_free(a);
     t_free(b);
+}
+
+TEST(test_t_clone_materializes_strided_view_contiguously) {
+    int dims[2] = {2, 3};
+    tensor* a = t_alloc(2, dims);
+    for (int i = 0; i < 6; i++) a->storage->data[i] = (float)i;
+
+    tensor* t = t_transpose(a, 0, 1);
+    tensor* b = t_clone(t);
+
+    ASSERT_NOT_NULL(b);
+    ASSERT_TRUE(b->storage != a->storage);
+    ASSERT_EQ_INT(is_contiguous(b), 1);
+    ASSERT_EQ_INT(b->offset, 0);
+
+    float expected[6] = {0, 3, 1, 4, 2, 5};
+    for (int i = 0; i < 6; i++) {
+        ASSERT_EQ_FLOAT(b->storage->data[i], expected[i]);
+    }
+
+    t_free(b);
+    t_free(t);
+    t_free(a);
 }
 
 TEST(test_add_ref_count_links_storage_and_bumps_count) {
@@ -149,6 +176,7 @@ TEST(test_add_ref_count_links_storage_and_bumps_count) {
     b->dims = NULL;
     b->strides = NULL;
     b->ndim = 0;
+    b->offset = 0;
 
     add_ref_count(s, b);
     ASSERT_EQ_INT(s->ref_count, 2);
@@ -160,7 +188,7 @@ TEST(test_add_ref_count_links_storage_and_bumps_count) {
 }
 
 TEST(test_add_ref_count_null_args_is_safe) {
-    add_ref_count(NULL, NULL); /* should not crash */
+    add_ref_count(NULL, NULL);
     ASSERT_TRUE(1);
 }
 
@@ -178,6 +206,7 @@ int main(void) {
     RUN_TEST(test_init_t_copies_shape_and_zero_fills);
     RUN_TEST(test_init_t_null_args_returns_error);
     RUN_TEST(test_t_clone_deep_copies_data);
+    RUN_TEST(test_t_clone_materializes_strided_view_contiguously);
     RUN_TEST(test_add_ref_count_links_storage_and_bumps_count);
     RUN_TEST(test_add_ref_count_null_args_is_safe);
     TEST_SUITE_SUMMARY();

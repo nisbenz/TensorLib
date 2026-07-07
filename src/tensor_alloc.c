@@ -1,9 +1,6 @@
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include "../include/tensor.h"
 
-// Bumps a storage's ref count and attaches it to a (freshly created) view.
 void add_ref_count(Storage* a, tensor* b) {
     if (a != NULL && b != NULL) {
         a->ref_count++;
@@ -43,6 +40,7 @@ tensor* t_alloc(int ndim, const int* dims) {
     a->dims = NULL;
     a->strides = NULL;
     a->ndim = ndim;
+    a->offset = 0;
 
     if (ndim > 0) {
         a->dims = (int*)malloc(ndim * sizeof(int));
@@ -91,9 +89,6 @@ void t_free(tensor* t) {
     free(t);
 }
 
-// Initializes tensor c to be a fresh, contiguous, zero-filled tensor
-// with the same shape as ref. Used as the "allocate the output" step
-// for elementwise ops like t_add.
 int init_t(tensor* c, tensor* ref) {
     if (c == NULL || ref == NULL) return 1;
 
@@ -101,11 +96,9 @@ int init_t(tensor* c, tensor* ref) {
     c->dims = NULL;
     c->strides = NULL;
     c->ndim = ref->ndim;
+    c->offset = 0;
 
-    int total_elements = 1;
-    for (int i = 0; i < ref->ndim; i++) {
-        total_elements *= ref->dims[i];
-    }
+    int total_elements = tensor_numel(ref);
 
     c->storage = (Storage*)malloc(sizeof(Storage));
     if (c->storage == NULL) return 1;
@@ -122,12 +115,12 @@ int init_t(tensor* c, tensor* ref) {
         c->dims = (int*)malloc(ref->ndim * sizeof(int));
         c->strides = (int*)malloc(ref->ndim * sizeof(int));
         if (c->dims == NULL || c->strides == NULL) {
-            return 1; // Caller is expected to call t_free(c) to clean up
+            return 1;
         }
         for (int i = 0; i < ref->ndim; i++) {
             c->dims[i] = ref->dims[i];
-            c->strides[i] = ref->strides[i];
         }
+        calc_strides(c->ndim, c->dims, c->strides);
     }
     return 0;
 }
@@ -137,12 +130,22 @@ tensor* t_clone(tensor* t) {
     tensor* a = t_alloc(t->ndim, t->dims);
     if (a == NULL) return NULL;
 
-    if (a->storage != NULL && a->storage->data != NULL && t->storage != NULL && t->storage->data != NULL) {
-        memcpy(a->storage->data, t->storage->data, a->storage->size * sizeof(float));
+    int total_elements = tensor_numel(t);
+    int* coords = NULL;
+    if (t->ndim > 0) {
+        coords = (int*)calloc(t->ndim, sizeof(int));
+        if (coords == NULL) {
+            t_free(a);
+            return NULL;
+        }
     }
 
-    for (int i = 0; i < a->ndim; ++i) {
-        a->strides[i] = t->strides[i];
+    for (int i = 0; i < total_elements; i++) {
+        int src_idx = get_flat_index_nd(t, coords);
+        a->storage->data[i] = t->storage->data[src_idx];
+        advance_coords(coords, t->dims, t->ndim);
     }
+
+    free(coords);
     return a;
 }

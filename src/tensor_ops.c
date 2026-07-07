@@ -57,7 +57,7 @@ tensor* t_add(tensor* a, tensor* b) {
     int total_elements = c->storage->size;
 
     if (same_stride(a, b) == 1 && same_stride(a, c) == 1) {
-        add_contiguous(c->storage->data, a->storage->data, b->storage->data, total_elements);
+        add_contiguous(c->storage->data + c->offset, a->storage->data + a->offset, b->storage->data + b->offset, total_elements);
     } else {
         int* coords = (int*)calloc(a->ndim, sizeof(int));
         if (coords == NULL) {
@@ -99,7 +99,7 @@ tensor* t_sub(tensor* a, tensor* b){
 
     int total_elements = c->storage->size;
     if (same_stride(a, b) == 1 && same_stride(a, c) == 1) {
-        sub_contiguous(c->storage->data, a->storage->data, b->storage->data, total_elements);
+        sub_contiguous(c->storage->data + c->offset, a->storage->data + a->offset, b->storage->data + b->offset, total_elements);
     }else {  int* coords = (int*)calloc(a->ndim, sizeof(int));
 
         if (coords == NULL) {
@@ -145,7 +145,7 @@ tensor* t_mul(tensor* a, tensor* b) {
     int total_elements = c->storage->size;
 
     if (same_stride(a, b) == 1 && same_stride(a, c) == 1) {
-        mul_contiguous(c->storage->data, a->storage->data, b->storage->data, total_elements);
+        mul_contiguous(c->storage->data + c->offset, a->storage->data + a->offset, b->storage->data + b->offset, total_elements);
     } else {
         int* coords = (int*)calloc(a->ndim, sizeof(int));
         if (coords == NULL) {
@@ -191,7 +191,7 @@ tensor* t_div(tensor* a, tensor* b) {
     int total_elements = c->storage->size;
 
     if (same_stride(a, b) == 1 && same_stride(a, c) == 1) {
-        div_contiguous(c->storage->data, a->storage->data, b->storage->data, total_elements);
+        div_contiguous(c->storage->data + c->offset, a->storage->data + a->offset, b->storage->data + b->offset, total_elements);
     } else {
         int* coords = (int*)calloc(a->ndim, sizeof(int));
         if (coords == NULL) {
@@ -225,7 +225,7 @@ tensor* t_exp(tensor* t) {
     tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
 
     for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[i];
+        float x = contig_t->storage->data[contig_t->offset + i];
         out->storage->data[i] = expf(x);
     }
 
@@ -247,7 +247,7 @@ tensor* t_log(tensor* t) {
     tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
 
     for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[i];
+        float x = contig_t->storage->data[contig_t->offset + i];
         out->storage->data[i] = logf(x);
     }
 
@@ -269,10 +269,8 @@ tensor* t_relu(tensor* t) {
     tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
 
     for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[i];
-        if (x < 0) {
-            out->storage->data[i] = 0;
-        }
+        float x = contig_t->storage->data[contig_t->offset + i];
+        out->storage->data[i] = x < 0 ? 0 : x;
     }
 
     if (is_temp_view) {
@@ -293,7 +291,7 @@ tensor* t_tanh(tensor* t) {
     tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
 
     for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[i];
+        float x = contig_t->storage->data[contig_t->offset + i];
         out->storage->data[i] = tanhf(x);
     }
 
@@ -315,7 +313,7 @@ tensor* t_sigmoid(tensor* t) {
     tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
 
     for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[i];
+        float x = contig_t->storage->data[contig_t->offset + i];
         out->storage->data[i] = 1/(1+ expf(-x));
     }
 
@@ -337,7 +335,7 @@ tensor* t_pow(tensor* t, float exponent) {
     tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
 
     for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[i];
+        float x = contig_t->storage->data[contig_t->offset + i];
         out->storage->data[i] = powf(x,exponent);
     }
 
@@ -359,7 +357,7 @@ tensor* t_neg(tensor* t) {
     tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
 
     for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[i];
+        float x = contig_t->storage->data[contig_t->offset + i];
         out->storage->data[i] = -x;
     }
 
@@ -381,7 +379,7 @@ tensor* t_sqrt(tensor* t) {
     tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
 
     for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[i];
+        float x = contig_t->storage->data[contig_t->offset + i];
         out->storage->data[i] = sqrtf(x);
     }
 
@@ -403,7 +401,7 @@ tensor* t_gelu(tensor* t) {
     tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
 
     for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[i];
+        float x = contig_t->storage->data[contig_t->offset + i];
         out->storage->data[i] =(float)0.5*(1+ tanhf(sqrt((2/M_PI))*(x+0.044715*x*x*x)));
     }
 
@@ -413,3 +411,6 @@ tensor* t_gelu(tensor* t) {
 
     return out;
 }
+
+
+

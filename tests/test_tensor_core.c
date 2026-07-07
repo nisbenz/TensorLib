@@ -54,6 +54,7 @@ TEST(test_get_flat_index_nd_contiguous) {
     t.dims = dims;
     t.strides = strides;
     t.ndim = 2;
+    t.offset = 0;
 
     int coords[2] = {1, 2};
     ASSERT_EQ_INT(get_flat_index_nd(&t, coords), 5);
@@ -66,6 +67,7 @@ TEST(test_get_flat_index_nd_strided) {
     t.dims = dims;
     t.strides = strides;
     t.ndim = 2;
+    t.offset = 0;
 
     int coords[2] = {2, 1};
     ASSERT_EQ_INT(get_flat_index_nd(&t, coords), 2 * 1 + 1 * 3);
@@ -166,3 +168,5 @@ int main(void) {
     RUN_TEST(test_is_contiguous_null);
     TEST_SUITE_SUMMARY();
 }
+
+

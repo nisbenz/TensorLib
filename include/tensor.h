@@ -13,6 +13,7 @@ typedef struct {
     int ndim;
     int* dims;
     int* strides;
+    int offset;
 } tensor;
 
 void add_ref_count(Storage* a, tensor* b);
@@ -21,8 +22,12 @@ int same_shape(tensor* a, tensor* b);
 int same_stride(tensor* a, tensor* b);
 int init_t(tensor* c, tensor* ref);
 tensor* t_add(tensor* a, tensor* b);
+tensor* t_sub(tensor* a, tensor* b);
+tensor* t_mul(tensor* a, tensor* b);
+tensor* t_div(tensor* a, tensor* b);
 void advance_coords(int* coords, const int* dims, int ndim);
 int get_flat_index_nd(tensor* t, int* coords);
+int tensor_numel(tensor* t);
 Storage* s_alloc(int ndim, const int* dims);
 tensor* t_alloc(int ndim, const int* dims);
 void t_free(tensor* t);
@@ -31,4 +36,14 @@ int is_contiguous(tensor* t);
 tensor* t_contiguous(tensor* t);
 void calc_strides(int ndim, int* dims, int* strides);
 tensor* t_reshape(tensor* a, int new_ndim, int* new_dims);
+tensor* t_slice(tensor* a, int dim, int start, int end);
+tensor* t_exp(tensor* t);
+tensor* t_log(tensor* t);
+tensor* t_relu(tensor* t);
+tensor* t_tanh(tensor* t);
+tensor* t_sigmoid(tensor* t);
+tensor* t_pow(tensor* t, float exponent);
+tensor* t_neg(tensor* t);
+tensor* t_sqrt(tensor* t);
+tensor* t_gelu(tensor* t);
 #endif //TENSORLIB_TENSOR_H
