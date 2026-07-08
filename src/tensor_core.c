@@ -1,5 +1,5 @@
 #include "../include/tensor.h"
-
+#include <stdlib.h>
 void calc_strides(int ndim, int* dims, int* strides) {
     if (ndim > 0) {
         strides[ndim - 1] = 1;
