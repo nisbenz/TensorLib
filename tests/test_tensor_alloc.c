@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include "test_common.h"
+#include "../include/test_common.h"
 #include "../include/tensor.h"
 
 TEST(test_s_alloc_basic) {

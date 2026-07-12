@@ -7,3 +7,4 @@ run.exe
 *.bat
 *.json
 .vscode/
+bin/

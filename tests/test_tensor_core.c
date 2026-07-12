@@ -1,4 +1,4 @@
-#include "test_common.h"
+#include "../include/test_common.h"
 #include "../include/tensor.h"
 
 TEST(test_calc_strides_3d) {

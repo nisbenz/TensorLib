@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include "test_common.h"
+#include "../include/test_common.h"
 #include "../include/tensor.h"
 
 TEST(test_t_transpose_swaps_dims_strides_and_preserves_offset) {
