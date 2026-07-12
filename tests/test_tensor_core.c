@@ -146,6 +146,22 @@ TEST(test_is_contiguous_null) {
     ASSERT_EQ_INT(is_contiguous(NULL), 0);
 }
 
+TEST(test_tensor_numel_rejects_invalid_and_overflowing_shapes) {
+    tensor t = {0};
+    int negative[2] = {2, -1};
+    int zero[2] = {2, 0};
+    int overflow[2] = {46341, 46341};
+    t.ndim = -1;
+    ASSERT_EQ_INT(tensor_numel(&t), 0);
+    t.ndim = 2; t.dims = NULL;
+    ASSERT_EQ_INT(tensor_numel(&t), 0);
+    t.dims = negative;
+    ASSERT_EQ_INT(tensor_numel(&t), 0);
+    t.dims = zero;
+    ASSERT_EQ_INT(tensor_numel(&t), 0);
+    t.dims = overflow;
+    ASSERT_EQ_INT(tensor_numel(&t), 0);
+}
 int main(void) {
     printf("== tensor_core.c ==\n");
     RUN_TEST(test_calc_strides_3d);
@@ -166,6 +182,7 @@ int main(void) {
     RUN_TEST(test_is_contiguous_true_for_row_major);
     RUN_TEST(test_is_contiguous_false_for_transposed_layout);
     RUN_TEST(test_is_contiguous_null);
+    RUN_TEST(test_tensor_numel_rejects_invalid_and_overflowing_shapes);
     TEST_SUITE_SUMMARY();
 }
 

@@ -193,6 +193,19 @@ TEST(test_t_slice_invalid_args_return_null) {
     t_free(a);
 }
 
+TEST(test_t_reshape_rejects_invalid_and_overflowing_dimensions) {
+    int dims[1] = {6};
+    tensor* a = t_alloc(1, dims);
+    int negative[2] = {2, -3};
+    int zero[2] = {2, 0};
+    int overflow[2] = {46341, 46341};
+    ASSERT_NULL(t_reshape(a, -1, NULL));
+    ASSERT_NULL(t_reshape(a, 1, NULL));
+    ASSERT_NULL(t_reshape(a, 2, negative));
+    ASSERT_NULL(t_reshape(a, 2, zero));
+    ASSERT_NULL(t_reshape(a, 2, overflow));
+    t_free(a);
+}
 int main(void) {
     printf("== tensor_view.c ==\n");
     RUN_TEST(test_t_transpose_swaps_dims_strides_and_preserves_offset);
@@ -206,6 +219,7 @@ int main(void) {
     RUN_TEST(test_t_reshape_contiguous_input_returns_view);
     RUN_TEST(test_t_reshape_strided_input_materializes_contiguous_tensor);
     RUN_TEST(test_t_reshape_rejects_mismatched_element_count);
+    RUN_TEST(test_t_reshape_rejects_invalid_and_overflowing_dimensions);
     RUN_TEST(test_t_slice_returns_offset_view);
     RUN_TEST(test_t_slice_invalid_args_return_null);
     TEST_SUITE_SUMMARY();

@@ -192,11 +192,24 @@ TEST(test_add_ref_count_null_args_is_safe) {
     ASSERT_TRUE(1);
 }
 
+TEST(test_alloc_rejects_nonpositive_and_overflowing_dimensions) {
+    int negative[2] = {2, -1};
+    int zero[2] = {2, 0};
+    int overflow[2] = {46341, 46341};
+    ASSERT_NULL(s_alloc(-1, NULL));
+    ASSERT_NULL(s_alloc(2, negative));
+    ASSERT_NULL(t_alloc(2, negative));
+    ASSERT_NULL(s_alloc(2, zero));
+    ASSERT_NULL(t_alloc(2, zero));
+    ASSERT_NULL(s_alloc(2, overflow));
+    ASSERT_NULL(t_alloc(2, overflow));
+}
 int main(void) {
     printf("== tensor_alloc.c ==\n");
     RUN_TEST(test_s_alloc_basic);
     RUN_TEST(test_s_alloc_ndim_zero_gives_size_one);
     RUN_TEST(test_s_alloc_rejects_null_dims_with_positive_ndim);
+    RUN_TEST(test_alloc_rejects_nonpositive_and_overflowing_dimensions);
     RUN_TEST(test_t_alloc_basic_shape_and_strides);
     RUN_TEST(test_t_alloc_scalar_ndim_zero);
     RUN_TEST(test_t_alloc_rejects_negative_ndim);

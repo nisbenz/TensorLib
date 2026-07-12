@@ -44,6 +44,19 @@ static int current_failed = 0;
     } \
 } while (0)
 
+#define ASSERT_FLOAT_NEAR(a, b, tolerance) do { \
+    float _a = (float)(a), _b = (float)(b), _tol = (float)(tolerance); \
+    if (isnan(_a) || isnan(_b) || fabsf(_a - _b) > _tol) { \
+        printf("FAIL (line %d: %s !~= %s -> %.9g vs %.9g, tol %.9g)\n", \
+               __LINE__, #a, #b, (double)_a, (double)_b, (double)_tol); \
+        current_failed = 1; \
+        return; \
+    } \
+} while (0)
+
+#define ASSERT_NAN(value) ASSERT_TRUE(isnan((float)(value)))
+#define ASSERT_POS_INF(value) ASSERT_TRUE(isinf((float)(value)) && (float)(value) > 0.0f)
+#define ASSERT_NEG_INF(value) ASSERT_TRUE(isinf((float)(value)) && (float)(value) < 0.0f)
 #define ASSERT_NULL(p)     ASSERT_TRUE((p) == NULL)
 #define ASSERT_NOT_NULL(p) ASSERT_TRUE((p) != NULL)
 
