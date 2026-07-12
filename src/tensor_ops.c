@@ -213,204 +213,67 @@ tensor* t_div(tensor* a, tensor* b) {
 
     return c;
 }
-tensor* t_exp(tensor* t) {
-    tensor* contig_t = t;
-    int is_temp_view = 0;
+typedef float (*unary_fn)(float);
 
-    if (!is_contiguous(t)) {
-        contig_t = t_contiguous(t);
-        is_temp_view = 1;
+static tensor* apply_unary(tensor* input, unary_fn fn) {
+    if (input == NULL || fn == NULL) return NULL;
+
+    tensor* contiguous = t_contiguous(input);
+    if (contiguous == NULL) return NULL;
+
+    tensor* out = t_alloc(contiguous->ndim, contiguous->dims);
+    if (out == NULL) {
+        t_free(contiguous);
+        return NULL;
     }
-
-    tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
 
     for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[contig_t->offset + i];
-        out->storage->data[i] = expf(x);
+        out->storage->data[i] = fn(contiguous->storage->data[contiguous->offset + i]);
     }
 
-    if (is_temp_view) {
-        t_free(contig_t);
-    }
-
+    t_free(contiguous);
     return out;
 }
-tensor* t_log(tensor* t) {
-    tensor* contig_t = t;
-    int is_temp_view = 0;
 
-    if (!is_contiguous(t)) {
-        contig_t = t_contiguous(t);
-        is_temp_view = 1;
-    }
-
-    tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
-
-    for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[contig_t->offset + i];
-        out->storage->data[i] = logf(x);
-    }
-
-    if (is_temp_view) {
-        t_free(contig_t);
-    }
-
-    return out;
+static float op_exp(float x) { return expf(x); }
+static float op_log(float x) { return logf(x); }
+static float op_relu(float x) { return x < 0.0f ? 0.0f : x; }
+static float op_tanh(float x) { return tanhf(x); }
+static float op_sigmoid(float x) { return 1.0f / (1.0f + expf(-x)); }
+static float op_neg(float x) { return -x; }
+static float op_sqrt(float x) { return sqrtf(x); }
+static float op_gelu(float x) {
+    const float sqrt_two_over_pi = 0.7978845608028654f;
+    return 0.5f * x * (1.0f + tanhf(sqrt_two_over_pi *
+                         (x + 0.044715f * x * x * x)));
 }
-tensor* t_relu(tensor* t) {
-    tensor* contig_t = t;
-    int is_temp_view = 0;
 
-    if (!is_contiguous(t)) {
-        contig_t = t_contiguous(t);
-        is_temp_view = 1;
-    }
+tensor* t_exp(tensor* t) { return apply_unary(t, op_exp); }
+tensor* t_log(tensor* t) { return apply_unary(t, op_log); }
+tensor* t_relu(tensor* t) { return apply_unary(t, op_relu); }
+tensor* t_tanh(tensor* t) { return apply_unary(t, op_tanh); }
+tensor* t_sigmoid(tensor* t) { return apply_unary(t, op_sigmoid); }
+tensor* t_neg(tensor* t) { return apply_unary(t, op_neg); }
+tensor* t_sqrt(tensor* t) { return apply_unary(t, op_sqrt); }
+tensor* t_gelu(tensor* t) { return apply_unary(t, op_gelu); }
 
-    tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
-
-    for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[contig_t->offset + i];
-        out->storage->data[i] = x < 0 ? 0 : x;
-    }
-
-    if (is_temp_view) {
-        t_free(contig_t);
-    }
-
-    return out;
-}
-tensor* t_tanh(tensor* t) {
-    tensor* contig_t = t;
-    int is_temp_view = 0;
-
-    if (!is_contiguous(t)) {
-        contig_t = t_contiguous(t);
-        is_temp_view = 1;
-    }
-
-    tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
-
-    for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[contig_t->offset + i];
-        out->storage->data[i] = tanhf(x);
-    }
-
-    if (is_temp_view) {
-        t_free(contig_t);
-    }
-
-    return out;
-}
-tensor* t_sigmoid(tensor* t) {
-    tensor* contig_t = t;
-    int is_temp_view = 0;
-
-    if (!is_contiguous(t)) {
-        contig_t = t_contiguous(t);
-        is_temp_view = 1;
-    }
-
-    tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
-
-    for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[contig_t->offset + i];
-        out->storage->data[i] = 1/(1+ expf(-x));
-    }
-
-    if (is_temp_view) {
-        t_free(contig_t);
-    }
-
-    return out;
-}
 tensor* t_pow(tensor* t, float exponent) {
-    tensor* contig_t = t;
-    int is_temp_view = 0;
+    if (t == NULL) return NULL;
 
-    if (!is_contiguous(t)) {
-        contig_t = t_contiguous(t);
-        is_temp_view = 1;
+    tensor* contiguous = t_contiguous(t);
+    if (contiguous == NULL) return NULL;
+
+    tensor* out = t_alloc(contiguous->ndim, contiguous->dims);
+    if (out == NULL) {
+        t_free(contiguous);
+        return NULL;
     }
-
-    tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
 
     for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[contig_t->offset + i];
-        out->storage->data[i] = powf(x,exponent);
+        out->storage->data[i] =
+            powf(contiguous->storage->data[contiguous->offset + i], exponent);
     }
 
-    if (is_temp_view) {
-        t_free(contig_t);
-    }
-
+    t_free(contiguous);
     return out;
 }
-tensor* t_neg(tensor* t) {
-    tensor* contig_t = t;
-    int is_temp_view = 0;
-
-    if (!is_contiguous(t)) {
-        contig_t = t_contiguous(t);
-        is_temp_view = 1;
-    }
-
-    tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
-
-    for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[contig_t->offset + i];
-        out->storage->data[i] = -x;
-    }
-
-    if (is_temp_view) {
-        t_free(contig_t);
-    }
-
-    return out;
-}
-tensor* t_sqrt(tensor* t) {
-    tensor* contig_t = t;
-    int is_temp_view = 0;
-
-    if (!is_contiguous(t)) {
-        contig_t = t_contiguous(t);
-        is_temp_view = 1;
-    }
-
-    tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
-
-    for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[contig_t->offset + i];
-        out->storage->data[i] = sqrtf(x);
-    }
-
-    if (is_temp_view) {
-        t_free(contig_t);
-    }
-
-    return out;
-}
-tensor* t_gelu(tensor* t) {
-    tensor* contig_t = t;
-    int is_temp_view = 0;
-
-    if (!is_contiguous(t)) {
-        contig_t = t_contiguous(t);
-        is_temp_view = 1;
-    }
-
-    tensor* out = t_alloc(contig_t->ndim, contig_t->dims);
-
-    for (int i = 0; i < out->storage->size; ++i) {
-        float x = contig_t->storage->data[contig_t->offset + i];
-        out->storage->data[i] =(float)0.5*(1+ tanhf(sqrt((2/M_PI))*(x+0.044715*x*x*x)));
-    }
-
-    if (is_temp_view) {
-        t_free(contig_t);
-    }
-
-    return out;
-}
-
-
-
