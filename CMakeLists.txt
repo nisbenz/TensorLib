@@ -2,16 +2,32 @@ cmake_minimum_required(VERSION 3.26)
 project(tensorlib C)
 
 set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
-add_library(tensorlib STATIC src/tensor_core.c include/tensor.h
-        src/tensor_ops.c
-        src/tensor_alloc.c
-        src/tensor_view.c)
+set(TENSORLIB_SOURCES
+    src/tensor_core.c
+    src/tensor_ops.c
+    src/tensor_alloc.c
+    src/tensor_view.c
+)
+
+add_library(tensorlib STATIC ${TENSORLIB_SOURCES} include/tensor.h)
 target_include_directories(tensorlib PUBLIC include)
 
 enable_testing()
 
-add_executable(test_tensor tests/test_tensor.c)
-target_link_libraries(test_tensor PRIVATE tensorlib)
+set(TENSORLIB_TESTS
+    tensor_core
+    tensor_alloc
+    tensor_view
+    tensor_ops
+)
 
-add_test(NAME test_tensor COMMAND test_tensor)
+foreach(test_name IN LISTS TENSORLIB_TESTS)
+    add_executable(test_${test_name} tests/test_${test_name}.c)
+    target_link_libraries(test_${test_name} PRIVATE tensorlib m)
+    add_test(NAME test_${test_name} COMMAND test_${test_name})
+endforeach()
+add_executable(playground examples/playground.c)
+target_link_libraries(playground PRIVATE tensorlib m)
+

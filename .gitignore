@@ -1,3 +1,9 @@
+cmake-build-ucrt64-debug/
 cmake-build-debug/
 build/
 .idea/
+examples/*.exe
+run.exe
+*.bat
+*.json
+.vscode/
