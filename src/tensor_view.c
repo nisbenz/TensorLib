@@ -81,11 +81,11 @@ tensor* t_reshape(tensor* a, int new_ndim, int* new_dims) {
     if (a == NULL || a->storage == NULL) return NULL;
     if (new_ndim < 0 || (new_ndim > 0 && new_dims == NULL)) return NULL;
 
-    int new_size = 1;
-    for (int i = 0; i < new_ndim; ++i) {
-        new_size *= new_dims[i];
-    }
-    if (new_size != tensor_numel(a)) {
+    tensor requested_shape = {0};
+    requested_shape.ndim = new_ndim;
+    requested_shape.dims = new_dims;
+    int new_size = tensor_numel(&requested_shape);
+    if (new_size == 0 || new_size != tensor_numel(a)) {
         fprintf(stderr, "ERROR: Reshape dimensions must match total element count.\n");
         return NULL;
     }

@@ -28,6 +28,7 @@ tensor* t_div(tensor* a, tensor* b);
 void advance_coords(int* coords, const int* dims, int ndim);
 int get_flat_index_nd(tensor* t, int* coords);
 int tensor_numel(tensor* t);
+/* Scalars use ndim == 0. Dimensions must be positive; zero-sized tensors are unsupported. */
 Storage* s_alloc(int ndim, const int* dims);
 tensor* t_alloc(int ndim, const int* dims);
 void t_free(tensor* t);
