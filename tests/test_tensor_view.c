@@ -194,6 +194,7 @@ TEST(test_t_slice_invalid_args_return_null) {
 }
 
 TEST(test_t_reshape_rejects_invalid_and_overflowing_dimensions) {
+    TEST_LOG("checking reshape rejects invalid shape metadata before creating a view");
     int dims[1] = {6};
     tensor* a = t_alloc(1, dims);
     int negative[2] = {2, -3};

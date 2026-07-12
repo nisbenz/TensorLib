@@ -93,6 +93,7 @@ TEST(test_t_add_null_args_returns_null) {
 }
 
 TEST(test_sub_mul_div_contiguous_and_ieee_edges) {
+    TEST_LOG("checking arithmetic results, NaN, and positive infinity");
     const float av[4] = {6.0f, -4.0f, 0.0f, 8.0f};
     const float bv[4] = {3.0f, 2.0f, 0.0f, 0.0f};
     tensor* a = make_vector(av, 4); tensor* b = make_vector(bv, 4);
@@ -105,6 +106,7 @@ TEST(test_sub_mul_div_contiguous_and_ieee_edges) {
 }
 
 TEST(test_binary_operations_transposed_inputs) {
+    TEST_LOG("checking logical element order for transposed operands");
     int dims[2] = {2, 3};
     tensor* ab = t_alloc(2, dims); tensor* bb = t_alloc(2, dims);
     for (int i = 0; i < 6; i++) { ab->storage->data[i] = (float)(i + 1); bb->storage->data[i] = 2.0f; }
@@ -120,6 +122,7 @@ TEST(test_binary_operations_transposed_inputs) {
 }
 
 TEST(test_all_operations_reject_null_inputs) {
+    TEST_LOG("checking every P0 operation returns NULL for NULL tensor input");
     unary_op ops[] = {t_neg, t_sqrt, t_exp, t_log, t_relu, t_gelu, t_sigmoid, t_tanh};
     for (size_t i = 0; i < sizeof(ops) / sizeof(ops[0]); i++) ASSERT_NULL(ops[i](NULL));
     ASSERT_NULL(t_pow(NULL, 2.0f));
@@ -127,6 +130,7 @@ TEST(test_all_operations_reject_null_inputs) {
 }
 
 TEST(test_unary_operations_contiguous_values) {
+    TEST_LOG("checking unary functions against libm/reference values");
     const float values[4] = {-2.0f, -1.0f, 0.0f, 2.0f};
     tensor* a = make_vector(values, 4);
     tensor* neg = t_neg(a); tensor* relu = t_relu(a); tensor* gelu = t_gelu(a);
@@ -146,6 +150,7 @@ TEST(test_unary_operations_contiguous_values) {
 }
 
 TEST(test_unary_operations_transposed_inputs) {
+    TEST_LOG("checking unary functions materialize transposed input in logical order");
     int dims[2] = {2, 3};
     tensor* base = t_alloc(2, dims);
     for (int i = 0; i < 6; i++) base->storage->data[i] = (float)(i + 1);
@@ -160,6 +165,7 @@ TEST(test_unary_operations_transposed_inputs) {
 }
 
 TEST(test_unary_math_domain_uses_ieee_results) {
+    TEST_LOG("checking log, sqrt, and pow preserve IEEE-754 domain results");
     const float values[3] = {-1.0f, 0.0f, 4.0f};
     tensor* a = make_vector(values, 3);
     tensor* log_out = t_log(a); tensor* sqrt_out = t_sqrt(a); tensor* pow_out = t_pow(a, 0.5f);
@@ -180,5 +186,6 @@ int main(void) {
     RUN_TEST(test_all_operations_reject_null_inputs);
     RUN_TEST(test_unary_operations_contiguous_values);
     RUN_TEST(test_unary_operations_transposed_inputs);
-    RUN_TEST(test_unary_math_domain_uses_ieee_results);    TEST_SUITE_SUMMARY();
+    RUN_TEST(test_unary_math_domain_uses_ieee_results);
+    TEST_SUITE_SUMMARY();
 }

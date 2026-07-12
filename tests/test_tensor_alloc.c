@@ -193,6 +193,7 @@ TEST(test_add_ref_count_null_args_is_safe) {
 }
 
 TEST(test_alloc_rejects_nonpositive_and_overflowing_dimensions) {
+    TEST_LOG("rejecting negative, zero, and overflowing shapes");
     int negative[2] = {2, -1};
     int zero[2] = {2, 0};
     int overflow[2] = {46341, 46341};

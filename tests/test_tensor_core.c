@@ -147,6 +147,7 @@ TEST(test_is_contiguous_null) {
 }
 
 TEST(test_tensor_numel_rejects_invalid_and_overflowing_shapes) {
+    TEST_LOG("checking tensor_numel validation without performing allocation");
     tensor t = {0};
     int negative[2] = {2, -1};
     int zero[2] = {2, 0};

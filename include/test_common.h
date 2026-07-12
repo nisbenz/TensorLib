@@ -10,17 +10,29 @@ static int current_failed = 0;
 
 #define TEST(name) static void name(void)
 
+#define TEST_LOG(...) do { \
+    printf("        "); \
+    printf(__VA_ARGS__); \
+    printf("\n"); \
+} while (0)
+
 #define RUN_TEST(name) do { \
     tests_run++; \
     current_failed = 0; \
-    printf("  %-42s", #name); \
+    printf("[ RUN      ] %s\n", #name); \
+    fflush(stdout); \
     name(); \
-    if (!current_failed) { tests_passed++; printf("PASS\n"); } \
+    if (!current_failed) { \
+        tests_passed++; \
+        printf("[       OK ] %s\n", #name); \
+    } else { \
+        printf("[  FAILED  ] %s\n", #name); \
+    } \
 } while (0)
 
 #define ASSERT_TRUE(cond) do { \
     if (!(cond)) { \
-        printf("FAIL (line %d: %s)\n", __LINE__, #cond); \
+        printf("        assertion failed at line %d: %s\n", __LINE__, #cond); \
         current_failed = 1; \
         return; \
     } \
