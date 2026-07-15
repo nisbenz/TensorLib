@@ -1,22 +1,5 @@
-#include <limits.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include "../include/tensor.h"
-
-static int checked_numel(int ndim, const int* dims, size_t* result) {
-    if (result == NULL || ndim < 0 || (ndim > 0 && dims == NULL)) return 0;
-
-    size_t total = 1;
-    for (int i = 0; i < ndim; ++i) {
-        /* Zero-sized dimensions are intentionally unsupported. */
-        if (dims[i] <= 0) return 0;
-        if (total > (size_t)INT_MAX / (size_t)dims[i]) return 0;
-        total *= (size_t)dims[i];
-    }
-    if (total > SIZE_MAX / sizeof(float)) return 0;
-    *result = total;
-    return 1;
-}
 
 void add_ref_count(Storage* a, tensor* b) {
     if (a != NULL && b != NULL) {
@@ -27,7 +10,7 @@ void add_ref_count(Storage* a, tensor* b) {
 
 Storage* s_alloc(int ndim, const int* dims) {
     size_t count;
-    if (!checked_numel(ndim, dims, &count)) return NULL;
+    if (!tensor_checked_numel(ndim, dims, &count)) return NULL;
 
     Storage* s = (Storage*)malloc(sizeof(Storage));
     if (s == NULL) return NULL;
@@ -43,7 +26,7 @@ Storage* s_alloc(int ndim, const int* dims) {
 
 tensor* t_alloc(int ndim, const int* dims) {
     size_t count;
-    if (!checked_numel(ndim, dims, &count)) return NULL;
+    if (!tensor_checked_numel(ndim, dims, &count)) return NULL;
     (void)count;
 
     tensor* a = (tensor*)calloc(1, sizeof(tensor));
@@ -51,14 +34,18 @@ tensor* t_alloc(int ndim, const int* dims) {
     a->ndim = ndim;
 
     if (ndim > 0) {
-        size_t metadata_bytes = (size_t)ndim * sizeof(int);
-        a->dims = (int*)malloc(metadata_bytes);
-        a->strides = (int*)malloc(metadata_bytes);
-        if (a->dims == NULL || a->strides == NULL) {
+        int* strides = (int*)malloc((size_t)ndim * sizeof(int));
+        if (strides == NULL) {
             t_free(a);
             return NULL;
         }
-        for (int i = 0; i < ndim; ++i) a->dims[i] = dims[i];
+        calc_strides(ndim, dims, strides);
+        if (tensor_copy_metadata(ndim, dims, strides, &a->dims, &a->strides) != 0) {
+            free(strides);
+            t_free(a);
+            return NULL;
+        }
+        free(strides);
     }
 
     a->storage = s_alloc(ndim, dims);
@@ -66,7 +53,6 @@ tensor* t_alloc(int ndim, const int* dims) {
         t_free(a);
         return NULL;
     }
-    calc_strides(ndim, a->dims, a->strides);
     return a;
 }
 
@@ -86,7 +72,7 @@ void t_free(tensor* t) {
 }
 
 int init_t(tensor* c, tensor* ref) {
-    if (c == NULL || ref == NULL) return 1;
+    if (c == NULL || !tensor_has_valid_shape(ref)) return 1;
     int total_elements = tensor_numel(ref);
     if (total_elements == 0) return 1;
 
@@ -108,27 +94,28 @@ int init_t(tensor* c, tensor* ref) {
     }
 
     if (ref->ndim > 0) {
-        size_t metadata_bytes = (size_t)ref->ndim * sizeof(int);
-        c->dims = (int*)malloc(metadata_bytes);
-        c->strides = (int*)malloc(metadata_bytes);
-        if (c->dims == NULL || c->strides == NULL) {
-            free(c->dims);
-            free(c->strides);
+        int* strides = (int*)malloc((size_t)ref->ndim * sizeof(int));
+        if (strides == NULL) {
             free(c->storage->data);
             free(c->storage);
-            c->dims = NULL;
-            c->strides = NULL;
             c->storage = NULL;
             return 1;
         }
-        for (int i = 0; i < ref->ndim; i++) c->dims[i] = ref->dims[i];
-        calc_strides(c->ndim, c->dims, c->strides);
+        calc_strides(ref->ndim, ref->dims, strides);
+        if (tensor_copy_metadata(ref->ndim, ref->dims, strides, &c->dims, &c->strides) != 0) {
+            free(strides);
+            free(c->storage->data);
+            free(c->storage);
+            c->storage = NULL;
+            return 1;
+        }
+        free(strides);
     }
     return 0;
 }
 
 tensor* t_clone(tensor* t) {
-    if (t == NULL || tensor_numel(t) == 0) return NULL;
+    if (!tensor_has_valid_metadata(t)) return NULL;
     tensor* a = t_alloc(t->ndim, t->dims);
     if (a == NULL) return NULL;
 
