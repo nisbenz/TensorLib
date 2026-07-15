@@ -2,52 +2,56 @@
 #include <stdlib.h>
 #include "../include/tensor.h"
 #include <math.h>
-// In your tensor/storage struct definition, or just at the point of use:
+
+typedef float (*binary_fn)(float, float);
+typedef void (*contiguous_binary_fn)(float* restrict, const float* restrict, const float* restrict, int);
+
 static inline void add_contiguous(float* restrict c,
                                   const float* restrict a,
                                   const float* restrict b,
                                   int n) {
-    for (int i = 0; i < n; i++) {
-        c[i] = a[i] + b[i];
-    }
+    for (int i = 0; i < n; i++) c[i] = a[i] + b[i];
 }
+
 static inline void sub_contiguous(float* restrict c,
                                   const float* restrict a,
                                   const float* restrict b,
                                   int n) {
-    for (int i = 0; i < n; i++) {
-        c[i] = a[i] - b[i];
-    }
+    for (int i = 0; i < n; i++) c[i] = a[i] - b[i];
 }
+
 static inline void mul_contiguous(float* restrict c,
                                   const float* restrict a,
                                   const float* restrict b,
                                   int n) {
-    for (int i = 0; i < n; i++) {
-        c[i] = a[i] * b[i];
-    }
+    for (int i = 0; i < n; i++) c[i] = a[i] * b[i];
 }
+
 static inline void div_contiguous(float* restrict c,
                                   const float* restrict a,
                                   const float* restrict b,
                                   int n) {
-    for (int i = 0; i < n; i++) {
-        c[i] = a[i] / b[i];
-    }
+    for (int i = 0; i < n; i++) c[i] = a[i] / b[i];
 }
-tensor* t_add(tensor* a, tensor* b) {
-    if (a == NULL || b == NULL) return NULL;
+
+static float op_add(float a, float b) { return a + b; }
+static float op_sub(float a, float b) { return a - b; }
+static float op_mul(float a, float b) { return a * b; }
+static float op_div(float a, float b) { return a / b; }
+
+static tensor* apply_binary(tensor* a,
+                            tensor* b,
+                            binary_fn scalar_op,
+                            contiguous_binary_fn contiguous_op,
+                            const char* op_name) {
+    if (!tensor_has_valid_metadata(a) || !tensor_has_valid_metadata(b)) return NULL;
     if (same_shape(a, b) == 0) {
-        fprintf(stderr, "ERROR: Tensors must have identical shapes to add.\n");
+        fprintf(stderr, "ERROR: Tensors must have identical shapes to %s.\n", op_name);
         return NULL;
     }
 
-    tensor* c = (tensor*)malloc(sizeof(tensor));
+    tensor* c = (tensor*)calloc(1, sizeof(tensor));
     if (c == NULL) return NULL;
-    c->storage = NULL;
-    c->dims = NULL;
-    c->strides = NULL;
-    c->ndim = 0;
 
     if (init_t(c, a) != 0) {
         t_free(c);
@@ -55,11 +59,13 @@ tensor* t_add(tensor* a, tensor* b) {
     }
 
     int total_elements = c->storage->size;
-
     if (same_stride(a, b) == 1 && same_stride(a, c) == 1) {
-        add_contiguous(c->storage->data + c->offset, a->storage->data + a->offset, b->storage->data + b->offset, total_elements);
+        contiguous_op(c->storage->data + c->offset,
+                      a->storage->data + a->offset,
+                      b->storage->data + b->offset,
+                      total_elements);
     } else {
-        int* coords = (int*)calloc(a->ndim, sizeof(int));
+        int* coords = (int*)calloc((size_t)a->ndim, sizeof(int));
         if (coords == NULL) {
             t_free(c);
             return NULL;
@@ -69,97 +75,7 @@ tensor* t_add(tensor* a, tensor* b) {
             int idx_a = get_flat_index_nd(a, coords);
             int idx_b = get_flat_index_nd(b, coords);
             int idx_c = get_flat_index_nd(c, coords);
-
-            c->storage->data[idx_c] = a->storage->data[idx_a] + b->storage->data[idx_b];
-
-            advance_coords(coords, a->dims, a->ndim);
-        }
-        free(coords);
-    }
-
-    return c;
-}
-tensor* t_sub(tensor* a, tensor* b){
-    if (a == NULL || b == NULL) return NULL;
-    if (same_shape(a, b) == 0) {
-        fprintf(stderr, "ERROR: Tensors must have identical shapes to subtract.\n");
-        return NULL;
-    }
-    tensor* c = (tensor*)malloc(sizeof(tensor));
-    if (c == NULL) return NULL;
-    c->storage = NULL;
-    c->dims = NULL;
-    c->strides = NULL;
-    c->ndim = 0;
-
-    if (init_t(c, a) != 0) {
-        t_free(c);
-        return NULL;
-    }
-
-    int total_elements = c->storage->size;
-    if (same_stride(a, b) == 1 && same_stride(a, c) == 1) {
-        sub_contiguous(c->storage->data + c->offset, a->storage->data + a->offset, b->storage->data + b->offset, total_elements);
-    }else {  int* coords = (int*)calloc(a->ndim, sizeof(int));
-
-        if (coords == NULL) {
-            t_free(c);
-            return NULL;
-        }
-
-        for (int i = 0; i < total_elements; i++) {
-            int idx_a = get_flat_index_nd(a, coords);
-            int idx_b = get_flat_index_nd(b, coords);
-            int idx_c = get_flat_index_nd(c, coords);
-
-            c->storage->data[idx_c] = a->storage->data[idx_a] - b->storage->data[idx_b];
-
-            advance_coords(coords, a->dims, a->ndim);
-        }
-        free(coords);
-
-    }
-    return c;
-}
-
-
-tensor* t_mul(tensor* a, tensor* b) {
-    if (a == NULL || b == NULL) return NULL;
-    if (same_shape(a, b) == 0) {
-        fprintf(stderr, "ERROR: Tensors must have identical shapes to multiply.\n");
-        return NULL;
-    }
-
-    tensor* c = (tensor*)malloc(sizeof(tensor));
-    if (c == NULL) return NULL;
-    c->storage = NULL;
-    c->dims = NULL;
-    c->strides = NULL;
-    c->ndim = 0;
-
-    if (init_t(c, a) != 0) {
-        t_free(c);
-        return NULL;
-    }
-
-    int total_elements = c->storage->size;
-
-    if (same_stride(a, b) == 1 && same_stride(a, c) == 1) {
-        mul_contiguous(c->storage->data + c->offset, a->storage->data + a->offset, b->storage->data + b->offset, total_elements);
-    } else {
-        int* coords = (int*)calloc(a->ndim, sizeof(int));
-        if (coords == NULL) {
-            t_free(c);
-            return NULL;
-        }
-
-        for (int i = 0; i < total_elements; i++) {
-            int idx_a = get_flat_index_nd(a, coords);
-            int idx_b = get_flat_index_nd(b, coords);
-            int idx_c = get_flat_index_nd(c, coords);
-
-            c->storage->data[idx_c] = a->storage->data[idx_a] * b->storage->data[idx_b];
-
+            c->storage->data[idx_c] = scalar_op(a->storage->data[idx_a], b->storage->data[idx_b]);
             advance_coords(coords, a->dims, a->ndim);
         }
         free(coords);
@@ -168,51 +84,11 @@ tensor* t_mul(tensor* a, tensor* b) {
     return c;
 }
 
+tensor* t_add(tensor* a, tensor* b) { return apply_binary(a, b, op_add, add_contiguous, "add"); }
+tensor* t_sub(tensor* a, tensor* b) { return apply_binary(a, b, op_sub, sub_contiguous, "subtract"); }
+tensor* t_mul(tensor* a, tensor* b) { return apply_binary(a, b, op_mul, mul_contiguous, "multiply"); }
+tensor* t_div(tensor* a, tensor* b) { return apply_binary(a, b, op_div, div_contiguous, "divide"); }
 
-tensor* t_div(tensor* a, tensor* b) {
-    if (a == NULL || b == NULL) return NULL;
-    if (same_shape(a, b) == 0) {
-        fprintf(stderr, "ERROR: Tensors must have identical shapes to divide.\n");
-        return NULL;
-    }
-
-    tensor* c = (tensor*)malloc(sizeof(tensor));
-    if (c == NULL) return NULL;
-    c->storage = NULL;
-    c->dims = NULL;
-    c->strides = NULL;
-    c->ndim = 0;
-
-    if (init_t(c, a) != 0) {
-        t_free(c);
-        return NULL;
-    }
-
-    int total_elements = c->storage->size;
-
-    if (same_stride(a, b) == 1 && same_stride(a, c) == 1) {
-        div_contiguous(c->storage->data + c->offset, a->storage->data + a->offset, b->storage->data + b->offset, total_elements);
-    } else {
-        int* coords = (int*)calloc(a->ndim, sizeof(int));
-        if (coords == NULL) {
-            t_free(c);
-            return NULL;
-        }
-
-        for (int i = 0; i < total_elements; i++) {
-            int idx_a = get_flat_index_nd(a, coords);
-            int idx_b = get_flat_index_nd(b, coords);
-            int idx_c = get_flat_index_nd(c, coords);
-
-            c->storage->data[idx_c] = a->storage->data[idx_a] / b->storage->data[idx_b];
-
-            advance_coords(coords, a->dims, a->ndim);
-        }
-        free(coords);
-    }
-
-    return c;
-}
 typedef float (*unary_fn)(float);
 
 static tensor* apply_unary(tensor* input, unary_fn fn) {
