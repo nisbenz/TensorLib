@@ -128,3 +128,38 @@ tensor* t_slice(tensor* a, int dim, int start, int end) {
     free(new_dims);
     return view;
 }
+tensor* t_squeeze(tensor* a, int dim) {
+    if (!tensor_has_valid_metadata(a)) return NULL;
+    if (dim < 0 || dim >= a->ndim) {
+        fprintf(stderr, "ERROR: Invalid dimension for squeeze.\n");
+        return NULL;
+    }
+    if (a->dims[dim] != 1) {
+        fprintf(stderr, "ERROR: Can only squeeze a dimension of size 1.\n");
+        return NULL;
+    }
+
+    int* new_dims = (int*)malloc((size_t)(a->ndim - 1) * sizeof(int));
+    if (new_dims == NULL) return NULL;
+
+    int new_ndim = a->ndim - 1;
+    int j = 0;
+    int* new_strides = (int*)malloc((size_t)new_ndim * sizeof(int));
+    if (new_strides == NULL) {
+        free(new_dims);
+        return NULL;
+    }
+    j = 0;
+    for (int i=0; i<a->ndim ; i++){
+        if (i != dim){
+            new_dims[j] = a->dims[i];
+            new_strides[j] = a->strides[i];
+            j++;
+        }
+    }
+
+    tensor* view = make_view(a, new_ndim, new_dims, new_strides, a->offset);
+    free(new_dims);
+    free(new_strides);
+    return view;
+}
