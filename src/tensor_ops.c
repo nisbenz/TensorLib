@@ -250,3 +250,27 @@ tensor* t_sum(tensor* a, int dim) {
     free(input_coords);
     return out;
 }
+
+tensor* t_mean(tensor* a, int dim) {
+    if (!tensor_has_valid_metadata(a)) {
+        return NULL;
+    }
+
+    if (dim < 0 || dim >= a->ndim) {
+        fprintf(stderr, "ERROR: Invalid dimension for mean.\n");
+        return NULL;
+    }
+
+    tensor* out = t_sum(a, dim);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    const float reduction_size = (float)a->dims[dim];
+    const int output_elements = tensor_numel(out);
+    for (int i = 0; i < output_elements; ++i) {
+        out->storage->data[i] /= reduction_size;
+    }
+
+    return out;
+}

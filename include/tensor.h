@@ -57,4 +57,5 @@ tensor* t_neg(tensor* t);
 tensor* t_sqrt(tensor* t);
 tensor* t_gelu(tensor* t);
 tensor* t_sum(tensor* a, int dim);
+tensor* t_mean(tensor* a, int dim);
 #endif //TENSORLIB_TENSOR_H

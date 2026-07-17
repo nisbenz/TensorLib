@@ -414,6 +414,48 @@ TEST(test_t_sum_preserves_ieee_values) {
     t_free(out); t_free(a);
 }
 
+TEST(test_t_mean_uses_floating_point_division) {
+    const float values[3] = {1.0f, 2.0f, 4.0f};
+    tensor* a = make_vector(values, 3);
+    tensor* out = t_mean(a, 0);
+
+    ASSERT_NOT_NULL(out);
+    ASSERT_EQ_INT(out->ndim, 0);
+    ASSERT_FLOAT_NEAR(out->storage->data[0], 7.0f / 3.0f, 1e-6f);
+
+    t_free(out); t_free(a);
+}
+
+TEST(test_t_mean_reduces_strided_views) {
+    int dims[2] = {2, 3};
+    tensor* base = t_alloc(2, dims);
+    for (int i = 0; i < 6; ++i) base->storage->data[i] = (float)(i + 1);
+    tensor* view = t_transpose(base, 0, 1);
+    tensor* out = t_mean(view, 1);
+
+    ASSERT_NOT_NULL(out);
+    ASSERT_EQ_INT(out->ndim, 1);
+    ASSERT_EQ_INT(out->dims[0], 3);
+    ASSERT_FLOAT_NEAR(out->storage->data[0], 2.5f, 1e-6f);
+    ASSERT_FLOAT_NEAR(out->storage->data[1], 3.5f, 1e-6f);
+    ASSERT_FLOAT_NEAR(out->storage->data[2], 4.5f, 1e-6f);
+
+    t_free(out); t_free(view); t_free(base);
+}
+
+TEST(test_t_mean_rejects_null_and_invalid_dimensions) {
+    int dims[2] = {2, 3};
+    tensor* a = t_alloc(2, dims);
+    tensor* scalar = t_alloc(0, NULL);
+
+    ASSERT_NULL(t_mean(NULL, 0));
+    ASSERT_NULL(t_mean(a, -1));
+    ASSERT_NULL(t_mean(a, 2));
+    ASSERT_NULL(t_mean(scalar, 0));
+
+    t_free(scalar); t_free(a);
+}
+
 int main(void) {
     printf("== tensor_ops.c ==\n");
     RUN_TEST(test_t_add_contiguous_elementwise);
@@ -437,5 +479,8 @@ int main(void) {
     RUN_TEST(test_t_sum_unsqueeze_and_squeeze_views);
     RUN_TEST(test_t_sum_expanded_broadcast_view);
     RUN_TEST(test_t_sum_preserves_ieee_values);
+    RUN_TEST(test_t_mean_uses_floating_point_division);
+    RUN_TEST(test_t_mean_reduces_strided_views);
+    RUN_TEST(test_t_mean_rejects_null_and_invalid_dimensions);
     TEST_SUITE_SUMMARY();
 }
