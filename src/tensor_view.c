@@ -207,3 +207,52 @@ tensor* t_unsqueeze(tensor* a, int dim) {
     free(new_strides);
     return view;
 }
+
+tensor* t_expand(tensor* a, int new_ndim, const int* new_dims) {
+    if (!tensor_has_valid_metadata(a)) return NULL;
+    if (new_ndim < a->ndim) {
+        fprintf(stderr, "ERROR: Expanded tensor cannot have fewer dimensions.\n");
+        return NULL;
+    }
+
+    size_t unused;
+    if (!tensor_checked_numel(new_ndim, new_dims, &unused)) {
+        fprintf(stderr, "ERROR: Invalid target shape for expand.\n");
+        return NULL;
+    }
+
+    int* new_strides = NULL;
+    if (new_ndim > 0) {
+        new_strides = (int*)malloc((size_t)new_ndim * sizeof(int));
+        if (new_strides == NULL) return NULL;
+    }
+
+    int rank_offset = new_ndim - a->ndim;
+    for (int output_axis = 0; output_axis < new_ndim; ++output_axis) {
+        int target_dim = new_dims[output_axis];
+
+        if (output_axis < rank_offset) {
+            /* Missing leading dimensions are implicit dimensions of size one. */
+            new_strides[output_axis] = (target_dim == 1) ? 1 : 0;
+            continue;
+        }
+
+        int input_axis = output_axis - rank_offset;
+        int input_dim = a->dims[input_axis];
+
+        if (input_dim == target_dim) {
+            new_strides[output_axis] = a->strides[input_axis];
+        } else if (input_dim == 1) {
+            /* Reuse the same input element for every index on this axis. */
+            new_strides[output_axis] = 0;
+        } else {
+            fprintf(stderr, "ERROR: Incompatible dimensions for expand.\n");
+            free(new_strides);
+            return NULL;
+        }
+    }
+
+    tensor* view = make_view(a, new_ndim, new_dims, new_strides, a->offset);
+    free(new_strides);
+    return view;
+}

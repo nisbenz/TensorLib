@@ -30,7 +30,8 @@ int tensor_has_valid_layout(const tensor* t) {
     if (t->ndim > 0 && t->strides == NULL) return 0;
     if (t->offset < 0) return 0;
     for (int i = 0; i < t->ndim; ++i) {
-        if (t->strides[i] <= 0) return 0;
+        /* Zero strides represent broadcasted dimensions. */
+        if (t->strides[i] < 0) return 0;
     }
     return 1;
 }
@@ -138,7 +139,8 @@ void advance_coords(int* coords, const int* dims, int ndim) {
 }
 
 int is_contiguous(tensor* t) {
-    if (!tensor_has_valid_layout(t)) return 0;
+    if (t == NULL || tensor_numel(t) == 0 ||
+        (t->ndim > 0 && t->strides == NULL)) return 0;
     size_t expected_stride = 1;
     for (int i = t->ndim - 1; i >= 0; i--) {
         if (expected_stride > (size_t)INT_MAX ||

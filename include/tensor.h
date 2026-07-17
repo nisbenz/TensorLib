@@ -44,6 +44,7 @@ tensor* t_contiguous(tensor* t);
 void calc_strides(int ndim, const int* dims, int* strides);
 tensor* t_reshape(tensor* a, int new_ndim, int* new_dims);
 tensor* t_unsqueeze(tensor* a, int dim);
+tensor* t_expand(tensor* a, int new_ndim, const int* new_dims);
 tensor* t_slice(tensor* a, int dim, int start, int end);
 tensor* t_exp(tensor* t);
 tensor* t_log(tensor* t);

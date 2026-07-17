@@ -232,6 +232,72 @@ TEST(test_t_unsqueeze_accepts_end_axis_and_rejects_invalid_axis) {
     t_free(a);
 }
 
+TEST(test_t_expand_keeps_matching_dimensions_and_broadcasts_size_one) {
+    int dims[2] = {2, 3};
+    int same_shape[2] = {2, 3};
+    int broadcast_dims[2] = {2, 1};
+    int broadcast_shape[2] = {2, 4};
+    tensor* a = t_alloc(2, dims);
+    tensor* b = t_alloc(2, broadcast_dims);
+    b->storage->data[0] = 10.0f;
+    b->storage->data[1] = 20.0f;
+
+    tensor* same = t_expand(a, 2, same_shape);
+    ASSERT_NOT_NULL(same);
+    ASSERT_TRUE(same->storage == a->storage);
+    ASSERT_EQ_INT(same->dims[0], 2);
+    ASSERT_EQ_INT(same->dims[1], 3);
+    ASSERT_EQ_INT(same->strides[0], 3);
+    ASSERT_EQ_INT(same->strides[1], 1);
+
+    tensor* expanded = t_expand(b, 2, broadcast_shape);
+    ASSERT_NOT_NULL(expanded);
+    ASSERT_TRUE(expanded->storage == b->storage);
+    ASSERT_EQ_INT(expanded->strides[0], 1);
+    ASSERT_EQ_INT(expanded->strides[1], 0);
+
+    int coords[2] = {0, 3};
+    ASSERT_EQ_FLOAT(expanded->storage->data[get_flat_index_nd(expanded, coords)], 10.0f);
+    coords[0] = 1;
+    ASSERT_EQ_FLOAT(expanded->storage->data[get_flat_index_nd(expanded, coords)], 20.0f);
+
+    t_free(same);
+    t_free(expanded);
+    t_free(b);
+    t_free(a);
+}
+
+TEST(test_t_expand_rejects_incompatible_shapes) {
+    int dims[2] = {2, 3};
+    int incompatible[2] = {2, 4};
+    int fewer_dims[1] = {2};
+    tensor* a = t_alloc(2, dims);
+
+    ASSERT_NULL(t_expand(a, 2, incompatible));
+    ASSERT_NULL(t_expand(a, 1, fewer_dims));
+    ASSERT_NULL(t_expand(a, 2, NULL));
+
+    t_free(a);
+}
+
+TEST(test_t_expand_broadcasts_new_leading_dimensions) {
+    int dims[2] = {2, 3};
+    int target[3] = {4, 2, 3};
+    tensor* a = t_alloc(2, dims);
+    tensor* expanded = t_expand(a, 3, target);
+
+    ASSERT_NOT_NULL(expanded);
+    ASSERT_EQ_INT(expanded->dims[0], 4);
+    ASSERT_EQ_INT(expanded->dims[1], 2);
+    ASSERT_EQ_INT(expanded->dims[2], 3);
+    ASSERT_EQ_INT(expanded->strides[0], 0);
+    ASSERT_EQ_INT(expanded->strides[1], 3);
+    ASSERT_EQ_INT(expanded->strides[2], 1);
+
+    t_free(expanded);
+    t_free(a);
+}
+
 TEST(test_t_reshape_rejects_invalid_and_overflowing_dimensions) {
     TEST_LOG("checking reshape rejects invalid shape metadata before creating a view");
     int dims[1] = {6};
@@ -264,5 +330,8 @@ int main(void) {
     RUN_TEST(test_t_slice_invalid_args_return_null);
     RUN_TEST(test_t_unsqueeze_inserts_dimension_and_preserves_storage);
     RUN_TEST(test_t_unsqueeze_accepts_end_axis_and_rejects_invalid_axis);
+    RUN_TEST(test_t_expand_keeps_matching_dimensions_and_broadcasts_size_one);
+    RUN_TEST(test_t_expand_rejects_incompatible_shapes);
+    RUN_TEST(test_t_expand_broadcasts_new_leading_dimensions);
     TEST_SUITE_SUMMARY();
 }
