@@ -239,3 +239,14 @@ tensor* t_sum(tensor* a, int dim) {
 
             sum += a->storage->data[input_index];
         }
+
+        out->storage->data[output_index] = sum;
+        if (output_ndim > 0) {
+            advance_coords(output_coords, out->dims, output_ndim);
+        }
+    }
+
+    free(output_coords);
+    free(input_coords);
+    return out;
+}

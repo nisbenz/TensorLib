@@ -43,6 +43,7 @@ int is_contiguous(tensor* t);
 tensor* t_contiguous(tensor* t);
 void calc_strides(int ndim, const int* dims, int* strides);
 tensor* t_reshape(tensor* a, int new_ndim, int* new_dims);
+tensor* t_squeeze(tensor* a, int dim);
 tensor* t_unsqueeze(tensor* a, int dim);
 tensor* t_expand(tensor* a, int new_ndim, const int* new_dims);
 tensor* t_slice(tensor* a, int dim, int start, int end);
@@ -55,4 +56,5 @@ tensor* t_pow(tensor* t, float exponent);
 tensor* t_neg(tensor* t);
 tensor* t_sqrt(tensor* t);
 tensor* t_gelu(tensor* t);
+tensor* t_sum(tensor* a, int dim);
 #endif //TENSORLIB_TENSOR_H
