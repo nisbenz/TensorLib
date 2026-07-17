@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -g -std=c11
-SRC = src/tensor_core.c src/tensor_alloc.c src/tensor_view.c src/tensor_ops.c
+SRC = src/tensor_core.c src/tensor_alloc.c src/tensor_view.c src/tensor_ops.c src/tensor_reduc.c
 
 BIN = bin
 TESTS = $(BIN)/test_tensor_core $(BIN)/test_tensor_alloc $(BIN)/test_tensor_view $(BIN)/test_tensor_ops

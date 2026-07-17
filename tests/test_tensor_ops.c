@@ -456,6 +456,171 @@ TEST(test_t_mean_rejects_null_and_invalid_dimensions) {
     t_free(scalar); t_free(a);
 }
 
+TEST(test_t_max_reduces_each_axis_of_contiguous_tensor) {
+    TEST_LOG("checking output shape and values for every contiguous reduction axis");
+    tensor* a = make_formula_3d();
+
+    tensor* dim0 = t_max(a, 0);
+    ASSERT_NOT_NULL(dim0);
+    ASSERT_EQ_INT(dim0->ndim, 2);
+    ASSERT_EQ_INT(dim0->dims[0], 3);
+    ASSERT_EQ_INT(dim0->dims[1], 4);
+    for (int j = 0; j < 3; ++j) {
+        for (int k = 0; k < 4; ++k) {
+            ASSERT_EQ_FLOAT(dim0->storage->data[j * 4 + k], 100 + 10 * j + k);
+        }
+    }
+
+    tensor* dim1 = t_max(a, 1);
+    ASSERT_NOT_NULL(dim1);
+    ASSERT_EQ_INT(dim1->ndim, 2);
+    ASSERT_EQ_INT(dim1->dims[0], 2);
+    ASSERT_EQ_INT(dim1->dims[1], 4);
+    for (int i = 0; i < 2; ++i) {
+        for (int k = 0; k < 4; ++k) {
+            ASSERT_EQ_FLOAT(dim1->storage->data[i * 4 + k], 100 * i + 20 + k);
+        }
+    }
+
+    tensor* dim2 = t_max(a, 2);
+    ASSERT_NOT_NULL(dim2);
+    ASSERT_EQ_INT(dim2->ndim, 2);
+    ASSERT_EQ_INT(dim2->dims[0], 2);
+    ASSERT_EQ_INT(dim2->dims[1], 3);
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            ASSERT_EQ_FLOAT(dim2->storage->data[i * 3 + j], 100 * i + 10 * j + 3);
+        }
+    }
+
+    t_free(dim2); t_free(dim1); t_free(dim0); t_free(a);
+}
+
+TEST(test_t_max_one_dimensional_input_returns_scalar_and_handles_negative_values) {
+    const float values[4] = {-2.0f, -11.0f, -3.5f, -8.0f};
+    tensor* a = make_vector(values, 4);
+    tensor* out = t_max(a, 0);
+
+    ASSERT_NOT_NULL(out);
+    ASSERT_EQ_INT(out->ndim, 0);
+    ASSERT_EQ_INT(tensor_numel(out), 1);
+    ASSERT_EQ_FLOAT(out->storage->data[0], -2.0f);
+
+    t_free(out); t_free(a);
+}
+
+TEST(test_t_max_handles_unit_reduction_dimension) {
+    int dims[3] = {2, 1, 3};
+    tensor* a = t_alloc(3, dims);
+    for (int i = 0; i < 6; ++i) a->storage->data[i] = (float)(-i - 1);
+
+    tensor* out = t_max(a, 1);
+    ASSERT_NOT_NULL(out);
+    ASSERT_EQ_INT(out->ndim, 2);
+    ASSERT_EQ_INT(out->dims[0], 2);
+    ASSERT_EQ_INT(out->dims[1], 3);
+    for (int i = 0; i < 6; ++i) ASSERT_EQ_FLOAT(out->storage->data[i], (float)(-i - 1));
+
+    t_free(out); t_free(a);
+}
+
+TEST(test_t_max_rejects_null_scalar_invalid_dimensions_and_invalid_metadata) {
+    int dims[2] = {2, 3};
+    tensor* a = t_alloc(2, dims);
+    tensor* scalar = t_alloc(0, NULL);
+    tensor invalid = {0};
+
+    ASSERT_NULL(t_max(NULL, 0));
+    ASSERT_NULL(t_max(a, -1));
+    ASSERT_NULL(t_max(a, 2));
+    ASSERT_NULL(t_max(scalar, 0));
+    ASSERT_NULL(t_max(&invalid, 0));
+
+    t_free(scalar); t_free(a);
+}
+
+TEST(test_t_max_reduces_transposed_and_offset_views) {
+    tensor* base = make_formula_3d();
+    tensor* transposed = t_transpose(base, 0, 2); /* [4, 3, 2] */
+    tensor* transposed_out = t_max(transposed, 2);
+    ASSERT_NOT_NULL(transposed_out);
+    ASSERT_EQ_INT(transposed_out->ndim, 2);
+    ASSERT_EQ_INT(transposed_out->dims[0], 4);
+    ASSERT_EQ_INT(transposed_out->dims[1], 3);
+    for (int k = 0; k < 4; ++k) {
+        for (int j = 0; j < 3; ++j) {
+            ASSERT_EQ_FLOAT(transposed_out->storage->data[k * 3 + j], 100 + 10 * j + k);
+        }
+    }
+
+    tensor* slice = t_slice(base, 1, 1, 3); /* [2, 2, 4], non-zero offset */
+    tensor* slice_out = t_max(slice, 1);
+    ASSERT_NOT_NULL(slice_out);
+    ASSERT_EQ_INT(slice_out->ndim, 2);
+    ASSERT_EQ_INT(slice_out->dims[0], 2);
+    ASSERT_EQ_INT(slice_out->dims[1], 4);
+    for (int i = 0; i < 2; ++i) {
+        for (int k = 0; k < 4; ++k) {
+            ASSERT_EQ_FLOAT(slice_out->storage->data[i * 4 + k], 100 * i + 20 + k);
+        }
+    }
+
+    t_free(slice_out); t_free(slice); t_free(transposed_out); t_free(transposed); t_free(base);
+}
+
+TEST(test_t_max_reduces_expanded_broadcast_view) {
+    int dims[3] = {2, 1, 3};
+    int expanded_dims[3] = {2, 4, 3};
+    tensor* base = t_alloc(3, dims);
+    for (int i = 0; i < 6; ++i) base->storage->data[i] = (float)(i + 1);
+    tensor* view = t_expand(base, 3, expanded_dims);
+    tensor* out = t_max(view, 1);
+
+    ASSERT_NOT_NULL(out);
+    ASSERT_EQ_INT(out->ndim, 2);
+    ASSERT_EQ_INT(out->dims[0], 2);
+    ASSERT_EQ_INT(out->dims[1], 3);
+    for (int i = 0; i < 6; ++i) ASSERT_EQ_FLOAT(out->storage->data[i], (float)(i + 1));
+
+    t_free(out); t_free(view); t_free(base);
+}
+
+TEST(test_t_max_propagates_nan_and_preserves_infinities) {
+    int dims[4] = {4, 3};
+    tensor* a = t_alloc(2, dims);
+    const float values[12] = {
+        -INFINITY, -2.0f, -3.0f,
+        1.0f, 5.0f, NAN,
+        NAN, -INFINITY, -2.0f,
+        1.0f, NAN, 4.0f
+    };
+    for (int i = 0; i < 12; ++i) a->storage->data[i] = values[i];
+
+    tensor* out = t_max(a, 1);
+    ASSERT_NOT_NULL(out);
+    ASSERT_EQ_INT(out->ndim, 1);
+    ASSERT_EQ_INT(out->dims[0], 4);
+    ASSERT_EQ_FLOAT(out->storage->data[0], -2.0f);
+    ASSERT_NAN(out->storage->data[1]);
+    ASSERT_NAN(out->storage->data[2]);
+    ASSERT_NAN(out->storage->data[3]);
+
+    const float infinities[3] = {-INFINITY, INFINITY, -INFINITY};
+    tensor* mixed_infinity = make_vector(infinities, 3);
+    tensor* infinity_out = t_max(mixed_infinity, 0);
+    ASSERT_NOT_NULL(infinity_out);
+    ASSERT_POS_INF(infinity_out->storage->data[0]);
+
+    const float all_negative_infinity_values[3] = {-INFINITY, -INFINITY, -INFINITY};
+    tensor* negative_infinity = make_vector(all_negative_infinity_values, 3);
+    tensor* negative_infinity_out = t_max(negative_infinity, 0);
+    ASSERT_NOT_NULL(negative_infinity_out);
+    ASSERT_NEG_INF(negative_infinity_out->storage->data[0]);
+
+    t_free(negative_infinity_out); t_free(negative_infinity);
+    t_free(infinity_out); t_free(mixed_infinity); t_free(out); t_free(a);
+}
+
 int main(void) {
     printf("== tensor_ops.c ==\n");
     RUN_TEST(test_t_add_contiguous_elementwise);
@@ -482,5 +647,12 @@ int main(void) {
     RUN_TEST(test_t_mean_uses_floating_point_division);
     RUN_TEST(test_t_mean_reduces_strided_views);
     RUN_TEST(test_t_mean_rejects_null_and_invalid_dimensions);
+    RUN_TEST(test_t_max_reduces_each_axis_of_contiguous_tensor);
+    RUN_TEST(test_t_max_one_dimensional_input_returns_scalar_and_handles_negative_values);
+    RUN_TEST(test_t_max_handles_unit_reduction_dimension);
+    RUN_TEST(test_t_max_rejects_null_scalar_invalid_dimensions_and_invalid_metadata);
+    RUN_TEST(test_t_max_reduces_transposed_and_offset_views);
+    RUN_TEST(test_t_max_reduces_expanded_broadcast_view);
+    RUN_TEST(test_t_max_propagates_nan_and_preserves_infinities);
     TEST_SUITE_SUMMARY();
 }
