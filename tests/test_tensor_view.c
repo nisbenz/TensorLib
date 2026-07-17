@@ -193,6 +193,45 @@ TEST(test_t_slice_invalid_args_return_null) {
     t_free(a);
 }
 
+TEST(test_t_unsqueeze_inserts_dimension_and_preserves_storage) {
+    int dims[2] = {2, 3};
+    tensor* a = t_alloc(2, dims);
+    tensor* u = t_unsqueeze(a, 0);
+
+    ASSERT_NOT_NULL(u);
+    ASSERT_TRUE(u->storage == a->storage);
+    ASSERT_EQ_INT(u->ndim, 3);
+    ASSERT_EQ_INT(u->dims[0], 1);
+    ASSERT_EQ_INT(u->dims[1], 2);
+    ASSERT_EQ_INT(u->dims[2], 3);
+    ASSERT_EQ_INT(u->strides[0], 6);
+    ASSERT_EQ_INT(u->strides[1], 3);
+    ASSERT_EQ_INT(u->strides[2], 1);
+    ASSERT_EQ_INT(u->offset, a->offset);
+
+    t_free(u);
+    t_free(a);
+}
+
+TEST(test_t_unsqueeze_accepts_end_axis_and_rejects_invalid_axis) {
+    int dims[2] = {2, 3};
+    tensor* a = t_alloc(2, dims);
+    tensor* u = t_unsqueeze(a, 2);
+
+    ASSERT_NOT_NULL(u);
+    ASSERT_EQ_INT(u->dims[0], 2);
+    ASSERT_EQ_INT(u->dims[1], 3);
+    ASSERT_EQ_INT(u->dims[2], 1);
+    ASSERT_EQ_INT(u->strides[0], 3);
+    ASSERT_EQ_INT(u->strides[1], 1);
+    ASSERT_EQ_INT(u->strides[2], 1);
+    ASSERT_NULL(t_unsqueeze(a, -1));
+    ASSERT_NULL(t_unsqueeze(a, 3));
+
+    t_free(u);
+    t_free(a);
+}
+
 TEST(test_t_reshape_rejects_invalid_and_overflowing_dimensions) {
     TEST_LOG("checking reshape rejects invalid shape metadata before creating a view");
     int dims[1] = {6};
@@ -223,5 +262,7 @@ int main(void) {
     RUN_TEST(test_t_reshape_rejects_invalid_and_overflowing_dimensions);
     RUN_TEST(test_t_slice_returns_offset_view);
     RUN_TEST(test_t_slice_invalid_args_return_null);
+    RUN_TEST(test_t_unsqueeze_inserts_dimension_and_preserves_storage);
+    RUN_TEST(test_t_unsqueeze_accepts_end_axis_and_rejects_invalid_axis);
     TEST_SUITE_SUMMARY();
 }
