@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "../include/tensor.h"
@@ -155,6 +156,49 @@ tensor* t_squeeze(tensor* a, int dim) {
             new_dims[j] = a->dims[i];
             new_strides[j] = a->strides[i];
             j++;
+        }
+    }
+
+    tensor* view = make_view(a, new_ndim, new_dims, new_strides, a->offset);
+    free(new_dims);
+    free(new_strides);
+    return view;
+}
+
+tensor* t_unsqueeze(tensor* a, int dim) {
+    if (!tensor_has_valid_metadata(a)) return NULL;
+    if (dim < 0 || dim > a->ndim) {
+        fprintf(stderr, "ERROR: Invalid dimension for unsqueeze.\n");
+        return NULL;
+    }
+
+    int new_ndim = a->ndim + 1;
+    int* new_dims = (int*)malloc((size_t)new_ndim * sizeof(int));
+    int* new_strides = (int*)malloc((size_t)new_ndim * sizeof(int));
+    if (new_dims == NULL || new_strides == NULL) {
+        free(new_dims);
+        free(new_strides);
+        return NULL;
+    }
+
+    for (int i = 0, j = 0; i < new_ndim; ++i) {
+        if (i == dim) {
+            new_dims[i] = 1;
+            /* Keep the usual contiguous-stride convention when possible. */
+            if (dim < a->ndim) {
+                if (a->strides[dim] > INT_MAX / a->dims[dim]) {
+                    free(new_dims);
+                    free(new_strides);
+                    return NULL;
+                }
+                new_strides[i] = a->strides[dim] * a->dims[dim];
+            } else {
+                new_strides[i] = 1;
+            }
+        } else {
+            new_dims[i] = a->dims[j];
+            new_strides[i] = a->strides[j];
+            ++j;
         }
     }
 

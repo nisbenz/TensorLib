@@ -1,7 +1,9 @@
 #include <limits.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include "../include/tensor.h"
+
 int tensor_checked_numel(int ndim, const int* dims, size_t* result) {
     if (result == NULL || ndim < 0 || (ndim > 0 && dims == NULL)) return 0;
 
@@ -78,7 +80,8 @@ int tensor_copy_metadata(int ndim, const int* dims, const int* strides, int** ou
     }
     return 0;
 }
-void calc_strides(int ndim, int* dims, int* strides) {
+
+void calc_strides(int ndim, const int* dims, int* strides) {
     if (ndim <= 0) return;
     if (dims == NULL || strides == NULL) return;
 
@@ -98,16 +101,16 @@ void calc_strides(int ndim, int* dims, int* strides) {
 }
 
 int get_flat_index_nd(tensor* t, int* coords) {
-    if (t == NULL || (t->ndim > 0 && coords == NULL)) return 0;
+    if (!tensor_has_valid_layout(t) || (t->ndim > 0 && coords == NULL)) return 0;
     int flat_idx = t->offset;
     for (int i = 0; i < t->ndim; i++) flat_idx += coords[i] * t->strides[i];
     return flat_idx;
 }
 
 int same_shape(tensor* a, tensor* b) {
-    if (a == NULL || b == NULL || a->ndim < 0 || b->ndim < 0) return 0;
+    if (a == NULL || b == NULL) return 0;
+    if (!tensor_has_valid_shape(a) || !tensor_has_valid_shape(b)) return 0;
     if (a->ndim != b->ndim) return 0;
-    if (a->ndim > 0 && (a->dims == NULL || b->dims == NULL)) return 0;
     for (int i = 0; i < a->ndim; i++) {
         if (a->dims[i] != b->dims[i]) return 0;
     }
@@ -125,7 +128,8 @@ int same_stride(tensor* a, tensor* b) {
 }
 
 void advance_coords(int* coords, const int* dims, int ndim) {
-    if (coords == NULL || dims == NULL || ndim <= 0) return;
+    size_t unused;
+    if (coords == NULL || !tensor_checked_numel(ndim, dims, &unused) || ndim <= 0) return;
     for (int i = ndim - 1; i >= 0; i--) {
         coords[i]++;
         if (coords[i] < dims[i]) break;
@@ -134,7 +138,7 @@ void advance_coords(int* coords, const int* dims, int ndim) {
 }
 
 int is_contiguous(tensor* t) {
-    if (t == NULL || tensor_numel(t) == 0) return 0;
+    if (!tensor_has_valid_layout(t)) return 0;
     size_t expected_stride = 1;
     for (int i = t->ndim - 1; i >= 0; i--) {
         if (expected_stride > (size_t)INT_MAX ||
@@ -145,11 +149,7 @@ int is_contiguous(tensor* t) {
 }
 
 int tensor_numel(tensor* t) {
-    if (t == NULL || t->ndim < 0 || (t->ndim > 0 && t->dims == NULL)) return 0;
-    size_t total = 1;
-    for (int i = 0; i < t->ndim; i++) {
-        if (t->dims[i] <= 0 || total > (size_t)INT_MAX / (size_t)t->dims[i]) return 0;
-        total *= (size_t)t->dims[i];
-    }
+    size_t total;
+    if (t == NULL || !tensor_checked_numel(t->ndim, t->dims, &total)) return 0;
     return (int)total;
 }
