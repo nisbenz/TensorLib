@@ -28,6 +28,7 @@ set(TENSORLIB_TESTS
     tensor_alloc
     tensor_view
     tensor_ops
+    tensor_reduc
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
