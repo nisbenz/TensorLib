@@ -59,4 +59,5 @@ tensor* t_gelu(tensor* t);
 tensor* t_sum(tensor* a, int dim);
 tensor* t_mean(tensor* a, int dim);
 tensor* t_max(tensor* a, int dim);
+tensor* t_matmul(tensor* a, tensor* b);
 #endif //TENSORLIB_TENSOR_H
