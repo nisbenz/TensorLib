@@ -10,6 +10,7 @@ set(TENSORLIB_SOURCES
     src/tensor_alloc.c
     src/tensor_view.c
     src/tensor_reduc.c
+    src/tensor_matmul.c
 )
 
 add_library(tensorlib STATIC ${TENSORLIB_SOURCES} include/tensor.h)
@@ -29,6 +30,7 @@ set(TENSORLIB_TESTS
     tensor_view
     tensor_ops
     tensor_reduc
+    tensor_matmul
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
