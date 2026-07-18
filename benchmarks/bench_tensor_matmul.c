@@ -2,13 +2,15 @@
 #include <time.h>
 
 #include "../include/tensor.h"
+#include "../include/tensor_matmul.h"
 
 enum {
     BATCHES = 8,
     M = 128,
     K = 128,
     N = 128,
-    REPEATS = 5
+    WARMUP = 3,
+    REPEATS = 50
 };
 
 static void fill_input(tensor* t, float scale) {
@@ -33,31 +35,53 @@ int main(void) {
     fill_input(a, 0.01f);
     fill_input(b, 0.02f);
 
-    clock_t start = clock();
-    volatile float checksum = 0.0f;
-    for (int repeat = 0; repeat < REPEATS; ++repeat) {
-        tensor* output = t_matmul(a, b);
-        if (output == NULL) {
-            t_free(b);
-            t_free(a);
-            fprintf(stderr, "matmul failed during benchmark\n");
-            return 1;
+    int output_dims[3] = {BATCHES, M, N};
+    tensor* output = t_alloc(3, output_dims);
+    if (output == NULL) {
+        t_free(b);
+        t_free(a);
+        fprintf(stderr, "failed to allocate benchmark output\n");
+        return 1;
+    }
+
+    int use_avx2 = matmul_avx2_available();
+    void (*kernel)(const float*, const float*, float*, int, int, int) =
+        use_avx2 ? matmul_2d_avx2_contiguous : matmul_2d_blocked_contiguous;
+
+    for (int repeat = 0; repeat < WARMUP; ++repeat) {
+        for (int batch = 0; batch < BATCHES; ++batch) {
+            kernel(a->storage->data + batch * M * K,
+                   b->storage->data + batch * K * N,
+                   output->storage->data + batch * M * N,
+                   M, K, N);
         }
-        checksum += output->storage->data[0];
-        checksum += output->storage->data[tensor_numel(output) - 1];
-        t_free(output);
+    }
+
+    clock_t start = clock();
+    for (int repeat = 0; repeat < REPEATS; ++repeat) {
+        for (int batch = 0; batch < BATCHES; ++batch) {
+            kernel(a->storage->data + batch * M * K,
+                   b->storage->data + batch * K * N,
+                   output->storage->data + batch * M * N,
+                   M, K, N);
+        }
     }
     clock_t end = clock();
+
+    volatile float checksum = output->storage->data[0];
+    checksum += output->storage->data[tensor_numel(output) - 1];
 
     double seconds = (double)(end - start) / (double)CLOCKS_PER_SEC;
     double operations = 2.0 * (double)BATCHES * (double)M * (double)K * (double)N * (double)REPEATS;
     double gflops = (seconds > 0.0) ? operations / seconds / 1.0e9 : 0.0;
 
-    printf("matmul baseline: batch=%d M=%d K=%d N=%d repeats=%d\n",
-           BATCHES, M, K, N, REPEATS);
+    printf("matmul kernel: batch=%d M=%d K=%d N=%d warmup=%d repeats=%d path=%s\n",
+           BATCHES, M, K, N, WARMUP, REPEATS,
+           use_avx2 ? "avx2-fma" : "blocked-scalar");
     printf("elapsed_seconds=%.6f gflops=%.6f checksum=%.6f\n",
            seconds, gflops, (double)checksum);
 
+    t_free(output);
     t_free(b);
     t_free(a);
     return 0;
