@@ -184,6 +184,39 @@ TEST(test_t_matmul_rejects_invalid_shapes) {
     t_free(a);
 }
 
+TEST(test_t_matmul_validates_vector_inner_dimension) {
+    int a_dims[1] = {3};
+    int b_dims[1] = {4};
+    tensor* a = t_alloc(1, a_dims);
+    tensor* b = t_alloc(1, b_dims);
+
+    ASSERT_NULL(t_matmul(a, b));
+
+    t_free(b);
+    t_free(a);
+}
+
+TEST(test_t_matmul_allows_aliasing_and_returns_independent_storage) {
+    int dims[2] = {2, 2};
+    tensor* a = t_alloc(2, dims);
+    const float values[4] = {1, 2, 3, 4};
+    fill_tensor(a, values, 4);
+
+    tensor* c = t_matmul(a, a);
+    ASSERT_NOT_NULL(c);
+    ASSERT_TRUE(c->storage != a->storage);
+    ASSERT_EQ_FLOAT(c->storage->data[0], 7.0f);
+    ASSERT_EQ_FLOAT(c->storage->data[1], 10.0f);
+    ASSERT_EQ_FLOAT(c->storage->data[2], 15.0f);
+    ASSERT_EQ_FLOAT(c->storage->data[3], 22.0f);
+
+    c->storage->data[0] = 99.0f;
+    ASSERT_EQ_FLOAT(a->storage->data[0], 1.0f);
+
+    t_free(c);
+    t_free(a);
+}
+
 int main(void) {
     printf("== tensor_matmul.c ==\n");
     RUN_TEST(test_t_matmul_2d);
@@ -192,5 +225,7 @@ int main(void) {
     RUN_TEST(test_t_matmul_accepts_transposed_views);
     RUN_TEST(test_t_matmul_vector_cases);
     RUN_TEST(test_t_matmul_rejects_invalid_shapes);
+    RUN_TEST(test_t_matmul_validates_vector_inner_dimension);
+    RUN_TEST(test_t_matmul_allows_aliasing_and_returns_independent_storage);
     TEST_SUITE_SUMMARY();
 }
