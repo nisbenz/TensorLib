@@ -15,24 +15,14 @@
 #define TENSORLIB_HAS_AVX2_KERNEL 0
 #endif
 
-#include "../include/tensor.h"
+#include "../include/tensor_matmul.h"
 
-typedef struct {
-    int is_vector;
-    int batch_rank;
-    int rows;
-    int inner;
-    int columns;
-} matmul_operand_info;
-
-#define TENSORLIB_MATMUL_BLOCK_SIZE 32
-
-static void matmul_2d_blocked_contiguous(const float* a,
-                                         const float* b,
-                                         float* output,
-                                         int rows,
-                                         int inner,
-                                         int columns) {
+void matmul_2d_blocked_contiguous(const float* a,
+                                  const float* b,
+                                  float* output,
+                                  int rows,
+                                  int inner,
+                                  int columns) {
     for (int row = 0; row < rows; ++row) {
         for (int column = 0; column < columns; ++column) {
             output[row * columns + column] = 0.0f;
@@ -68,7 +58,7 @@ static void matmul_2d_blocked_contiguous(const float* a,
 }
 
 #if TENSORLIB_HAS_AVX2_KERNEL
-static int matmul_avx2_available(void) {
+int matmul_avx2_available(void) {
 #if defined(__GNUC__)
     __builtin_cpu_init();
     return __builtin_cpu_supports("avx2") != 0;
@@ -83,12 +73,12 @@ static int matmul_avx2_available(void) {
 }
 
 TENSORLIB_AVX2_TARGET
-static void matmul_2d_avx2_contiguous(const float* a,
-                                      const float* b,
-                                      float* output,
-                                      int rows,
-                                      int inner,
-                                      int columns) {
+void matmul_2d_avx2_contiguous(const float* a,
+                               const float* b,
+                               float* output,
+                               int rows,
+                               int inner,
+                               int columns) {
     for (int row = 0; row < rows; ++row) {
         for (int column = 0; column < columns; ++column) {
             output[row * columns + column] = 0.0f;
@@ -115,24 +105,24 @@ static void matmul_2d_avx2_contiguous(const float* a,
     }
 }
 #else
-static int matmul_avx2_available(void) {
+int matmul_avx2_available(void) {
     return 0;
 }
 #endif
 
-static int operand_batch_dim(const tensor* operand,
-                             const matmul_operand_info* info,
-                             int output_axis,
-                             int output_batch_ndim) {
+int operand_batch_dim(const tensor* operand,
+                      const matmul_operand_info* info,
+                      int output_axis,
+                      int output_batch_ndim) {
     int rank_offset = output_batch_ndim - info->batch_rank;
     if (output_axis < rank_offset) return 1;
     return operand->dims[output_axis - rank_offset];
 }
 
-static int operand_batch_offset(const tensor* operand,
-                                const matmul_operand_info* info,
-                                const int* batch_coords,
-                                int batch_ndim) {
+int operand_batch_offset(const tensor* operand,
+                         const matmul_operand_info* info,
+                         const int* batch_coords,
+                         int batch_ndim) {
     int offset = operand->offset;
 
     for (int operand_axis = 0; operand_axis < info->batch_rank; ++operand_axis) {
@@ -147,9 +137,9 @@ static int operand_batch_offset(const tensor* operand,
     return offset;
 }
 
-static int output_batch_offset(const tensor* output,
-                               const int* batch_coords,
-                               int batch_ndim) {
+int output_batch_offset(const tensor* output,
+                        const int* batch_coords,
+                        int batch_ndim) {
     int offset = output->offset;
     for (int axis = 0; axis < batch_ndim; ++axis) {
         offset += batch_coords[axis] * output->strides[axis];
@@ -157,12 +147,12 @@ static int output_batch_offset(const tensor* output,
     return offset;
 }
 
-static int broadcast_batch_shape(const tensor* a,
-                                 const matmul_operand_info* a_info,
-                                 const tensor* b,
-                                 const matmul_operand_info* b_info,
-                                 int batch_ndim,
-                                 int* batch_dims) {
+int broadcast_batch_shape(const tensor* a,
+                          const matmul_operand_info* a_info,
+                          const tensor* b,
+                          const matmul_operand_info* b_info,
+                          int batch_ndim,
+                          int* batch_dims) {
     for (int axis = 0; axis < batch_ndim; ++axis) {
         int a_dim = operand_batch_dim(a, a_info, axis, batch_ndim);
         int b_dim = operand_batch_dim(b, b_info, axis, batch_ndim);
@@ -174,15 +164,15 @@ static int broadcast_batch_shape(const tensor* a,
     return 1;
 }
 
-static void matmul_2d_strided(const tensor* a,
-                              const matmul_operand_info* a_info,
-                              int a_base,
-                              const tensor* b,
-                              const matmul_operand_info* b_info,
-                              int b_base,
-                              tensor* output,
-                              int output_base,
-                              int output_batch_ndim) {
+void matmul_2d_strided(const tensor* a,
+                       const matmul_operand_info* a_info,
+                       int a_base,
+                       const tensor* b,
+                       const matmul_operand_info* b_info,
+                       int b_base,
+                       tensor* output,
+                       int output_base,
+                       int output_batch_ndim) {
     const int a_row_stride = a_info->is_vector ? 0 : a->strides[a->ndim - 2];
     const int a_inner_stride = a->strides[a->ndim - 1];
     const int b_inner_stride = b->strides[b_info->is_vector ? 0 : b->ndim - 2];

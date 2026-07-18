@@ -11,6 +11,7 @@ set(TENSORLIB_SOURCES
     src/tensor_view.c
     src/tensor_reduc.c
     src/tensor_matmul.c
+    include/tensor_matmul.h
 )
 
 add_library(tensorlib STATIC ${TENSORLIB_SOURCES} include/tensor.h)
