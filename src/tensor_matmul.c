@@ -2,6 +2,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+#include <immintrin.h>
+#define TENSORLIB_HAS_AVX2_KERNEL 1
+#define TENSORLIB_AVX2_TARGET __attribute__((target("avx2")))
+#elif defined(_M_AVX2)
+#include <intrin.h>
+#include <immintrin.h>
+#define TENSORLIB_HAS_AVX2_KERNEL 1
+#define TENSORLIB_AVX2_TARGET
+#else
+#define TENSORLIB_HAS_AVX2_KERNEL 0
+#endif
+
 #include "../include/tensor.h"
 
 typedef struct {
@@ -11,6 +24,101 @@ typedef struct {
     int inner;
     int columns;
 } matmul_operand_info;
+
+#define TENSORLIB_MATMUL_BLOCK_SIZE 32
+
+static void matmul_2d_blocked_contiguous(const float* a,
+                                         const float* b,
+                                         float* output,
+                                         int rows,
+                                         int inner,
+                                         int columns) {
+    for (int row = 0; row < rows; ++row) {
+        for (int column = 0; column < columns; ++column) {
+            output[row * columns + column] = 0.0f;
+        }
+    }
+
+    for (int row_block = 0; row_block < rows; row_block += TENSORLIB_MATMUL_BLOCK_SIZE) {
+        int row_end = row_block + TENSORLIB_MATMUL_BLOCK_SIZE;
+        if (row_end > rows) row_end = rows;
+
+        for (int inner_block = 0; inner_block < inner; inner_block += TENSORLIB_MATMUL_BLOCK_SIZE) {
+            int inner_end = inner_block + TENSORLIB_MATMUL_BLOCK_SIZE;
+            if (inner_end > inner) inner_end = inner;
+
+            for (int column_block = 0;
+                 column_block < columns;
+                 column_block += TENSORLIB_MATMUL_BLOCK_SIZE) {
+                int column_end = column_block + TENSORLIB_MATMUL_BLOCK_SIZE;
+                if (column_end > columns) column_end = columns;
+
+                for (int row = row_block; row < row_end; ++row) {
+                    for (int k = inner_block; k < inner_end; ++k) {
+                        float a_value = a[row * inner + k];
+                        for (int column = column_block; column < column_end; ++column) {
+                            output[row * columns + column] +=
+                                a_value * b[k * columns + column];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#if TENSORLIB_HAS_AVX2_KERNEL
+static int matmul_avx2_available(void) {
+#if defined(__GNUC__)
+    __builtin_cpu_init();
+    return __builtin_cpu_supports("avx2") != 0;
+#else
+    int registers[4];
+    __cpuid(registers, 0);
+    unsigned int highest_leaf = (unsigned int)registers[0];
+    if (highest_leaf < 7) return 0;
+    __cpuidex(registers, 7, 0);
+    return (registers[1] & (1 << 5)) != 0;
+#endif
+}
+
+TENSORLIB_AVX2_TARGET
+static void matmul_2d_avx2_contiguous(const float* a,
+                                      const float* b,
+                                      float* output,
+                                      int rows,
+                                      int inner,
+                                      int columns) {
+    for (int row = 0; row < rows; ++row) {
+        for (int column = 0; column < columns; ++column) {
+            output[row * columns + column] = 0.0f;
+        }
+    }
+
+    for (int row = 0; row < rows; ++row) {
+        for (int k = 0; k < inner; ++k) {
+            __m256 a_value = _mm256_set1_ps(a[row * inner + k]);
+            int column = 0;
+
+            for (; column + 8 <= columns; column += 8) {
+                __m256 current = _mm256_loadu_ps(output + row * columns + column);
+                __m256 b_values = _mm256_loadu_ps(b + k * columns + column);
+                current = _mm256_add_ps(current, _mm256_mul_ps(a_value, b_values));
+                _mm256_storeu_ps(output + row * columns + column, current);
+            }
+
+            for (; column < columns; ++column) {
+                output[row * columns + column] +=
+                    a[row * inner + k] * b[k * columns + column];
+            }
+        }
+    }
+}
+#else
+static int matmul_avx2_available(void) {
+    return 0;
+}
+#endif
 
 static int operand_batch_dim(const tensor* operand,
                              const matmul_operand_info* info,
@@ -93,6 +201,29 @@ static void matmul_2d_strided(const tensor* a,
     } else {
         /* The promoted trailing column dimension is removed from the result. */
         output_row_stride = output->strides[output_batch_ndim];
+    }
+
+    if (!a_info->is_vector && !b_info->is_vector &&
+        a_row_stride == a_info->inner && a_inner_stride == 1 &&
+        b_inner_stride == b_info->columns && b_column_stride == 1 &&
+        output_row_stride == b_info->columns && output_column_stride == 1) {
+        const float* a_data = a->storage->data + a_base;
+        const float* b_data = b->storage->data + b_base;
+        float* output_data = output->storage->data + output_base;
+
+#if TENSORLIB_HAS_AVX2_KERNEL
+        if (matmul_avx2_available()) {
+            matmul_2d_avx2_contiguous(a_data, b_data, output_data,
+                                      a_info->rows, a_info->inner, b_info->columns);
+        } else {
+            matmul_2d_blocked_contiguous(a_data, b_data, output_data,
+                                         a_info->rows, a_info->inner, b_info->columns);
+        }
+#else
+        matmul_2d_blocked_contiguous(a_data, b_data, output_data,
+                                     a_info->rows, a_info->inner, b_info->columns);
+#endif
+        return;
     }
 
     for (int row = 0; row < a_info->rows; ++row) {
