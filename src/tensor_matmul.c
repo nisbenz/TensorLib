@@ -5,7 +5,7 @@
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
 #include <immintrin.h>
 #define TENSORLIB_HAS_AVX2_KERNEL 1
-#define TENSORLIB_AVX2_TARGET __attribute__((target("avx2")))
+#define TENSORLIB_AVX2_TARGET __attribute__((target("avx2,fma")))
 #elif defined(_M_AVX2)
 #include <intrin.h>
 #include <immintrin.h>
@@ -61,11 +61,14 @@ void matmul_2d_blocked_contiguous(const float* a,
 int matmul_avx2_available(void) {
 #if defined(__GNUC__)
     __builtin_cpu_init();
-    return __builtin_cpu_supports("avx2") != 0;
+    return __builtin_cpu_supports("avx2") != 0 &&
+           __builtin_cpu_supports("fma") != 0;
 #else
     int registers[4];
     __cpuid(registers, 0);
     unsigned int highest_leaf = (unsigned int)registers[0];
+    __cpuidex(registers, 1, 0);
+    if ((registers[2] & (1 << 12)) == 0) return 0;
     if (highest_leaf < 7) return 0;
     __cpuidex(registers, 7, 0);
     return (registers[1] & (1 << 5)) != 0;
@@ -79,27 +82,43 @@ void matmul_2d_avx2_contiguous(const float* a,
                                int rows,
                                int inner,
                                int columns) {
-    for (int row = 0; row < rows; ++row) {
-        for (int column = 0; column < columns; ++column) {
-            output[row * columns + column] = 0.0f;
-        }
-    }
+    for (int row_block = 0; row_block < rows; row_block += 4) {
+        int row_end = row_block + 4;
+        if (row_end > rows) row_end = rows;
 
-    for (int row = 0; row < rows; ++row) {
-        for (int k = 0; k < inner; ++k) {
-            __m256 a_value = _mm256_set1_ps(a[row * inner + k]);
-            int column = 0;
+        for (int column_block = 0; column_block < columns; column_block += 8) {
+            int column_end = column_block + 8;
+            if (column_end > columns) column_end = columns;
 
-            for (; column + 8 <= columns; column += 8) {
-                __m256 current = _mm256_loadu_ps(output + row * columns + column);
-                __m256 b_values = _mm256_loadu_ps(b + k * columns + column);
-                current = _mm256_add_ps(current, _mm256_mul_ps(a_value, b_values));
-                _mm256_storeu_ps(output + row * columns + column, current);
+            if (row_end - row_block == 4 && column_end - column_block == 8) {
+                __m256 c0 = _mm256_setzero_ps();
+                __m256 c1 = _mm256_setzero_ps();
+                __m256 c2 = _mm256_setzero_ps();
+                __m256 c3 = _mm256_setzero_ps();
+
+                for (int k = 0; k < inner; ++k) {
+                    __m256 b_values = _mm256_loadu_ps(b + k * columns + column_block);
+                    c0 = _mm256_fmadd_ps(_mm256_set1_ps(a[(row_block + 0) * inner + k]), b_values, c0);
+                    c1 = _mm256_fmadd_ps(_mm256_set1_ps(a[(row_block + 1) * inner + k]), b_values, c1);
+                    c2 = _mm256_fmadd_ps(_mm256_set1_ps(a[(row_block + 2) * inner + k]), b_values, c2);
+                    c3 = _mm256_fmadd_ps(_mm256_set1_ps(a[(row_block + 3) * inner + k]), b_values, c3);
+                }
+
+                _mm256_storeu_ps(output + (row_block + 0) * columns + column_block, c0);
+                _mm256_storeu_ps(output + (row_block + 1) * columns + column_block, c1);
+                _mm256_storeu_ps(output + (row_block + 2) * columns + column_block, c2);
+                _mm256_storeu_ps(output + (row_block + 3) * columns + column_block, c3);
+                continue;
             }
 
-            for (; column < columns; ++column) {
-                output[row * columns + column] +=
-                    a[row * inner + k] * b[k * columns + column];
+            for (int row = row_block; row < row_end; ++row) {
+                for (int column = column_block; column < column_end; ++column) {
+                    float sum = 0.0f;
+                    for (int k = 0; k < inner; ++k) {
+                        sum += a[row * inner + k] * b[k * columns + column];
+                    }
+                    output[row * columns + column] = sum;
+                }
             }
         }
     }
