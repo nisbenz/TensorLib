@@ -43,3 +43,8 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/playground.c")
     target_link_libraries(playground PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
 endif()
 
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/bench_tensor_matmul.c")
+    add_executable(bench_tensor_matmul benchmarks/bench_tensor_matmul.c)
+    target_link_libraries(bench_tensor_matmul PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
+endif()
+

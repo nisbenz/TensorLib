@@ -28,10 +28,16 @@ $(BIN)/test_tensor_reduc: tests/test_tensor_reduc.c $(SRC) | $(BIN)
 $(BIN)/test_tensor_matmul: tests/test_tensor_matmul.c $(SRC) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ tests/test_tensor_matmul.c $(SRC) -lm
 
+$(BIN)/bench_tensor_matmul: benchmarks/bench_tensor_matmul.c $(SRC) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ benchmarks/bench_tensor_matmul.c $(SRC) -lm
+
 test: $(TESTS)
 	@for t in $(TESTS); do ./$$t || exit 1; echo; done
+
+benchmark-matmul: $(BIN)/bench_tensor_matmul
+	./$(BIN)/bench_tensor_matmul
 
 clean:
 	rm -rf $(BIN)
 
-.PHONY: all test clean
+.PHONY: all test benchmark-matmul clean
