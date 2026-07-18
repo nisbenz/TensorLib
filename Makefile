@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g -std=c11
+CFLAGS = -O3 -Wall -Wextra -g -std=c11
 SRC = src/tensor_core.c src/tensor_alloc.c src/tensor_view.c src/tensor_ops.c src/tensor_reduc.c src/tensor_matmul.c
 HEADERS = include/tensor.h include/tensor_matmul.h
 
