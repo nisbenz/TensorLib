@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include "../include/test_common.h"
 #include "../include/tensor.h"
 
