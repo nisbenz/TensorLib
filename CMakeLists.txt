@@ -49,3 +49,19 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/bench_tensor_matmul.c")
     target_link_libraries(bench_tensor_matmul PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
 endif()
 
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/bench_openblas_matmul.c")
+    find_path(OPENBLAS_INCLUDE_DIR NAMES cblas.h
+              HINTS C:/msys64/ucrt64/include
+              PATH_SUFFIXES openblas)
+    find_library(OPENBLAS_LIBRARY NAMES openblas
+                 HINTS C:/msys64/ucrt64/lib)
+
+    if (OPENBLAS_INCLUDE_DIR AND OPENBLAS_LIBRARY)
+        add_executable(bench_openblas_matmul benchmarks/bench_openblas_matmul.c)
+        target_include_directories(bench_openblas_matmul PRIVATE ${OPENBLAS_INCLUDE_DIR})
+        target_link_libraries(bench_openblas_matmul PRIVATE
+                              tensorlib ${OPENBLAS_LIBRARY} ${TENSORLIB_MATH_LIB})
+    else()
+        message(WARNING "OpenBLAS not found; bench_openblas_matmul will not be built")
+    endif()
+endif()

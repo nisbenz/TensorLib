@@ -1,5 +1,7 @@
 cmake-build-ucrt64-debug/
+cmake-build-ucrt64-release/
 cmake-build-debug/
+cmake-build-openblas_haswell/
 build/
 .idea/
 examples/*.exe
