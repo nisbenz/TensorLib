@@ -11,20 +11,20 @@ typedef struct {
     int columns;
 } matmul_operand_info;
 
-#define TENSORLIB_MATMUL_BLOCK_SIZE 32
+#define TENSORLIB_MATMUL_BLOCK_SIZE 64
 
 int matmul_avx2_available(void);
 
-void matmul_2d_blocked_contiguous(const float* a,
-                                  const float* b,
-                                  float* output,
+void matmul_2d_blocked_contiguous(const float* restrict a,
+                                  const float* restrict b,
+                                  float* restrict output,
                                   int rows,
                                   int inner,
                                   int columns);
 
-void matmul_2d_avx2_contiguous(const float* a,
-                               const float* b,
-                               float* output,
+void matmul_2d_avx2_contiguous(const float* restrict a,
+                               const float* restrict b,
+                               float* restrict output,
                                int rows,
                                int inner,
                                int columns);

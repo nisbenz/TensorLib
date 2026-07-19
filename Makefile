@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -O3  -Wall -Wextra -g -std=c11
+CFLAGS = -O3 -march=native -mtune=native -Wall -Wextra -g -std=c11
 SRC = src/tensor_core.c src/tensor_alloc.c src/tensor_view.c src/tensor_ops.c src/tensor_reduc.c src/tensor_matmul.c
 HEADERS = include/tensor.h include/tensor_matmul.h
 
@@ -32,8 +32,14 @@ $(BIN)/test_tensor_matmul: tests/test_tensor_matmul.c $(SRC) $(HEADERS) | $(BIN)
 $(BIN)/bench_tensor_matmul: benchmarks/bench_tensor_matmul.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ benchmarks/bench_tensor_matmul.c $(SRC) -lm
 
+$(BIN)/bench_tensor_matmul_reuse: benchmarks/bench_tensor_matmul_reuse.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ benchmarks/bench_tensor_matmul_reuse.c $(SRC) -lm
+
 $(BIN)/bench_openblas_matmul: benchmarks/bench_openblas_matmul.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ benchmarks/bench_openblas_matmul.c $(SRC) -lopenblas -lm
+
+$(BIN)/bench_openblas_matmul_reuse: benchmarks/bench_openblas_matmul_reuse.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ benchmarks/bench_openblas_matmul_reuse.c $(SRC) -lopenblas -lm
 
 test: $(TESTS)
 	@for t in $(TESTS); do ./$$t || exit 1; echo; done
@@ -41,10 +47,16 @@ test: $(TESTS)
 benchmark-matmul: $(BIN)/bench_tensor_matmul
 	./$(BIN)/bench_tensor_matmul
 
+benchmark-matmul-reuse: $(BIN)/bench_tensor_matmul_reuse
+	./$(BIN)/bench_tensor_matmul_reuse
+
 benchmark-openblas: $(BIN)/bench_openblas_matmul
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./$(BIN)/bench_openblas_matmul
+
+benchmark-openblas-reuse: $(BIN)/bench_openblas_matmul_reuse
+	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./$(BIN)/bench_openblas_matmul_reuse
 
 clean:
 	rm -rf $(BIN)
 
-.PHONY: all test benchmark-matmul benchmark-openblas clean
+.PHONY: all test benchmark-matmul benchmark-matmul-reuse benchmark-openblas benchmark-openblas-reuse clean

@@ -1,6 +1,9 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#if defined(_WIN32)
+#include <malloc.h>
+#endif
 
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
 #include <immintrin.h>
@@ -17,9 +20,33 @@
 
 #include "../include/tensor_matmul.h"
 
-void matmul_2d_blocked_contiguous(const float* a,
-                                  const float* b,
-                                  float* output,
+enum {
+    TENSORLIB_MATMUL_MC = 64,
+    TENSORLIB_MATMUL_NC = 64,
+    TENSORLIB_MATMUL_KC = 128,
+    TENSORLIB_MATMUL_NR = 16,
+    TENSORLIB_MATMUL_MR = 4
+};
+
+static void* matmul_aligned_malloc(size_t bytes) {
+#if defined(_WIN32)
+    return _aligned_malloc(bytes, 32);
+#else
+    return malloc(bytes);
+#endif
+}
+
+static void matmul_aligned_free(void* ptr) {
+#if defined(_WIN32)
+    _aligned_free(ptr);
+#else
+    free(ptr);
+#endif
+}
+
+void matmul_2d_blocked_contiguous(const float* restrict a,
+                                  const float* restrict b,
+                                  float* restrict output,
                                   int rows,
                                   int inner,
                                   int columns) {
@@ -59,67 +86,201 @@ void matmul_2d_blocked_contiguous(const float* a,
 
 #if TENSORLIB_HAS_AVX2_KERNEL
 int matmul_avx2_available(void) {
+    static int cached = -1;
+    if (cached >= 0) return cached;
+
 #if defined(__GNUC__)
     __builtin_cpu_init();
-    return __builtin_cpu_supports("avx2") != 0 &&
-           __builtin_cpu_supports("fma") != 0;
+    cached = __builtin_cpu_supports("avx2") != 0 &&
+             __builtin_cpu_supports("fma") != 0;
 #else
     int registers[4];
     __cpuid(registers, 0);
     unsigned int highest_leaf = (unsigned int)registers[0];
     __cpuidex(registers, 1, 0);
-    if ((registers[2] & (1 << 12)) == 0) return 0;
-    if (highest_leaf < 7) return 0;
-    __cpuidex(registers, 7, 0);
-    return (registers[1] & (1 << 5)) != 0;
+    if ((registers[2] & (1 << 12)) == 0 || highest_leaf < 7) {
+        cached = 0;
+    } else {
+        __cpuidex(registers, 7, 0);
+        cached = (registers[1] & (1 << 5)) != 0;
+    }
 #endif
+    return cached;
 }
 
 TENSORLIB_AVX2_TARGET
-void matmul_2d_avx2_contiguous(const float* a,
-                               const float* b,
-                               float* output,
+static void matmul_4x16_kernel(const float* restrict a,
+                               const float* restrict packed_b,
+                               float* restrict output,
+                               int inner,
+                               int output_stride,
+                               int k_start,
+                               int k_count,
+                               int accumulate) {
+    __m256 c00;
+    __m256 c01;
+    __m256 c10;
+    __m256 c11;
+    __m256 c20;
+    __m256 c21;
+    __m256 c30;
+    __m256 c31;
+
+    if (accumulate) {
+        c00 = _mm256_loadu_ps(output + 0 * output_stride + 0);
+        c01 = _mm256_loadu_ps(output + 0 * output_stride + 8);
+        c10 = _mm256_loadu_ps(output + 1 * output_stride + 0);
+        c11 = _mm256_loadu_ps(output + 1 * output_stride + 8);
+        c20 = _mm256_loadu_ps(output + 2 * output_stride + 0);
+        c21 = _mm256_loadu_ps(output + 2 * output_stride + 8);
+        c30 = _mm256_loadu_ps(output + 3 * output_stride + 0);
+        c31 = _mm256_loadu_ps(output + 3 * output_stride + 8);
+    } else {
+        c00 = _mm256_setzero_ps();
+        c01 = _mm256_setzero_ps();
+        c10 = _mm256_setzero_ps();
+        c11 = _mm256_setzero_ps();
+        c20 = _mm256_setzero_ps();
+        c21 = _mm256_setzero_ps();
+        c30 = _mm256_setzero_ps();
+        c31 = _mm256_setzero_ps();
+    }
+
+    const float* a0 = a + 0 * inner + k_start;
+    const float* a1 = a + 1 * inner + k_start;
+    const float* a2 = a + 2 * inner + k_start;
+    const float* a3 = a + 3 * inner + k_start;
+    const float* b = packed_b + (size_t)k_start * TENSORLIB_MATMUL_NR;
+
+    for (int k = 0; k < k_count; ++k) {
+        __m256 b0 = _mm256_loadu_ps(b + 0);
+        __m256 b1 = _mm256_loadu_ps(b + 8);
+
+        __m256 a0_value = _mm256_broadcast_ss(a0 + k);
+        __m256 a1_value = _mm256_broadcast_ss(a1 + k);
+        __m256 a2_value = _mm256_broadcast_ss(a2 + k);
+        __m256 a3_value = _mm256_broadcast_ss(a3 + k);
+
+        c00 = _mm256_fmadd_ps(a0_value, b0, c00);
+        c01 = _mm256_fmadd_ps(a0_value, b1, c01);
+        c10 = _mm256_fmadd_ps(a1_value, b0, c10);
+        c11 = _mm256_fmadd_ps(a1_value, b1, c11);
+        c20 = _mm256_fmadd_ps(a2_value, b0, c20);
+        c21 = _mm256_fmadd_ps(a2_value, b1, c21);
+        c30 = _mm256_fmadd_ps(a3_value, b0, c30);
+        c31 = _mm256_fmadd_ps(a3_value, b1, c31);
+        b += TENSORLIB_MATMUL_NR;
+    }
+
+    _mm256_storeu_ps(output + 0 * output_stride + 0, c00);
+    _mm256_storeu_ps(output + 0 * output_stride + 8, c01);
+    _mm256_storeu_ps(output + 1 * output_stride + 0, c10);
+    _mm256_storeu_ps(output + 1 * output_stride + 8, c11);
+    _mm256_storeu_ps(output + 2 * output_stride + 0, c20);
+    _mm256_storeu_ps(output + 2 * output_stride + 8, c21);
+    _mm256_storeu_ps(output + 3 * output_stride + 0, c30);
+    _mm256_storeu_ps(output + 3 * output_stride + 8, c31);
+}
+
+static void pack_b_panels(const float* restrict b,
+                          float* restrict packed_b,
+                          int inner,
+                          int columns,
+                          int panel_count) {
+    for (int panel = 0; panel < panel_count; ++panel) {
+        int column_start = panel * TENSORLIB_MATMUL_NR;
+        float* panel_data = packed_b +
+            (size_t)panel * (size_t)inner * TENSORLIB_MATMUL_NR;
+
+        for (int k = 0; k < inner; ++k) {
+            for (int column = 0; column < TENSORLIB_MATMUL_NR; ++column) {
+                int source_column = column_start + column;
+                panel_data[k * TENSORLIB_MATMUL_NR + column] =
+                    (source_column < columns)
+                        ? b[k * columns + source_column]
+                        : 0.0f;
+            }
+        }
+    }
+}
+
+TENSORLIB_AVX2_TARGET
+void matmul_2d_avx2_contiguous(const float* restrict a,
+                               const float* restrict b,
+                               float* restrict output,
                                int rows,
                                int inner,
                                int columns) {
-    for (int row_block = 0; row_block < rows; row_block += 4) {
-        int row_end = row_block + 4;
-        if (row_end > rows) row_end = rows;
+    int full_rows = rows - (rows % TENSORLIB_MATMUL_MR);
+    int full_columns = columns - (columns % TENSORLIB_MATMUL_NR);
+    int panel_count = (columns + TENSORLIB_MATMUL_NR - 1) /
+                      TENSORLIB_MATMUL_NR;
 
-        for (int column_block = 0; column_block < columns; column_block += 8) {
-            int column_end = column_block + 8;
-            if (column_end > columns) column_end = columns;
+    if (full_rows > 0 && full_columns > 0) {
+        size_t packed_count = (size_t)panel_count * (size_t)inner *
+                              TENSORLIB_MATMUL_NR;
+        float* packed_b = (float*)matmul_aligned_malloc(
+            packed_count * sizeof(float));
 
-            if (row_end - row_block == 4 && column_end - column_block == 8) {
-                __m256 c0 = _mm256_setzero_ps();
-                __m256 c1 = _mm256_setzero_ps();
-                __m256 c2 = _mm256_setzero_ps();
-                __m256 c3 = _mm256_setzero_ps();
+        if (packed_b == NULL) {
+            matmul_2d_blocked_contiguous(a, b, output, rows, inner, columns);
+            return;
+        }
 
-                for (int k = 0; k < inner; ++k) {
-                    __m256 b_values = _mm256_loadu_ps(b + k * columns + column_block);
-                    c0 = _mm256_fmadd_ps(_mm256_set1_ps(a[(row_block + 0) * inner + k]), b_values, c0);
-                    c1 = _mm256_fmadd_ps(_mm256_set1_ps(a[(row_block + 1) * inner + k]), b_values, c1);
-                    c2 = _mm256_fmadd_ps(_mm256_set1_ps(a[(row_block + 2) * inner + k]), b_values, c2);
-                    c3 = _mm256_fmadd_ps(_mm256_set1_ps(a[(row_block + 3) * inner + k]), b_values, c3);
-                }
+        pack_b_panels(b, packed_b, inner, columns, panel_count);
 
-                _mm256_storeu_ps(output + (row_block + 0) * columns + column_block, c0);
-                _mm256_storeu_ps(output + (row_block + 1) * columns + column_block, c1);
-                _mm256_storeu_ps(output + (row_block + 2) * columns + column_block, c2);
-                _mm256_storeu_ps(output + (row_block + 3) * columns + column_block, c3);
-                continue;
-            }
+        for (int row_block = 0; row_block < full_rows;
+             row_block += TENSORLIB_MATMUL_MC) {
+            int row_end = row_block + TENSORLIB_MATMUL_MC;
+            if (row_end > full_rows) row_end = full_rows;
 
-            for (int row = row_block; row < row_end; ++row) {
-                for (int column = column_block; column < column_end; ++column) {
-                    float sum = 0.0f;
-                    for (int k = 0; k < inner; ++k) {
-                        sum += a[row * inner + k] * b[k * columns + column];
+            for (int column_block = 0; column_block < full_columns;
+                 column_block += TENSORLIB_MATMUL_NC) {
+                int column_end = column_block + TENSORLIB_MATMUL_NC;
+                if (column_end > full_columns) column_end = full_columns;
+
+                for (int inner_block = 0; inner_block < inner;
+                     inner_block += TENSORLIB_MATMUL_KC) {
+                    int inner_end = inner_block + TENSORLIB_MATMUL_KC;
+                    if (inner_end > inner) inner_end = inner;
+                    int accumulate = (inner_block != 0);
+
+                    for (int column_panel = column_block;
+                         column_panel < column_end;
+                         column_panel += TENSORLIB_MATMUL_NR) {
+                        const float* packed_panel = packed_b +
+                            (size_t)(column_panel / TENSORLIB_MATMUL_NR) *
+                            (size_t)inner * TENSORLIB_MATMUL_NR;
+
+                        for (int row = row_block; row < row_end;
+                             row += TENSORLIB_MATMUL_MR) {
+                            matmul_4x16_kernel(
+                                a + row * inner,
+                                packed_panel,
+                                output + row * columns + column_panel,
+                                inner,
+                                columns,
+                                inner_block,
+                                inner_end - inner_block,
+                                accumulate);
+                        }
                     }
-                    output[row * columns + column] = sum;
                 }
             }
+        }
+
+        matmul_aligned_free(packed_b);
+    }
+
+    for (int row = 0; row < rows; ++row) {
+        for (int column = 0; column < columns; ++column) {
+            if (row < full_rows && column < full_columns) continue;
+
+            float sum = 0.0f;
+            for (int k = 0; k < inner; ++k) {
+                sum += a[row * inner + k] * b[k * columns + column];
+            }
+            output[row * columns + column] = sum;
         }
     }
 }
