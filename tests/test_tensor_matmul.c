@@ -259,6 +259,77 @@ TEST(test_packed_rhs_handles_non_multiple_kernel_dimensions) {
     t_free(left);
 }
 
+TEST(test_packed_rhs_handles_reshape_contiguous_squeeze_and_unsqueeze) {
+    int left_dims[2] = {3, 4};
+    int right_base_dims[2] = {6, 4};
+    int reshaped_dims[2] = {4, 6};
+    tensor* left = t_alloc(2, left_dims);
+    tensor* right_base = t_alloc(2, right_base_dims);
+    for (int index = 0; index < tensor_numel(left); ++index) {
+        left->storage->data[index] = (float)(index - 4);
+    }
+    for (int index = 0; index < tensor_numel(right_base); ++index) {
+        right_base->storage->data[index] = (float)((index % 9) - 4);
+    }
+
+    tensor* right_transposed = t_transpose(right_base, 0, 1);
+    tensor* right = t_reshape(right_transposed, 2, reshaped_dims);
+    tensor* left_batched = t_unsqueeze(left, 0);
+    tensor* right_batched = t_unsqueeze(right, 0);
+    tensor* expected_batched = t_matmul(left_batched, right_batched);
+    tensor_matmul_packed_rhs* packed_batched = t_pack_matmul_rhs(right_batched);
+    tensor* actual_batched = t_matmul_packed_rhs(left_batched, packed_batched);
+    assert_same_tensor(actual_batched, expected_batched);
+
+    tensor* left_squeezed = t_squeeze(left_batched, 0);
+    tensor* right_squeezed = t_squeeze(right_batched, 0);
+    tensor* expected = t_matmul(left_squeezed, right_squeezed);
+    tensor_matmul_packed_rhs* packed = t_pack_matmul_rhs(right_squeezed);
+    tensor* actual = t_matmul_packed_rhs(left_squeezed, packed);
+    assert_same_tensor(actual, expected);
+
+    t_free(actual);
+    t_free_matmul_packed_rhs(packed);
+    t_free(expected);
+    t_free(right_squeezed);
+    t_free(left_squeezed);
+    t_free(actual_batched);
+    t_free_matmul_packed_rhs(packed_batched);
+    t_free(expected_batched);
+    t_free(right_batched);
+    t_free(left_batched);
+    t_free(right);
+    t_free(right_transposed);
+    t_free(right_base);
+    t_free(left);
+}
+
+TEST(test_packed_rhs_broadcasts_positive_stride_batches) {
+    int left_dims[3] = {2, 3, 4};
+    int right_base_dims[3] = {1, 6, 4};
+    tensor* left = t_alloc(3, left_dims);
+    tensor* right_base = t_alloc(3, right_base_dims);
+    for (int index = 0; index < tensor_numel(left); ++index) {
+        left->storage->data[index] = (float)((index % 7) - 3);
+    }
+    for (int index = 0; index < tensor_numel(right_base); ++index) {
+        right_base->storage->data[index] = (float)((index % 5) - 2);
+    }
+
+    tensor* right = t_transpose(right_base, 1, 2);
+    tensor* expected = t_matmul(left, right);
+    tensor_matmul_packed_rhs* packed = t_pack_matmul_rhs(right);
+    tensor* actual = t_matmul_packed_rhs(left, packed);
+    assert_same_tensor(actual, expected);
+
+    t_free(actual);
+    t_free_matmul_packed_rhs(packed);
+    t_free(expected);
+    t_free(right);
+    t_free(right_base);
+    t_free(left);
+}
+
 TEST(test_t_matmul_rejects_invalid_shapes) {
     int a_dims[2] = {2, 3};
     int b_dims[2] = {4, 2};
@@ -326,6 +397,8 @@ int main(void) {
     RUN_TEST(test_packed_rhs_snapshots_transposed_view);
     RUN_TEST(test_packed_rhs_handles_transposed_slices_and_kernel_tails);
     RUN_TEST(test_packed_rhs_handles_non_multiple_kernel_dimensions);
+    RUN_TEST(test_packed_rhs_handles_reshape_contiguous_squeeze_and_unsqueeze);
+    RUN_TEST(test_packed_rhs_broadcasts_positive_stride_batches);
     RUN_TEST(test_t_matmul_rejects_invalid_shapes);
     RUN_TEST(test_t_matmul_validates_vector_inner_dimension);
     RUN_TEST(test_t_matmul_allows_aliasing_and_returns_independent_storage);
