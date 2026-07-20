@@ -24,10 +24,12 @@ tensor* t_transpose(tensor* a, int dim0, int dim1);
 int same_shape(tensor* a, tensor* b);
 int same_stride(tensor* a, tensor* b);
 int init_t(tensor* c, tensor* ref);
+/* Elementwise binary operations use right-aligned NumPy-style broadcasting. */
 tensor* t_add(tensor* a, tensor* b);
 tensor* t_sub(tensor* a, tensor* b);
 tensor* t_mul(tensor* a, tensor* b);
 tensor* t_div(tensor* a, tensor* b);
+/* Scalar helpers implement tensor op float without allocating a scalar tensor. */
 tensor* t_add_scalar(tensor* a, float scalar);
 tensor* t_sub_scalar(tensor* a, float scalar);
 tensor* t_mul_scalar(tensor* a, float scalar);
@@ -51,6 +53,7 @@ void calc_strides(int ndim, const int* dims, int* strides);
 tensor* t_reshape(tensor* a, int new_ndim, int* new_dims);
 tensor* t_squeeze(tensor* a, int dim);
 tensor* t_unsqueeze(tensor* a, int dim);
+/* Expand creates a zero-copy view; broadcast dimensions use zero strides. */
 tensor* t_expand(tensor* a, int new_ndim, const int* new_dims);
 tensor* t_slice(tensor* a, int dim, int start, int end);
 tensor* t_exp(tensor* t);
@@ -62,11 +65,13 @@ tensor* t_pow(tensor* t, float exponent);
 tensor* t_neg(tensor* t);
 tensor* t_sqrt(tensor* t);
 tensor* t_gelu(tensor* t);
+/* Legacy reductions remove the reduced dimension. */
 tensor* t_sum(tensor* a, int dim);
-tensor* t_sum_keepdim(tensor* a, int dim);
 tensor* t_mean(tensor* a, int dim);
-tensor* t_mean_keepdim(tensor* a, int dim);
 tensor* t_max(tensor* a, int dim);
+/* Keepdim reductions retain the reduced dimension with size one. */
+tensor* t_sum_keepdim(tensor* a, int dim);
+tensor* t_mean_keepdim(tensor* a, int dim);
 tensor* t_max_keepdim(tensor* a, int dim);
 tensor* t_matmul(tensor* a, tensor* b);
 tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs);
