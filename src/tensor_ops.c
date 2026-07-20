@@ -149,6 +149,60 @@ tensor* t_sub(tensor* a, tensor* b) { return apply_binary(a, b, op_sub, sub_cont
 tensor* t_mul(tensor* a, tensor* b) { return apply_binary(a, b, op_mul, mul_contiguous, "multiply"); }
 tensor* t_div(tensor* a, tensor* b) { return apply_binary(a, b, op_div, div_contiguous, "divide"); }
 
+static tensor* apply_scalar_binary(tensor* a,
+                                   float scalar,
+                                   binary_fn scalar_op) {
+    if (!tensor_has_valid_metadata(a) || scalar_op == NULL) return NULL;
+
+    tensor* out = t_alloc(a->ndim, a->dims);
+    if (out == NULL) return NULL;
+
+    int total_elements = tensor_numel(a);
+    if (is_contiguous(a) && is_contiguous(out)) {
+        for (int i = 0; i < total_elements; ++i) {
+            out->storage->data[out->offset + i] =
+                scalar_op(a->storage->data[a->offset + i], scalar);
+        }
+        return out;
+    }
+
+    int* coords = NULL;
+    if (a->ndim > 0) {
+        coords = (int*)calloc((size_t)a->ndim, sizeof(int));
+        if (coords == NULL) {
+            t_free(out);
+            return NULL;
+        }
+    }
+
+    for (int i = 0; i < total_elements; ++i) {
+        int input_index = get_flat_index_nd(a, coords);
+        int output_index = get_flat_index_nd(out, coords);
+        out->storage->data[output_index] =
+            scalar_op(a->storage->data[input_index], scalar);
+        advance_coords(coords, a->dims, a->ndim);
+    }
+
+    free(coords);
+    return out;
+}
+
+tensor* t_add_scalar(tensor* a, float scalar) {
+    return apply_scalar_binary(a, scalar, op_add);
+}
+
+tensor* t_sub_scalar(tensor* a, float scalar) {
+    return apply_scalar_binary(a, scalar, op_sub);
+}
+
+tensor* t_mul_scalar(tensor* a, float scalar) {
+    return apply_scalar_binary(a, scalar, op_mul);
+}
+
+tensor* t_div_scalar(tensor* a, float scalar) {
+    return apply_scalar_binary(a, scalar, op_div);
+}
+
 typedef float (*unary_fn)(float);
 
 static tensor* apply_unary(tensor* input, unary_fn fn) {
