@@ -1,4 +1,5 @@
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #if defined(_WIN32)
@@ -28,6 +29,23 @@ enum {
     TENSORLIB_MATMUL_MR = 4
 };
 
+struct tensor_matmul_packed_rhs {
+    int batch_rank;
+    int* batch_dims;
+    int inner;
+    int columns;
+    int panel_count;
+    size_t batch_count;
+    size_t values_per_batch;
+    float* data;
+};
+
+static int checked_size_multiply(size_t left, size_t right, size_t* result) {
+    if (result == NULL || (right != 0 && left > SIZE_MAX / right)) return 0;
+    *result = left * right;
+    return 1;
+}
+
 static void* matmul_aligned_malloc(size_t bytes) {
 #if defined(_WIN32)
     return _aligned_malloc(bytes, 32);
@@ -42,6 +60,126 @@ static void matmul_aligned_free(void* ptr) {
 #else
     free(ptr);
 #endif
+}
+
+static int packed_rhs_batch_offset(const tensor* rhs, size_t batch_index,
+                                   int batch_rank, int* offset) {
+    if (offset == NULL) return 0;
+
+    int result = rhs->offset;
+    for (int axis = batch_rank - 1; axis >= 0; --axis) {
+        int coordinate = (int)(batch_index % (size_t)rhs->dims[axis]);
+        batch_index /= (size_t)rhs->dims[axis];
+        result += coordinate * rhs->strides[axis];
+    }
+
+    *offset = result;
+    return 1;
+}
+
+static void pack_rhs_batch(const tensor* rhs, int rhs_base,
+                           float* packed_data, int inner, int columns,
+                           int panel_count) {
+    int inner_stride = rhs->strides[rhs->ndim - 2];
+    int column_stride = rhs->strides[rhs->ndim - 1];
+
+    for (int panel = 0; panel < panel_count; ++panel) {
+        int column_start = panel * TENSORLIB_MATMUL_NR;
+        float* panel_data = packed_data +
+            (size_t)panel * (size_t)inner * TENSORLIB_MATMUL_NR;
+
+        for (int k = 0; k < inner; ++k) {
+            for (int column = 0; column < TENSORLIB_MATMUL_NR; ++column) {
+                int source_column = column_start + column;
+                panel_data[k * TENSORLIB_MATMUL_NR + column] =
+                    (source_column < columns)
+                        ? rhs->storage->data[rhs_base + k * inner_stride +
+                                             source_column * column_stride]
+                        : 0.0f;
+            }
+        }
+    }
+}
+
+tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs) {
+    if (!tensor_has_valid_metadata(rhs) || rhs->ndim < 2) return NULL;
+
+    int batch_rank = rhs->ndim - 2;
+    int inner_stride = rhs->strides[rhs->ndim - 2];
+    int column_stride = rhs->strides[rhs->ndim - 1];
+    if (inner_stride <= 0 || column_stride <= 0) return NULL;
+
+    tensor_matmul_packed_rhs* packed =
+        (tensor_matmul_packed_rhs*)calloc(1, sizeof(*packed));
+    if (packed == NULL) return NULL;
+
+    packed->batch_rank = batch_rank;
+    packed->inner = rhs->dims[rhs->ndim - 2];
+    packed->columns = rhs->dims[rhs->ndim - 1];
+    packed->panel_count = (packed->columns + TENSORLIB_MATMUL_NR - 1) /
+                          TENSORLIB_MATMUL_NR;
+
+    if (!tensor_checked_numel(batch_rank, rhs->dims, &packed->batch_count)) {
+        t_free_matmul_packed_rhs(packed);
+        return NULL;
+    }
+
+    if (batch_rank > 0) {
+        packed->batch_dims = (int*)malloc((size_t)batch_rank * sizeof(int));
+        if (packed->batch_dims == NULL) {
+            t_free_matmul_packed_rhs(packed);
+            return NULL;
+        }
+
+        for (int axis = 0; axis < batch_rank; ++axis) {
+            if (rhs->strides[axis] <= 0) {
+                t_free_matmul_packed_rhs(packed);
+                return NULL;
+            }
+            packed->batch_dims[axis] = rhs->dims[axis];
+        }
+    }
+
+    size_t panel_values;
+    if (!checked_size_multiply((size_t)packed->panel_count,
+                               (size_t)packed->inner,
+                               &panel_values) ||
+        !checked_size_multiply(panel_values, TENSORLIB_MATMUL_NR,
+                               &packed->values_per_batch)) {
+        t_free_matmul_packed_rhs(packed);
+        return NULL;
+    }
+
+    size_t total_values;
+    if (!checked_size_multiply(packed->batch_count, packed->values_per_batch,
+                               &total_values) ||
+        !checked_size_multiply(total_values, sizeof(float), &total_values)) {
+        t_free_matmul_packed_rhs(packed);
+        return NULL;
+    }
+
+    packed->data = (float*)matmul_aligned_malloc(total_values);
+    if (packed->data == NULL) {
+        t_free_matmul_packed_rhs(packed);
+        return NULL;
+    }
+
+    for (size_t batch = 0; batch < packed->batch_count; ++batch) {
+        int rhs_base;
+        packed_rhs_batch_offset(rhs, batch, batch_rank, &rhs_base);
+        pack_rhs_batch(rhs, rhs_base,
+                       packed->data + batch * packed->values_per_batch,
+                       packed->inner, packed->columns, packed->panel_count);
+    }
+
+    return packed;
+}
+
+void t_free_matmul_packed_rhs(tensor_matmul_packed_rhs* rhs) {
+    if (rhs == NULL) return;
+    matmul_aligned_free(rhs->data);
+    free(rhs->batch_dims);
+    free(rhs);
 }
 
 void matmul_2d_blocked_contiguous(const float* restrict a,
