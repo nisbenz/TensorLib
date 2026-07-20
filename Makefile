@@ -35,6 +35,9 @@ $(BIN)/bench_tensor_matmul: benchmarks/bench_tensor_matmul.c $(SRC) $(HEADERS) |
 $(BIN)/bench_tensor_matmul_reuse: benchmarks/bench_tensor_matmul_reuse.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ benchmarks/bench_tensor_matmul_reuse.c $(SRC) -lm
 
+$(BIN)/bench_tensor_matmul_packed_views: benchmarks/bench_tensor_matmul_packed_views.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ benchmarks/bench_tensor_matmul_packed_views.c $(SRC) -lm
+
 $(BIN)/bench_openblas_matmul: benchmarks/bench_openblas_matmul.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ benchmarks/bench_openblas_matmul.c $(SRC) -lopenblas -lm
 
@@ -50,6 +53,9 @@ benchmark-matmul: $(BIN)/bench_tensor_matmul
 benchmark-matmul-reuse: $(BIN)/bench_tensor_matmul_reuse
 	./$(BIN)/bench_tensor_matmul_reuse
 
+benchmark-packed-views: $(BIN)/bench_tensor_matmul_packed_views
+	./$(BIN)/bench_tensor_matmul_packed_views
+
 benchmark-openblas: $(BIN)/bench_openblas_matmul
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./$(BIN)/bench_openblas_matmul
 
@@ -59,4 +65,4 @@ benchmark-openblas-reuse: $(BIN)/bench_openblas_matmul_reuse
 clean:
 	rm -rf $(BIN)
 
-.PHONY: all test benchmark-matmul benchmark-matmul-reuse benchmark-openblas benchmark-openblas-reuse clean
+.PHONY: all test benchmark-matmul benchmark-matmul-reuse benchmark-packed-views benchmark-openblas benchmark-openblas-reuse clean
