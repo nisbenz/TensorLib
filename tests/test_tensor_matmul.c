@@ -160,6 +160,36 @@ TEST(test_t_matmul_vector_cases) {
     t_free(vector);
 }
 
+TEST(test_packed_rhs_snapshots_transposed_view) {
+    int a_dims[2] = {2, 3};
+    int b_base_dims[2] = {2, 3};
+    tensor* a = t_alloc(2, a_dims);
+    tensor* b_base = t_alloc(2, b_base_dims);
+    const float a_values[6] = {1, 2, 3, 4, 5, 6};
+    const float b_values[6] = {7, 9, 11, 8, 10, 12};
+    fill_tensor(a, a_values, 6);
+    fill_tensor(b_base, b_values, 6);
+
+    tensor* b = t_transpose(b_base, 0, 1);
+    tensor_matmul_packed_rhs* packed = t_pack_matmul_rhs(b);
+    ASSERT_NOT_NULL(packed);
+
+    b_base->storage->data[0] = -99.0f;
+    t_free(b);
+    t_free(b_base);
+
+    tensor* c = t_matmul_packed_rhs(a, packed);
+    ASSERT_NOT_NULL(c);
+    ASSERT_EQ_FLOAT(c->storage->data[0], 58.0f);
+    ASSERT_EQ_FLOAT(c->storage->data[1], 64.0f);
+    ASSERT_EQ_FLOAT(c->storage->data[2], 139.0f);
+    ASSERT_EQ_FLOAT(c->storage->data[3], 154.0f);
+
+    t_free(c);
+    t_free_matmul_packed_rhs(packed);
+    t_free(a);
+}
+
 TEST(test_t_matmul_rejects_invalid_shapes) {
     int a_dims[2] = {2, 3};
     int b_dims[2] = {4, 2};
@@ -224,6 +254,7 @@ int main(void) {
     RUN_TEST(test_t_matmul_broadcasts_batch_dimensions);
     RUN_TEST(test_t_matmul_accepts_transposed_views);
     RUN_TEST(test_t_matmul_vector_cases);
+    RUN_TEST(test_packed_rhs_snapshots_transposed_view);
     RUN_TEST(test_t_matmul_rejects_invalid_shapes);
     RUN_TEST(test_t_matmul_validates_vector_inner_dimension);
     RUN_TEST(test_t_matmul_allows_aliasing_and_returns_independent_storage);
