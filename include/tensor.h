@@ -63,8 +63,11 @@ tensor* t_neg(tensor* t);
 tensor* t_sqrt(tensor* t);
 tensor* t_gelu(tensor* t);
 tensor* t_sum(tensor* a, int dim);
+tensor* t_sum_keepdim(tensor* a, int dim);
 tensor* t_mean(tensor* a, int dim);
+tensor* t_mean_keepdim(tensor* a, int dim);
 tensor* t_max(tensor* a, int dim);
+tensor* t_max_keepdim(tensor* a, int dim);
 tensor* t_matmul(tensor* a, tensor* b);
 tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs);
 tensor* t_matmul_packed_rhs(const tensor* lhs,

@@ -2,7 +2,35 @@
 #include <stdlib.h>
 #include <math.h>
 #include "../include/tensor.h"
-tensor* t_sum(tensor* a, int dim) {
+
+static int make_reduction_dims(const tensor* a,
+                               int dim,
+                               int keepdim,
+                               int* output_ndim,
+                               int** output_dims) {
+    if (a == NULL || output_ndim == NULL || output_dims == NULL) return 0;
+
+    *output_ndim = keepdim ? a->ndim : a->ndim - 1;
+    *output_dims = NULL;
+    if (*output_ndim == 0) return 1;
+
+    int* dims = (int*)malloc((size_t)*output_ndim * sizeof(int));
+    if (dims == NULL) return 0;
+
+    int output_axis = 0;
+    for (int input_axis = 0; input_axis < a->ndim; ++input_axis) {
+        if (input_axis == dim) {
+            if (keepdim) dims[output_axis++] = 1;
+        } else {
+            dims[output_axis++] = a->dims[input_axis];
+        }
+    }
+
+    *output_dims = dims;
+    return 1;
+}
+
+static tensor* reduce_sum(tensor* a, int dim, int keepdim) {
     if (!tensor_has_valid_metadata(a)) {
         return NULL;
     }
@@ -13,20 +41,11 @@ tensor* t_sum(tensor* a, int dim) {
     }
 
 
-    int output_ndim = a->ndim - 1;
+    int output_ndim = 0;
     int* output_dims = NULL;
 
-    if (output_ndim > 0) {
-        output_dims = malloc((size_t)output_ndim * sizeof(int));
-        if (output_dims == NULL) {
-            return NULL;
-        }
-
-        for (int input_axis = 0, output_axis = 0; input_axis < a->ndim; ++input_axis) {
-            if (input_axis != dim) {
-                output_dims[output_axis++] = a->dims[input_axis];
-            }
-        }
+    if (!make_reduction_dims(a, dim, keepdim, &output_ndim, &output_dims)) {
+        return NULL;
     }
 
 
@@ -66,6 +85,7 @@ tensor* t_sum(tensor* a, int dim) {
 
             if (input_axis == dim) {
                 input_coords[input_axis] = 0;
+                if (keepdim) ++output_axis;
             } else {
                 input_coords[input_axis] =
                     output_coords[output_axis++];
@@ -98,7 +118,15 @@ tensor* t_sum(tensor* a, int dim) {
     return out;
 }
 
-tensor* t_mean(tensor* a, int dim) {
+tensor* t_sum(tensor* a, int dim) {
+    return reduce_sum(a, dim, 0);
+}
+
+tensor* t_sum_keepdim(tensor* a, int dim) {
+    return reduce_sum(a, dim, 1);
+}
+
+static tensor* reduce_mean(tensor* a, int dim, int keepdim) {
     if (!tensor_has_valid_metadata(a)) {
         return NULL;
     }
@@ -108,7 +136,7 @@ tensor* t_mean(tensor* a, int dim) {
         return NULL;
     }
 
-    tensor* out = t_sum(a, dim);
+    tensor* out = reduce_sum(a, dim, keepdim);
     if (out == NULL) {
         return NULL;
     }
@@ -122,7 +150,15 @@ tensor* t_mean(tensor* a, int dim) {
     return out;
 }
 
-tensor* t_max(tensor* a, int dim) {
+tensor* t_mean(tensor* a, int dim) {
+    return reduce_mean(a, dim, 0);
+}
+
+tensor* t_mean_keepdim(tensor* a, int dim) {
+    return reduce_mean(a, dim, 1);
+}
+
+static tensor* reduce_max(tensor* a, int dim, int keepdim) {
     if (!tensor_has_valid_metadata(a)) {
         return NULL;
     }
@@ -137,22 +173,11 @@ tensor* t_max(tensor* a, int dim) {
         return NULL;
     }
 
-    int output_ndim = a->ndim - 1;
+    int output_ndim = 0;
     int* output_dims = NULL;
 
-    if (output_ndim > 0) {
-        output_dims = malloc((size_t)output_ndim * sizeof(int));
-        if (output_dims == NULL) {
-            return NULL;
-        }
-
-        for (int input_axis = 0, output_axis = 0;
-             input_axis < a->ndim;
-             ++input_axis) {
-            if (input_axis != dim) {
-                output_dims[output_axis++] = a->dims[input_axis];
-            }
-        }
+    if (!make_reduction_dims(a, dim, keepdim, &output_ndim, &output_dims)) {
+        return NULL;
     }
 
     tensor* out = t_alloc(output_ndim, output_dims);
@@ -189,6 +214,7 @@ tensor* t_max(tensor* a, int dim) {
              ++input_axis) {
             if (input_axis == dim) {
                 input_coords[input_axis] = 0;
+                if (keepdim) ++output_axis;
             } else {
                 input_coords[input_axis] = output_coords[output_axis++];
             }
@@ -229,4 +255,12 @@ tensor* t_max(tensor* a, int dim) {
     free(input_coords);
 
     return out;
+}
+
+tensor* t_max(tensor* a, int dim) {
+    return reduce_max(a, dim, 0);
+}
+
+tensor* t_max_keepdim(tensor* a, int dim) {
+    return reduce_max(a, dim, 1);
 }
