@@ -330,6 +330,34 @@ TEST(test_packed_rhs_broadcasts_positive_stride_batches) {
     t_free(left);
 }
 
+TEST(test_packed_rhs_handles_materialized_contiguous_view) {
+    int left_dims[2] = {3, 4};
+    int right_base_dims[2] = {6, 4};
+    tensor* left = t_alloc(2, left_dims);
+    tensor* right_base = t_alloc(2, right_base_dims);
+    for (int index = 0; index < tensor_numel(left); ++index) {
+        left->storage->data[index] = (float)((index % 5) - 2);
+    }
+    for (int index = 0; index < tensor_numel(right_base); ++index) {
+        right_base->storage->data[index] = (float)((index % 7) - 3);
+    }
+
+    tensor* right_transposed = t_transpose(right_base, 0, 1);
+    tensor* right = t_contiguous(right_transposed);
+    tensor* expected = t_matmul(left, right);
+    tensor_matmul_packed_rhs* packed = t_pack_matmul_rhs(right);
+    tensor* actual = t_matmul_packed_rhs(left, packed);
+    assert_same_tensor(actual, expected);
+
+    t_free(actual);
+    t_free_matmul_packed_rhs(packed);
+    t_free(expected);
+    t_free(right);
+    t_free(right_transposed);
+    t_free(right_base);
+    t_free(left);
+}
+
 TEST(test_packed_rhs_rejects_zero_stride_and_non_matrix_rhs) {
     int left_dims[2] = {2, 3};
     int narrow_rhs_dims[2] = {3, 1};
@@ -434,6 +462,7 @@ int main(void) {
     RUN_TEST(test_packed_rhs_handles_non_multiple_kernel_dimensions);
     RUN_TEST(test_packed_rhs_handles_reshape_contiguous_squeeze_and_unsqueeze);
     RUN_TEST(test_packed_rhs_broadcasts_positive_stride_batches);
+    RUN_TEST(test_packed_rhs_handles_materialized_contiguous_view);
     RUN_TEST(test_packed_rhs_rejects_zero_stride_and_non_matrix_rhs);
     RUN_TEST(test_t_matmul_rejects_invalid_shapes);
     RUN_TEST(test_t_matmul_validates_vector_inner_dimension);
