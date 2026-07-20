@@ -46,6 +46,13 @@ static int checked_size_multiply(size_t left, size_t right, size_t* result) {
     return 1;
 }
 
+#if TENSORLIB_HAS_AVX2_KERNEL
+static int matmul_2d_packed_rhs_avx2(const tensor* lhs, int lhs_base,
+                                      const float* packed_rhs, int rows,
+                                      int inner, int columns, tensor* output,
+                                      int output_base, int output_batch_ndim);
+#endif
+
 static void* matmul_aligned_malloc(size_t bytes) {
 #if defined(_WIN32)
     return _aligned_malloc(bytes, 32);
@@ -309,9 +316,27 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
         int output_base = output_batch_offset(output, batch_coords, batch_ndim);
         size_t rhs_batch = packed_rhs_batch_index(rhs, batch_coords, batch_ndim);
 
+        const float* packed_rhs = rhs->data + rhs_batch * rhs->values_per_batch;
+#if TENSORLIB_HAS_AVX2_KERNEL
+        int lhs_row_stride = lhs->strides[lhs->ndim - 2];
+        int lhs_inner_stride = lhs->strides[lhs->ndim - 1];
+        if (lhs_row_stride > 0 && lhs_inner_stride > 0 &&
+            matmul_avx2_available() &&
+            matmul_2d_packed_rhs_avx2(lhs, lhs_base, packed_rhs,
+                                       lhs_info.rows, lhs_info.inner,
+                                       rhs->columns, output, output_base,
+                                       batch_ndim)) {
+            /* The AVX2 kernel completed this batch. */
+        } else {
+            matmul_2d_packed_rhs_scalar(lhs, &lhs_info, lhs_base,
+                                        packed_rhs, rhs->columns,
+                                        output, output_base, batch_ndim);
+        }
+#else
         matmul_2d_packed_rhs_scalar(lhs, &lhs_info, lhs_base,
-                                    rhs->data + rhs_batch * rhs->values_per_batch,
-                                    rhs->columns, output, output_base, batch_ndim);
+                                    packed_rhs, rhs->columns,
+                                    output, output_base, batch_ndim);
+#endif
 
         if (batch_ndim > 0) advance_coords(batch_coords, batch_dims, batch_ndim);
     }
@@ -560,6 +585,177 @@ void matmul_2d_avx2_contiguous(const float* restrict a,
             output[row * columns + column] = sum;
         }
     }
+}
+
+TENSORLIB_AVX2_TARGET
+static void matmul_4x16_packed_a_kernel(const float* restrict packed_a,
+                                         const float* restrict packed_b,
+                                         float* restrict output,
+                                         int output_stride,
+                                         int k_count,
+                                         int accumulate) {
+    __m256 c00;
+    __m256 c01;
+    __m256 c10;
+    __m256 c11;
+    __m256 c20;
+    __m256 c21;
+    __m256 c30;
+    __m256 c31;
+
+    if (accumulate) {
+        c00 = _mm256_loadu_ps(output + 0 * output_stride + 0);
+        c01 = _mm256_loadu_ps(output + 0 * output_stride + 8);
+        c10 = _mm256_loadu_ps(output + 1 * output_stride + 0);
+        c11 = _mm256_loadu_ps(output + 1 * output_stride + 8);
+        c20 = _mm256_loadu_ps(output + 2 * output_stride + 0);
+        c21 = _mm256_loadu_ps(output + 2 * output_stride + 8);
+        c30 = _mm256_loadu_ps(output + 3 * output_stride + 0);
+        c31 = _mm256_loadu_ps(output + 3 * output_stride + 8);
+    } else {
+        c00 = _mm256_setzero_ps(); c01 = _mm256_setzero_ps();
+        c10 = _mm256_setzero_ps(); c11 = _mm256_setzero_ps();
+        c20 = _mm256_setzero_ps(); c21 = _mm256_setzero_ps();
+        c30 = _mm256_setzero_ps(); c31 = _mm256_setzero_ps();
+    }
+
+    const float* a0 = packed_a;
+    const float* a1 = packed_a + k_count;
+    const float* a2 = packed_a + 2 * k_count;
+    const float* a3 = packed_a + 3 * k_count;
+
+    for (int k = 0; k < k_count; ++k) {
+        __m256 b0 = _mm256_loadu_ps(packed_b + k * TENSORLIB_MATMUL_NR);
+        __m256 b1 = _mm256_loadu_ps(packed_b + k * TENSORLIB_MATMUL_NR + 8);
+        __m256 a0_value = _mm256_broadcast_ss(a0 + k);
+        __m256 a1_value = _mm256_broadcast_ss(a1 + k);
+        __m256 a2_value = _mm256_broadcast_ss(a2 + k);
+        __m256 a3_value = _mm256_broadcast_ss(a3 + k);
+
+        c00 = _mm256_fmadd_ps(a0_value, b0, c00);
+        c01 = _mm256_fmadd_ps(a0_value, b1, c01);
+        c10 = _mm256_fmadd_ps(a1_value, b0, c10);
+        c11 = _mm256_fmadd_ps(a1_value, b1, c11);
+        c20 = _mm256_fmadd_ps(a2_value, b0, c20);
+        c21 = _mm256_fmadd_ps(a2_value, b1, c21);
+        c30 = _mm256_fmadd_ps(a3_value, b0, c30);
+        c31 = _mm256_fmadd_ps(a3_value, b1, c31);
+    }
+
+    _mm256_storeu_ps(output + 0 * output_stride + 0, c00);
+    _mm256_storeu_ps(output + 0 * output_stride + 8, c01);
+    _mm256_storeu_ps(output + 1 * output_stride + 0, c10);
+    _mm256_storeu_ps(output + 1 * output_stride + 8, c11);
+    _mm256_storeu_ps(output + 2 * output_stride + 0, c20);
+    _mm256_storeu_ps(output + 2 * output_stride + 8, c21);
+    _mm256_storeu_ps(output + 3 * output_stride + 0, c30);
+    _mm256_storeu_ps(output + 3 * output_stride + 8, c31);
+}
+
+static void pack_lhs_block(const tensor* lhs, int lhs_base, int row_start,
+                           int row_count, int k_start, int k_count,
+                           float* packed_lhs) {
+    int row_stride = lhs->strides[lhs->ndim - 2];
+    int inner_stride = lhs->strides[lhs->ndim - 1];
+
+    for (int row = 0; row < row_count; ++row) {
+        float* packed_row = packed_lhs + (size_t)row * k_count;
+        int source_base = lhs_base + (row_start + row) * row_stride +
+                          k_start * inner_stride;
+        for (int k = 0; k < k_count; ++k) {
+            packed_row[k] = lhs->storage->data[source_base + k * inner_stride];
+        }
+    }
+}
+
+static void matmul_2d_packed_rhs_scalar_tails(const tensor* lhs, int lhs_base,
+                                               const float* packed_rhs,
+                                               int rows, int inner, int columns,
+                                               int full_rows, int full_columns,
+                                               tensor* output, int output_base,
+                                               int output_batch_ndim) {
+    int lhs_row_stride = lhs->strides[lhs->ndim - 2];
+    int lhs_inner_stride = lhs->strides[lhs->ndim - 1];
+    int output_row_stride = output->strides[output_batch_ndim];
+    int output_column_stride = output->strides[output_batch_ndim + 1];
+
+    for (int row = 0; row < rows; ++row) {
+        for (int column = 0; column < columns; ++column) {
+            if (row < full_rows && column < full_columns) continue;
+            const float* rhs_panel = packed_rhs +
+                (size_t)(column / TENSORLIB_MATMUL_NR) * inner *
+                TENSORLIB_MATMUL_NR;
+            float sum = 0.0f;
+            for (int k = 0; k < inner; ++k) {
+                sum += lhs->storage->data[lhs_base + row * lhs_row_stride +
+                                          k * lhs_inner_stride] *
+                       rhs_panel[k * TENSORLIB_MATMUL_NR +
+                                 column % TENSORLIB_MATMUL_NR];
+            }
+            output->storage->data[output_base + row * output_row_stride +
+                                  column * output_column_stride] = sum;
+        }
+    }
+}
+
+TENSORLIB_AVX2_TARGET
+static int matmul_2d_packed_rhs_avx2(const tensor* lhs, int lhs_base,
+                                      const float* packed_rhs, int rows,
+                                      int inner, int columns, tensor* output,
+                                      int output_base, int output_batch_ndim) {
+    size_t workspace_values;
+    if (!checked_size_multiply(TENSORLIB_MATMUL_MC, TENSORLIB_MATMUL_KC,
+                               &workspace_values)) {
+        return 0;
+    }
+    float* packed_lhs = (float*)matmul_aligned_malloc(workspace_values * sizeof(float));
+    if (packed_lhs == NULL) return 0;
+
+    int full_rows = rows - rows % TENSORLIB_MATMUL_MR;
+    int full_columns = columns - columns % TENSORLIB_MATMUL_NR;
+    int output_stride = output->strides[output_batch_ndim];
+
+    for (int row_block = 0; row_block < full_rows;
+         row_block += TENSORLIB_MATMUL_MC) {
+        int row_end = row_block + TENSORLIB_MATMUL_MC;
+        if (row_end > full_rows) row_end = full_rows;
+        int row_count = row_end - row_block;
+
+        for (int k_start = 0; k_start < inner; k_start += TENSORLIB_MATMUL_KC) {
+            int k_end = k_start + TENSORLIB_MATMUL_KC;
+            if (k_end > inner) k_end = inner;
+            int k_count = k_end - k_start;
+            int accumulate = (k_start != 0);
+
+            pack_lhs_block(lhs, lhs_base, row_block, row_count,
+                           k_start, k_count, packed_lhs);
+
+            for (int column = 0; column < full_columns;
+                 column += TENSORLIB_MATMUL_NR) {
+                const float* rhs_panel = packed_rhs +
+                    (size_t)(column / TENSORLIB_MATMUL_NR) * inner *
+                    TENSORLIB_MATMUL_NR +
+                    (size_t)k_start * TENSORLIB_MATMUL_NR;
+
+                for (int row = row_block; row < row_end;
+                     row += TENSORLIB_MATMUL_MR) {
+                    matmul_4x16_packed_a_kernel(
+                        packed_lhs + (size_t)(row - row_block) * k_count,
+                        rhs_panel,
+                        output->storage->data + output_base +
+                            row * output_stride + column,
+                        output_stride, k_count, accumulate);
+                }
+            }
+        }
+    }
+
+    matmul_2d_packed_rhs_scalar_tails(lhs, lhs_base, packed_rhs,
+                                      rows, inner, columns,
+                                      full_rows, full_columns,
+                                      output, output_base, output_batch_ndim);
+    matmul_aligned_free(packed_lhs);
+    return 1;
 }
 #else
 int matmul_avx2_available(void) {
