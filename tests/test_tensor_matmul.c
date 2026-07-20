@@ -385,6 +385,29 @@ TEST(test_packed_rhs_rejects_zero_stride_and_non_matrix_rhs) {
     ASSERT_EQ_FLOAT(expected->storage->data[0], 14.0f);
     ASSERT_EQ_FLOAT(expected->storage->data[3], 14.0f);
 
+    int narrow_left_dims[2] = {2, 1};
+    int expanded_left_dims[2] = {2, 3};
+    int regular_rhs_dims[2] = {3, 2};
+    tensor* narrow_left = t_alloc(2, narrow_left_dims);
+    tensor* regular_rhs = t_alloc(2, regular_rhs_dims);
+    for (int index = 0; index < tensor_numel(narrow_left); ++index) {
+        narrow_left->storage->data[index] = (float)(index + 1);
+    }
+    for (int index = 0; index < tensor_numel(regular_rhs); ++index) {
+        regular_rhs->storage->data[index] = (float)((index % 3) - 1);
+    }
+    tensor* expanded_left = t_expand(narrow_left, 2, expanded_left_dims);
+    tensor* fallback_expected = t_matmul(expanded_left, regular_rhs);
+    tensor_matmul_packed_rhs* regular_packed = t_pack_matmul_rhs(regular_rhs);
+    tensor* fallback_actual = t_matmul_packed_rhs(expanded_left, regular_packed);
+    assert_same_tensor(fallback_actual, fallback_expected);
+
+    t_free(fallback_actual);
+    t_free_matmul_packed_rhs(regular_packed);
+    t_free(fallback_expected);
+    t_free(expanded_left);
+    t_free(regular_rhs);
+    t_free(narrow_left);
     t_free(expected);
     t_free(expanded_rhs);
     t_free(scalar);
