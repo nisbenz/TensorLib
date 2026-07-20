@@ -89,6 +89,86 @@ TEST(test_t_sum_one_dimensional_input_returns_scalar) {
     t_free(out); t_free(a);
 }
 
+TEST(test_keepdim_reductions_preserve_reduced_axis) {
+    tensor* a = make_formula_3d();
+    ASSERT_NOT_NULL(a);
+
+    tensor* sum_dim0 = t_sum_keepdim(a, 0);
+    tensor* mean_dim1 = t_mean_keepdim(a, 1);
+    tensor* max_dim2 = t_max_keepdim(a, 2);
+    ASSERT_NOT_NULL(sum_dim0);
+    ASSERT_NOT_NULL(mean_dim1);
+    ASSERT_NOT_NULL(max_dim2);
+
+    ASSERT_EQ_INT(sum_dim0->ndim, 3);
+    ASSERT_EQ_INT(sum_dim0->dims[0], 1);
+    ASSERT_EQ_INT(sum_dim0->dims[1], 3);
+    ASSERT_EQ_INT(sum_dim0->dims[2], 4);
+    ASSERT_EQ_INT(mean_dim1->ndim, 3);
+    ASSERT_EQ_INT(mean_dim1->dims[0], 2);
+    ASSERT_EQ_INT(mean_dim1->dims[1], 1);
+    ASSERT_EQ_INT(mean_dim1->dims[2], 4);
+    ASSERT_EQ_INT(max_dim2->ndim, 3);
+    ASSERT_EQ_INT(max_dim2->dims[0], 2);
+    ASSERT_EQ_INT(max_dim2->dims[1], 3);
+    ASSERT_EQ_INT(max_dim2->dims[2], 1);
+
+    for (int j = 0; j < 3; ++j) {
+        for (int k = 0; k < 4; ++k) {
+            int dim0_index = j * 4 + k;
+            ASSERT_EQ_FLOAT(sum_dim0->storage->data[dim0_index],
+                            100 + 20 * j + 2 * k);
+        }
+    }
+
+    for (int i = 0; i < 2; ++i) {
+        for (int k = 0; k < 4; ++k) {
+            int mean_index = i * 4 + k;
+            ASSERT_FLOAT_NEAR(mean_dim1->storage->data[mean_index],
+                              100 * i + 10 + k,
+                              1e-6f);
+        }
+    }
+
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            int max_index = i * 3 + j;
+            ASSERT_EQ_FLOAT(max_dim2->storage->data[max_index],
+                            100 * i + 10 * j + 3);
+        }
+    }
+
+    t_free(max_dim2); t_free(mean_dim1); t_free(sum_dim0); t_free(a);
+}
+
+TEST(test_keepdim_reductions_handle_views_and_rank_one_inputs) {
+    tensor* base = make_formula_3d();
+    tensor* transposed = t_transpose(base, 0, 2);
+    tensor* transposed_sum = t_sum_keepdim(transposed, 2);
+    ASSERT_NOT_NULL(transposed_sum);
+    ASSERT_EQ_INT(transposed_sum->ndim, 3);
+    ASSERT_EQ_INT(transposed_sum->dims[0], 4);
+    ASSERT_EQ_INT(transposed_sum->dims[1], 3);
+    ASSERT_EQ_INT(transposed_sum->dims[2], 1);
+    for (int k = 0; k < 4; ++k) {
+        for (int j = 0; j < 3; ++j) {
+            ASSERT_EQ_FLOAT(transposed_sum->storage->data[k * 3 + j],
+                            100 + 20 * j + 2 * k);
+        }
+    }
+
+    const float values[4] = {-2.0f, 1.5f, 0.5f, 4.0f};
+    tensor* vector = make_vector(values, 4);
+    tensor* vector_mean = t_mean_keepdim(vector, 0);
+    ASSERT_NOT_NULL(vector_mean);
+    ASSERT_EQ_INT(vector_mean->ndim, 1);
+    ASSERT_EQ_INT(vector_mean->dims[0], 1);
+    ASSERT_FLOAT_NEAR(vector_mean->storage->data[0], 1.0f, 1e-6f);
+
+    t_free(vector_mean); t_free(vector); t_free(transposed_sum);
+    t_free(transposed); t_free(base);
+}
+
 TEST(test_t_sum_handles_unit_reduction_dimension) {
     int dims[3] = {2, 1, 3};
     tensor* a = t_alloc(3, dims);
@@ -457,6 +537,8 @@ int main(void) {
     printf("== tensor_reduc.c ==\n");
     RUN_TEST(test_t_sum_reduces_each_axis_of_contiguous_tensor);
     RUN_TEST(test_t_sum_one_dimensional_input_returns_scalar);
+    RUN_TEST(test_keepdim_reductions_preserve_reduced_axis);
+    RUN_TEST(test_keepdim_reductions_handle_views_and_rank_one_inputs);
     RUN_TEST(test_t_sum_handles_unit_reduction_dimension);
     RUN_TEST(test_t_sum_rejects_null_scalar_and_invalid_dimensions);
     RUN_TEST(test_t_sum_transpose_view);
