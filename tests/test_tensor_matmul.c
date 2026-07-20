@@ -330,6 +330,41 @@ TEST(test_packed_rhs_broadcasts_positive_stride_batches) {
     t_free(left);
 }
 
+TEST(test_packed_rhs_rejects_zero_stride_and_non_matrix_rhs) {
+    int left_dims[2] = {2, 3};
+    int narrow_rhs_dims[2] = {3, 1};
+    int expanded_rhs_dims[2] = {3, 4};
+    int vector_dims[1] = {3};
+    tensor* left = t_alloc(2, left_dims);
+    tensor* narrow_rhs = t_alloc(2, narrow_rhs_dims);
+    tensor* vector = t_alloc(1, vector_dims);
+    tensor* scalar = t_alloc(0, NULL);
+    for (int index = 0; index < tensor_numel(left); ++index) {
+        left->storage->data[index] = (float)(index + 1);
+    }
+    for (int index = 0; index < tensor_numel(narrow_rhs); ++index) {
+        narrow_rhs->storage->data[index] = (float)(index + 1);
+    }
+
+    tensor* expanded_rhs = t_expand(narrow_rhs, 2, expanded_rhs_dims);
+    ASSERT_NULL(t_pack_matmul_rhs(expanded_rhs));
+    ASSERT_NULL(t_pack_matmul_rhs(vector));
+    ASSERT_NULL(t_pack_matmul_rhs(scalar));
+    ASSERT_NULL(t_matmul_packed_rhs(vector, NULL));
+
+    tensor* expected = t_matmul(left, expanded_rhs);
+    ASSERT_NOT_NULL(expected);
+    ASSERT_EQ_FLOAT(expected->storage->data[0], 14.0f);
+    ASSERT_EQ_FLOAT(expected->storage->data[3], 14.0f);
+
+    t_free(expected);
+    t_free(expanded_rhs);
+    t_free(scalar);
+    t_free(vector);
+    t_free(narrow_rhs);
+    t_free(left);
+}
+
 TEST(test_t_matmul_rejects_invalid_shapes) {
     int a_dims[2] = {2, 3};
     int b_dims[2] = {4, 2};
@@ -399,6 +434,7 @@ int main(void) {
     RUN_TEST(test_packed_rhs_handles_non_multiple_kernel_dimensions);
     RUN_TEST(test_packed_rhs_handles_reshape_contiguous_squeeze_and_unsqueeze);
     RUN_TEST(test_packed_rhs_broadcasts_positive_stride_batches);
+    RUN_TEST(test_packed_rhs_rejects_zero_stride_and_non_matrix_rhs);
     RUN_TEST(test_t_matmul_rejects_invalid_shapes);
     RUN_TEST(test_t_matmul_validates_vector_inner_dimension);
     RUN_TEST(test_t_matmul_allows_aliasing_and_returns_independent_storage);
