@@ -7,6 +7,19 @@ static void fill_tensor(tensor* t, const float* values, int count) {
     for (int i = 0; i < count; ++i) t->storage->data[i] = values[i];
 }
 
+static void assert_same_tensor(tensor* actual, tensor* expected) {
+    ASSERT_NOT_NULL(actual);
+    ASSERT_NOT_NULL(expected);
+    ASSERT_EQ_INT(actual->ndim, expected->ndim);
+    for (int axis = 0; axis < actual->ndim; ++axis) {
+        ASSERT_EQ_INT(actual->dims[axis], expected->dims[axis]);
+    }
+    for (int index = 0; index < tensor_numel(actual); ++index) {
+        ASSERT_FLOAT_NEAR(actual->storage->data[index],
+                          expected->storage->data[index], 1e-4f);
+    }
+}
+
 TEST(test_t_matmul_2d) {
     int a_dims[2] = {2, 3};
     int b_dims[2] = {3, 2};
@@ -190,6 +203,62 @@ TEST(test_packed_rhs_snapshots_transposed_view) {
     t_free(a);
 }
 
+TEST(test_packed_rhs_handles_transposed_slices_and_kernel_tails) {
+    int left_dims[2] = {4, 4};
+    int right_dims[2] = {4, 4};
+    tensor* left_base = t_alloc(2, left_dims);
+    tensor* right_base = t_alloc(2, right_dims);
+    for (int index = 0; index < 16; ++index) {
+        left_base->storage->data[index] = (float)((index % 7) - 3);
+        right_base->storage->data[index] = (float)((index % 5) - 2);
+    }
+
+    tensor* left_slice = t_slice(left_base, 0, 1, 4);
+    tensor* left = t_transpose(left_slice, 0, 1);
+    tensor* right_slice = t_slice(right_base, 1, 1, 4);
+    tensor* right = t_transpose(right_slice, 0, 1);
+    tensor* expected = t_matmul(left, right);
+    tensor_matmul_packed_rhs* packed = t_pack_matmul_rhs(right);
+    tensor* actual = t_matmul_packed_rhs(left, packed);
+
+    assert_same_tensor(actual, expected);
+
+    t_free(actual);
+    t_free_matmul_packed_rhs(packed);
+    t_free(expected);
+    t_free(right);
+    t_free(right_slice);
+    t_free(left);
+    t_free(left_slice);
+    t_free(right_base);
+    t_free(left_base);
+}
+
+TEST(test_packed_rhs_handles_non_multiple_kernel_dimensions) {
+    int left_dims[2] = {5, 129};
+    int right_dims[2] = {129, 17};
+    tensor* left = t_alloc(2, left_dims);
+    tensor* right = t_alloc(2, right_dims);
+    for (int index = 0; index < tensor_numel(left); ++index) {
+        left->storage->data[index] = (float)((index % 13) - 6) * 0.25f;
+    }
+    for (int index = 0; index < tensor_numel(right); ++index) {
+        right->storage->data[index] = (float)((index % 11) - 5) * 0.125f;
+    }
+
+    tensor* expected = t_matmul(left, right);
+    tensor_matmul_packed_rhs* packed = t_pack_matmul_rhs(right);
+    tensor* actual = t_matmul_packed_rhs(left, packed);
+
+    assert_same_tensor(actual, expected);
+
+    t_free(actual);
+    t_free_matmul_packed_rhs(packed);
+    t_free(expected);
+    t_free(right);
+    t_free(left);
+}
+
 TEST(test_t_matmul_rejects_invalid_shapes) {
     int a_dims[2] = {2, 3};
     int b_dims[2] = {4, 2};
@@ -255,6 +324,8 @@ int main(void) {
     RUN_TEST(test_t_matmul_accepts_transposed_views);
     RUN_TEST(test_t_matmul_vector_cases);
     RUN_TEST(test_packed_rhs_snapshots_transposed_view);
+    RUN_TEST(test_packed_rhs_handles_transposed_slices_and_kernel_tails);
+    RUN_TEST(test_packed_rhs_handles_non_multiple_kernel_dimensions);
     RUN_TEST(test_t_matmul_rejects_invalid_shapes);
     RUN_TEST(test_t_matmul_validates_vector_inner_dimension);
     RUN_TEST(test_t_matmul_allows_aliasing_and_returns_independent_storage);
