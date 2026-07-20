@@ -17,6 +17,8 @@ typedef struct {
     int offset;
 } tensor;
 
+typedef struct tensor_matmul_packed_rhs tensor_matmul_packed_rhs;
+
 void add_ref_count(Storage* a, tensor* b);
 tensor* t_transpose(tensor* a, int dim0, int dim1);
 int same_shape(tensor* a, tensor* b);
@@ -60,4 +62,8 @@ tensor* t_sum(tensor* a, int dim);
 tensor* t_mean(tensor* a, int dim);
 tensor* t_max(tensor* a, int dim);
 tensor* t_matmul(tensor* a, tensor* b);
+tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs);
+tensor* t_matmul_packed_rhs(const tensor* lhs,
+                            const tensor_matmul_packed_rhs* rhs);
+void t_free_matmul_packed_rhs(tensor_matmul_packed_rhs* rhs);
 #endif //TENSORLIB_TENSOR_H
