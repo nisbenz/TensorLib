@@ -18,7 +18,9 @@ set(TENSORLIB_SOURCES
     include/tensorlib/tensor_matmul.h
 )
 
-add_library(tensorlib STATIC ${TENSORLIB_SOURCES} include/tensorlib/tensor.h)
+add_library(tensorlib STATIC ${TENSORLIB_SOURCES}
+            include/tensorlib/tensor.h
+            include/tensorlib/autograd.h)
 target_include_directories(tensorlib PUBLIC include/tensorlib)
 
 if (WIN32)

@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -O3 -march=native -mtune=native -Wall -Wextra -g -std=c11
 SRC = src/tensor/tensor_core.c src/tensor/tensor_alloc.c src/tensor/tensor_view.c src/tensor/tensor_ops.c src/tensor/tensor_reduc.c src/tensor/tensor_matmul.c
-HEADERS = include/tensorlib/tensor.h include/tensorlib/tensor_matmul.h tests/fixtures/test_common.h
+HEADERS = include/tensorlib/tensor.h include/tensorlib/tensor_matmul.h include/tensorlib/autograd.h tests/fixtures/test_common.h
 INCLUDES = -Iinclude/tensorlib -Itests/fixtures
 
 BIN = bin
