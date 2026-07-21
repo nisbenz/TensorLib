@@ -1,5 +1,5 @@
-#include "../include/test_common.h"
-#include "../include/tensor.h"
+#include "../../fixtures/test_common.h"
+#include "../../../include/tensorlib/tensor.h"
 
 TEST(test_calc_strides_3d) {
     int dims[3] = {2, 3, 4};

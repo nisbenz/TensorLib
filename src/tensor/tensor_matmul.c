@@ -19,7 +19,7 @@
 #define TENSORLIB_HAS_AVX2_KERNEL 0
 #endif
 
-#include "../include/tensor_matmul.h"
+#include "../../include/tensorlib/tensor_matmul.h"
 
 enum {
     TENSORLIB_MATMUL_MC = 64,

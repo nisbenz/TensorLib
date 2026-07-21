@@ -9,17 +9,17 @@ if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 set(TENSORLIB_SOURCES
-    src/tensor_core.c
-    src/tensor_ops.c
-    src/tensor_alloc.c
-    src/tensor_view.c
-    src/tensor_reduc.c
-    src/tensor_matmul.c
-    include/tensor_matmul.h
+    src/tensor/tensor_core.c
+    src/tensor/tensor_ops.c
+    src/tensor/tensor_alloc.c
+    src/tensor/tensor_view.c
+    src/tensor/tensor_reduc.c
+    src/tensor/tensor_matmul.c
+    include/tensorlib/tensor_matmul.h
 )
 
-add_library(tensorlib STATIC ${TENSORLIB_SOURCES} include/tensor.h)
-target_include_directories(tensorlib PUBLIC include)
+add_library(tensorlib STATIC ${TENSORLIB_SOURCES} include/tensorlib/tensor.h)
+target_include_directories(tensorlib PUBLIC include/tensorlib)
 
 if (WIN32)
     set(TENSORLIB_MATH_LIB)
@@ -39,7 +39,8 @@ set(TENSORLIB_TESTS
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
-    add_executable(test_${test_name} tests/test_${test_name}.c)
+    add_executable(test_${test_name} tests/unit/tensor/test_${test_name}.c)
+    target_include_directories(test_${test_name} PRIVATE tests/fixtures)
     target_link_libraries(test_${test_name} PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
     add_test(NAME test_${test_name} COMMAND test_${test_name})
 endforeach()
@@ -48,17 +49,17 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/playground.c")
     target_link_libraries(playground PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
 endif()
 
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/bench_tensor_matmul.c")
-    add_executable(bench_tensor_matmul benchmarks/bench_tensor_matmul.c)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_tensor_matmul.c")
+    add_executable(bench_tensor_matmul benchmarks/matmul/bench_tensor_matmul.c)
     target_link_libraries(bench_tensor_matmul PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
 endif()
 
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/bench_tensor_matmul_reuse.c")
-    add_executable(bench_tensor_matmul_reuse benchmarks/bench_tensor_matmul_reuse.c)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_tensor_matmul_reuse.c")
+    add_executable(bench_tensor_matmul_reuse benchmarks/matmul/bench_tensor_matmul_reuse.c)
     target_link_libraries(bench_tensor_matmul_reuse PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
 endif()
 
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/bench_openblas_matmul.c")
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_openblas_matmul.c")
     find_path(OPENBLAS_INCLUDE_DIR NAMES cblas.h
               HINTS C:/msys64/ucrt64/include
               PATH_SUFFIXES openblas)
@@ -66,14 +67,14 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/bench_openblas_matmul.c")
                  HINTS C:/msys64/ucrt64/lib)
 
     if (OPENBLAS_INCLUDE_DIR AND OPENBLAS_LIBRARY)
-        add_executable(bench_openblas_matmul benchmarks/bench_openblas_matmul.c)
+        add_executable(bench_openblas_matmul benchmarks/matmul/bench_openblas_matmul.c)
         target_include_directories(bench_openblas_matmul PRIVATE ${OPENBLAS_INCLUDE_DIR})
         target_link_libraries(bench_openblas_matmul PRIVATE
                               tensorlib ${OPENBLAS_LIBRARY} ${TENSORLIB_MATH_LIB})
 
-        if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/bench_openblas_matmul_reuse.c")
+        if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_openblas_matmul_reuse.c")
             add_executable(bench_openblas_matmul_reuse
-                           benchmarks/bench_openblas_matmul_reuse.c)
+                           benchmarks/matmul/bench_openblas_matmul_reuse.c)
             target_include_directories(bench_openblas_matmul_reuse
                                        PRIVATE ${OPENBLAS_INCLUDE_DIR})
             target_link_libraries(bench_openblas_matmul_reuse PRIVATE

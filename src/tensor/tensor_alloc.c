@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include "../include/tensor.h"
+#include "../../include/tensorlib/tensor.h"
 
 void add_ref_count(Storage* a, tensor* b) {
     if (a != NULL && b != NULL) {

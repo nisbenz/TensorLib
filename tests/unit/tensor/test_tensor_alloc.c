@@ -1,6 +1,6 @@
 #include <stdlib.h>
-#include "../include/test_common.h"
-#include "../include/tensor.h"
+#include "../../fixtures/test_common.h"
+#include "../../../include/tensorlib/tensor.h"
 
 TEST(test_s_alloc_basic) {
     int dims[2] = {2, 3};

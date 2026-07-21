@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <time.h>
 
-#include "../include/tensor.h"
+#include "../../include/tensorlib/tensor.h"
 
 enum {
     M = 256,

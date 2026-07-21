@@ -1,7 +1,7 @@
 #include <stdio.h>
 
-#include "../include/test_common.h"
-#include "../include/tensor.h"
+#include "../../fixtures/test_common.h"
+#include "../../../include/tensorlib/tensor.h"
 
 static void fill_tensor(tensor* t, const float* values, int count) {
     for (int i = 0; i < count; ++i) t->storage->data[i] = values[i];

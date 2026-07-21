@@ -1,7 +1,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "../include/tensor.h"
+#include "../../include/tensorlib/tensor.h"
 
 static tensor* make_view(tensor* base, int ndim, const int* dims, const int* strides, int offset) {
     size_t unused;

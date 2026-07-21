@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include "../include/tensor.h"
+#include "../../include/tensorlib/tensor.h"
 
 static int make_reduction_dims(const tensor* a,
                                int dim,

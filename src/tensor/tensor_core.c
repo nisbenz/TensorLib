@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include "../include/tensor.h"
+#include "../../include/tensorlib/tensor.h"
 
 int tensor_checked_numel(int ndim, const int* dims, size_t* result) {
     if (result == NULL || ndim < 0 || (ndim > 0 && dims == NULL)) return 0;

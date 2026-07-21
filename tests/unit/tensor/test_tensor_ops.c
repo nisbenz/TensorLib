@@ -1,5 +1,5 @@
-#include "../include/test_common.h"
-#include "../include/tensor.h"
+#include "../../fixtures/test_common.h"
+#include "../../../include/tensorlib/tensor.h"
 
 static tensor* make_vector(const float* values, int count) {
     tensor* t = t_alloc(1, &count);

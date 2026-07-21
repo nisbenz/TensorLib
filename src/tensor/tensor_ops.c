@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "../include/tensor.h"
+#include "../../include/tensorlib/tensor.h"
 #include <math.h>
 
 typedef float (*binary_fn)(float, float);

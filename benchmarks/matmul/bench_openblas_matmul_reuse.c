@@ -3,7 +3,7 @@
 
 #include <cblas.h>
 
-#include "../include/tensor.h"
+#include "../../include/tensorlib/tensor.h"
 
 extern void openblas_set_num_threads(int num_threads);
 

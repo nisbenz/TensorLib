@@ -3,7 +3,7 @@
 
 #include <cblas.h>
 
-#include "../include/tensor.h"
+#include "../../include/tensorlib/tensor.h"
 
 /* Keep this comparison single-threaded, like bench_tensor_matmul. */
 extern void openblas_set_num_threads(int num_threads);

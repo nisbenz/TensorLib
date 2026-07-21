@@ -1,5 +1,5 @@
-#include "../include/test_common.h"
-#include "../include/tensor.h"
+#include "../../fixtures/test_common.h"
+#include "../../../include/tensorlib/tensor.h"
 
 TEST(test_t_transpose_swaps_dims_strides_and_preserves_offset) {
     int dims[3] = {2, 3, 4};
