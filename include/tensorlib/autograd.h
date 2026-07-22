@@ -78,14 +78,15 @@ void ag_tensor_release(ag_tensor* value);
 void ag_node_retain(ag_node* node);
 void ag_node_release(ag_node* node);
 
+ag_tensor* ag_add(const ag_tensor* a, const ag_tensor* b);
+ag_tensor* ag_sub(const ag_tensor* a, const ag_tensor* b);
+ag_tensor* ag_mul(const ag_tensor* a, const ag_tensor* b);
+ag_tensor* ag_div(const ag_tensor* a, const ag_tensor* b);
+
 /*
  * Planned API — declarations will be added as implementations land.
  *
  * Differentiable operations:
- *   ag_tensor* ag_add(const ag_tensor* a, const ag_tensor* b);
- *   ag_tensor* ag_sub(const ag_tensor* a, const ag_tensor* b);
- *   ag_tensor* ag_mul(const ag_tensor* a, const ag_tensor* b);
- *   ag_tensor* ag_div(const ag_tensor* a, const ag_tensor* b);
  *   ag_tensor* ag_neg(const ag_tensor* value);
  *   ag_tensor* ag_exp(const ag_tensor* value);
  *   ag_tensor* ag_log(const ag_tensor* value);
