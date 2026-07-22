@@ -92,12 +92,12 @@ ag_tensor* ag_expand(const ag_tensor* value, int new_ndim, const int* new_dims);
 ag_tensor* ag_sum(const ag_tensor* value, int dim, int keepdim);
 ag_tensor* ag_mean(const ag_tensor* value, int dim, int keepdim);
 ag_tensor* ag_max(const ag_tensor* value, int dim, int keepdim);
+ag_tensor* ag_matmul(const ag_tensor* a, const ag_tensor* b);
 
 /*
  * Planned API — declarations will be added as implementations land.
  *
  * Differentiable operations:
- *   ag_tensor* ag_matmul(const ag_tensor* a, const ag_tensor* b);
  *
  * Backward and gradient management:
  *   int ag_backward(ag_tensor* loss);
