@@ -36,6 +36,35 @@ TEST(test_matrix_matrix_backward) {
     ag_tensor_release(b); ag_tensor_release(a);
 }
 
+TEST(test_transposed_view_matmul_backward_reaches_base_gradients) {
+    int a_base_dims[2] = {3, 2}, b_base_dims[2] = {2, 3};
+    float a_values[6] = {1,4,2,5,3,6};
+    float b_values[6] = {7,9,11,8,10,12};
+    ag_tensor* a_base = make_ag(2, a_base_dims, a_values);
+    ag_tensor* b_base = make_ag(2, b_base_dims, b_values);
+    ag_tensor* a = ag_transpose(a_base, 0, 1);
+    ag_tensor* b = ag_transpose(b_base, 0, 1);
+    ag_tensor* output = ag_matmul(a, b);
+    ag_tensor* row_sum = ag_sum(output, 1, 0);
+    ag_tensor* loss = ag_sum(row_sum, 0, 0);
+
+    ASSERT_NOT_NULL(loss);
+    ASSERT_EQ_INT(ag_backward(loss), 0);
+    ASSERT_NOT_NULL(a_base->grad);
+    ASSERT_NOT_NULL(b_base->grad);
+
+    const float expected_a[6] = {15,15,19,19,23,23};
+    const float expected_b[6] = {5,7,9,5,7,9};
+    for (int i = 0; i < 6; ++i) {
+        ASSERT_EQ_FLOAT(a_base->grad->storage->data[i], expected_a[i]);
+        ASSERT_EQ_FLOAT(b_base->grad->storage->data[i], expected_b[i]);
+    }
+
+    ag_tensor_release(loss); ag_tensor_release(row_sum); ag_tensor_release(output);
+    ag_tensor_release(b); ag_tensor_release(a);
+    ag_tensor_release(b_base); ag_tensor_release(a_base);
+}
+
 TEST(test_vector_vector_backward_returns_vectors) {
     int dims[1] = {3}; float av[3] = {1,2,3}, bv[3] = {4,5,6};
     ag_tensor* a = make_ag(1, dims, av), *b = make_ag(1, dims, bv);
@@ -93,6 +122,7 @@ TEST(test_matmul_rejects_invalid_operands) {
 int main(void) {
     printf("== autograd_matmul.c ==\n");
     RUN_TEST(test_matrix_matrix_backward);
+    RUN_TEST(test_transposed_view_matmul_backward_reaches_base_gradients);
     RUN_TEST(test_vector_vector_backward_returns_vectors);
     RUN_TEST(test_vector_matrix_and_matrix_vector_backward_shapes);
     RUN_TEST(test_batched_broadcast_backward_preserves_contribution_batch_shape);

@@ -885,6 +885,46 @@ void matmul_2d_strided(const tensor* a,
     }
 }
 
+static int matmul_matrix_operands_are_contiguous(const tensor* a,
+                                                 const matmul_operand_info* a_info,
+                                                 const tensor* b,
+                                                 const matmul_operand_info* b_info) {
+    if (a == NULL || a_info == NULL || b == NULL || b_info == NULL ||
+        a_info->is_vector || b_info->is_vector) {
+        return 0;
+    }
+
+    return a->strides[a->ndim - 2] == a_info->inner &&
+           a->strides[a->ndim - 1] == 1 &&
+           b->strides[b->ndim - 2] == b_info->columns &&
+           b->strides[b->ndim - 1] == 1;
+}
+
+static tensor* try_packed_matrix_matmul(const tensor* a,
+                                        const matmul_operand_info* a_info,
+                                        const tensor* b,
+                                        const matmul_operand_info* b_info) {
+    if (a == NULL || a_info == NULL || b == NULL || b_info == NULL ||
+        a_info->is_vector || b_info->is_vector ||
+        matmul_matrix_operands_are_contiguous(a, a_info, b, b_info) ||
+        !matmul_avx2_available()) {
+        return NULL;
+    }
+
+    /*
+     * Keep packing below t_matmul's public dispatch boundary. This lets
+     * autograd and ordinary callers get the same view-aware kernel choice.
+     * The reusable packed-RHS API rejects unsupported zero-stride RHS views;
+     * the caller falls back to the general strided implementation below.
+     */
+    tensor_matmul_packed_rhs* packed_rhs = t_pack_matmul_rhs(b);
+    if (packed_rhs == NULL) return NULL;
+
+    tensor* output = t_matmul_packed_rhs(a, packed_rhs);
+    t_free_matmul_packed_rhs(packed_rhs);
+    return output;
+}
+
 tensor* t_matmul(tensor* a, tensor* b) {
     if (!tensor_has_valid_metadata(a) || !tensor_has_valid_metadata(b)) {
         return NULL;
@@ -933,6 +973,12 @@ tensor* t_matmul(tensor* a, tensor* b) {
         fprintf(stderr, "ERROR: Matmul batch dimensions are not broadcast-compatible.\n");
         free(batch_dims);
         return NULL;
+    }
+
+    tensor* packed_output = try_packed_matrix_matmul(a, &a_info, b, &b_info);
+    if (packed_output != NULL) {
+        free(batch_dims);
+        return packed_output;
     }
 
     int output_ndim = batch_ndim + 2 - a_info.is_vector - b_info.is_vector;
