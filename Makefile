@@ -9,6 +9,9 @@ TESTS = $(BIN)/test_tensor_core $(BIN)/test_tensor_alloc $(BIN)/test_tensor_view
 
 all: test
 
+example: $(BIN)/autograd_example
+	./$(BIN)/autograd_example
+
 $(BIN):
 	mkdir -p $(BIN)
 
@@ -51,6 +54,9 @@ $(BIN)/test_autograd_backward: tests/unit/autograd/test_autograd_backward.c $(SR
 $(BIN)/test_autograd_integration: tests/unit/autograd/test_autograd_integration.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_integration.c $(SRC) -lm
 
+$(BIN)/autograd_example: examples/autograd_example.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ examples/autograd_example.c $(SRC) -lm
+
 $(BIN)/bench_tensor_matmul: benchmarks/matmul/bench_tensor_matmul.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ benchmarks/matmul/bench_tensor_matmul.c $(SRC) -lm
 
@@ -89,4 +95,4 @@ benchmark-openblas-reuse: $(BIN)/bench_openblas_matmul_reuse
 clean:
 	rm -rf $(BIN)
 
-.PHONY: all test benchmark-all benchmark-matmul benchmark-matmul-reuse benchmark-packed-views benchmark-openblas benchmark-openblas-reuse clean
+.PHONY: all test example benchmark-all benchmark-matmul benchmark-matmul-reuse benchmark-packed-views benchmark-openblas benchmark-openblas-reuse clean
