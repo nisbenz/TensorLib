@@ -1,5 +1,5 @@
-#include "autograd.h"
-#include "test_common.h"
+#include "./../../../include/tensorlib/autograd.h"
+#include "./../../fixtures/test_common.h"
 
 static ag_tensor* make_ag(int ndim, const int* dims, const float* values) {
     tensor* raw = t_alloc(ndim, dims);

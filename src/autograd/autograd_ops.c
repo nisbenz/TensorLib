@@ -1,4 +1,4 @@
-#include "autograd_internal.h"
+#include "./../../include/tensorlib/autograd_internal.h"
 
 static void free_gradients(tensor** gradients, int count) {
     for (int i = 0; i < count; ++i) {

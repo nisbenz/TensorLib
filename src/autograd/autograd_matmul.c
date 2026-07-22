@@ -1,4 +1,4 @@
-#include "autograd_internal.h"
+#include "./../../include/tensorlib/autograd_internal.h"
 
 static tensor* promote_operand(tensor* value, int left_operand) {
     if (value->ndim != 1) return t_contiguous(value);

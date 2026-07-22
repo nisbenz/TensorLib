@@ -1,5 +1,6 @@
-#include "autograd.h"
-#include "test_common.h"
+#include "./../../../include/tensorlib/autograd.h"
+#include "./../../../include/tensorlib/autograd.h"
+#include "./../../fixtures/test_common.h"
 
 #if defined(_MSC_VER) && defined(_DEBUG)
 #include <crtdbg.h>

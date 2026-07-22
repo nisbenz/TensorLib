@@ -1,7 +1,7 @@
 #include <stdlib.h>
 
 #include "../../include/tensorlib/autograd.h"
-#include "autograd_internal.h"
+#include "./../../include/tensorlib/autograd_internal.h"
 
 ag_tensor* ag_from_owned_tensor(tensor* value, int requires_grad) {
     if (!tensor_has_valid_metadata(value)) {

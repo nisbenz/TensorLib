@@ -1,7 +1,6 @@
 #include <stdlib.h>
-
-#include "autograd.h"
-#include "test_common.h"
+#include "./../../../include/tensorlib/autograd.h"
+#include "./../../fixtures/test_common.h"
 
 static int contexts_freed = 0;
 

@@ -1,6 +1,6 @@
 #include <stdlib.h>
 
-#include "autograd_internal.h"
+#include "./../../include/tensorlib/autograd_internal.h"
 
 typedef struct {
     ag_tensor** values;
