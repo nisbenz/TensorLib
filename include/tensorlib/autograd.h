@@ -82,14 +82,14 @@ ag_tensor* ag_add(const ag_tensor* a, const ag_tensor* b);
 ag_tensor* ag_sub(const ag_tensor* a, const ag_tensor* b);
 ag_tensor* ag_mul(const ag_tensor* a, const ag_tensor* b);
 ag_tensor* ag_div(const ag_tensor* a, const ag_tensor* b);
+ag_tensor* ag_neg(const ag_tensor* value);
+ag_tensor* ag_exp(const ag_tensor* value);
+ag_tensor* ag_log(const ag_tensor* value);
 
 /*
  * Planned API — declarations will be added as implementations land.
  *
  * Differentiable operations:
- *   ag_tensor* ag_neg(const ag_tensor* value);
- *   ag_tensor* ag_exp(const ag_tensor* value);
- *   ag_tensor* ag_log(const ag_tensor* value);
  *   ag_tensor* ag_matmul(const ag_tensor* a, const ag_tensor* b);
  *   ag_tensor* ag_sum(const ag_tensor* value, int dim, int keepdim);
  *   ag_tensor* ag_mean(const ag_tensor* value, int dim, int keepdim);

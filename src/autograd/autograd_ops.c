@@ -116,3 +116,57 @@ ag_tensor* ag_mul(const ag_tensor* a, const ag_tensor* b) {
 ag_tensor* ag_div(const ag_tensor* a, const ag_tensor* b) {
     return apply_binary(a, b, AG_OP_DIV, t_div, backward_div);
 }
+
+static int backward_neg(const ag_node* node,
+                        const tensor* output_gradient,
+                        tensor** input_gradients) {
+    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
+        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!node->inputs[0]->requires_grad) return 0;
+    input_gradients[0] = t_neg((tensor*)output_gradient);
+    return input_gradients[0] == NULL;
+}
+
+static int backward_exp(const ag_node* node,
+                        const tensor* output_gradient,
+                        tensor** input_gradients) {
+    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
+        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!node->inputs[0]->requires_grad) return 0;
+    input_gradients[0] = t_mul((tensor*)output_gradient, node->output->value);
+    return input_gradients[0] == NULL;
+}
+
+static int backward_log(const ag_node* node,
+                        const tensor* output_gradient,
+                        tensor** input_gradients) {
+    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
+        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!node->inputs[0]->requires_grad) return 0;
+    input_gradients[0] = t_div((tensor*)output_gradient, node->inputs[0]->value);
+    return input_gradients[0] == NULL;
+}
+
+typedef tensor* (*unary_forward_fn)(tensor*);
+
+static ag_tensor* apply_unary(const ag_tensor* value,
+                              ag_op operation,
+                              unary_forward_fn forward,
+                              ag_backward_fn backward) {
+    if (value == NULL || forward == NULL) return NULL;
+    tensor* output = forward(value->value);
+    ag_tensor* inputs[1] = {(ag_tensor*)value};
+    return ag_make_result(output, operation, 1, inputs, backward, NULL, NULL);
+}
+
+ag_tensor* ag_neg(const ag_tensor* value) {
+    return apply_unary(value, AG_OP_NEG, t_neg, backward_neg);
+}
+
+ag_tensor* ag_exp(const ag_tensor* value) {
+    return apply_unary(value, AG_OP_EXP, t_exp, backward_exp);
+}
+
+ag_tensor* ag_log(const ag_tensor* value) {
+    return apply_unary(value, AG_OP_LOG, t_log, backward_log);
+}

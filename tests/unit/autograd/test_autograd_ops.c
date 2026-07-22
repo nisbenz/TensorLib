@@ -106,6 +106,47 @@ TEST(test_binary_rejects_null_and_incompatible_shapes) {
     ag_tensor_release(b); ag_tensor_release(a);
 }
 
+TEST(test_unary_forwards_and_local_gradients) {
+    int dims[1] = {3};
+    float values[3] = {0.5f, 1.0f, 2.0f};
+    ag_tensor* input = make_ag(1, dims, values, 1);
+    ag_tensor* results[3] = {ag_neg(input), ag_exp(input), ag_log(input)};
+    ag_op operations[3] = {AG_OP_NEG, AG_OP_EXP, AG_OP_LOG};
+    tensor* upstream = t_alloc(1, dims);
+    for (int i = 0; i < 3; ++i) upstream->storage->data[i] = 2.0f;
+
+    for (int op = 0; op < 3; ++op) {
+        tensor* gradients[1] = {NULL};
+        ASSERT_NOT_NULL(results[op]);
+        ASSERT_EQ_INT(results[op]->creator->operation, operations[op]);
+        ASSERT_EQ_INT(results[op]->creator->backward(results[op]->creator, upstream, gradients), 0);
+        ASSERT_NOT_NULL(gradients[0]);
+        for (int i = 0; i < 3; ++i) {
+            float expected = op == 0 ? -2.0f
+                           : op == 1 ? 2.0f * expf(values[i])
+                                     : 2.0f / values[i];
+            ASSERT_FLOAT_NEAR(gradients[0]->storage->data[i], expected, 1e-5f);
+        }
+        t_free(gradients[0]);
+    }
+    for (int op = 0; op < 3; ++op) ag_tensor_release(results[op]);
+    t_free(upstream); ag_tensor_release(input);
+}
+
+TEST(test_unary_handles_scalar_view_and_null) {
+    float scalar = 1.5f;
+    ag_tensor* input = make_ag(0, NULL, &scalar, 0);
+    ag_tensor* result = ag_exp(input);
+    ASSERT_NOT_NULL(result);
+    ASSERT_EQ_INT(result->value->ndim, 0);
+    ASSERT_NULL(result->creator);
+    ASSERT_FLOAT_NEAR(result->value->storage->data[0], expf(scalar), 1e-6f);
+    ASSERT_NULL(ag_neg(NULL));
+    ASSERT_NULL(ag_exp(NULL));
+    ASSERT_NULL(ag_log(NULL));
+    ag_tensor_release(result); ag_tensor_release(input);
+}
+
 int main(void) {
     printf("== autograd_ops.c ==\n");
     RUN_TEST(test_binary_forwards_create_typed_nodes_and_retain_inputs);
@@ -113,5 +154,7 @@ int main(void) {
     RUN_TEST(test_binary_local_gradients_match_derivatives);
     RUN_TEST(test_broadcast_forward_and_local_gradient_use_output_shape);
     RUN_TEST(test_binary_rejects_null_and_incompatible_shapes);
+    RUN_TEST(test_unary_forwards_and_local_gradients);
+    RUN_TEST(test_unary_handles_scalar_view_and_null);
     TEST_SUITE_SUMMARY();
 }
