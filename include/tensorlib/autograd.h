@@ -85,6 +85,10 @@ ag_tensor* ag_div(const ag_tensor* a, const ag_tensor* b);
 ag_tensor* ag_neg(const ag_tensor* value);
 ag_tensor* ag_exp(const ag_tensor* value);
 ag_tensor* ag_log(const ag_tensor* value);
+ag_tensor* ag_reshape(const ag_tensor* value, int new_ndim, const int* new_dims);
+ag_tensor* ag_transpose(const ag_tensor* value, int dim0, int dim1);
+ag_tensor* ag_slice(const ag_tensor* value, int dim, int start, int end);
+ag_tensor* ag_expand(const ag_tensor* value, int new_ndim, const int* new_dims);
 
 /*
  * Planned API — declarations will be added as implementations land.
@@ -94,10 +98,6 @@ ag_tensor* ag_log(const ag_tensor* value);
  *   ag_tensor* ag_sum(const ag_tensor* value, int dim, int keepdim);
  *   ag_tensor* ag_mean(const ag_tensor* value, int dim, int keepdim);
  *   ag_tensor* ag_max(const ag_tensor* value, int dim, int keepdim);
- *   ag_tensor* ag_reshape(const ag_tensor* value, int new_ndim, const int* new_dims);
- *   ag_tensor* ag_transpose(const ag_tensor* value, int dim0, int dim1);
- *   ag_tensor* ag_slice(const ag_tensor* value, int dim, int start, int end);
- *   ag_tensor* ag_expand(const ag_tensor* value, int new_ndim, const int* new_dims);
  *
  * Backward and gradient management:
  *   int ag_backward(ag_tensor* loss);
