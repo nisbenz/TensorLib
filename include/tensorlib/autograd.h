@@ -29,9 +29,15 @@ typedef enum {
 } ag_op;
 
 
-typedef void (*ag_backward_fn)(
-    ag_node* node,
-    const tensor* output_gradient
+/*
+ * Local backward rules allocate one owned contribution per differentiable
+ * input. The caller supplies an input_count-sized, NULL-initialized array and
+ * takes ownership of every tensor written to it.
+ */
+typedef int (*ag_backward_fn)(
+    const ag_node* node,
+    const tensor* output_gradient,
+    tensor** input_gradients
 );
 
 
@@ -53,6 +59,7 @@ struct ag_node {
     int input_count;
     ag_tensor** inputs;
 
+    /* Non-owning; the output owns this node through ag_tensor.creator. */
     ag_tensor* output;
 
     ag_backward_fn backward;
@@ -64,15 +71,15 @@ struct ag_node {
     int ref_count;
 };
 
+/* Takes ownership of value, including when construction fails. */
+ag_tensor* ag_from_owned_tensor(tensor* value, int requires_grad);
+void ag_tensor_retain(ag_tensor* value);
+void ag_tensor_release(ag_tensor* value);
+void ag_node_retain(ag_node* node);
+void ag_node_release(ag_node* node);
+
 /*
- * Planned API — declarations will be added when the implementation begins.
- *
- * Lifetime and construction:
- *   ag_tensor* ag_from_owned_tensor(tensor* value, int requires_grad);
- *   void ag_tensor_retain(ag_tensor* value);
- *   void ag_tensor_release(ag_tensor* value);
- *   void ag_node_retain(ag_node* node);
- *   void ag_node_release(ag_node* node);
+ * Planned API — declarations will be added as implementations land.
  *
  * Differentiable operations:
  *   ag_tensor* ag_add(const ag_tensor* a, const ag_tensor* b);
