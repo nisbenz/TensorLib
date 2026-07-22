@@ -1,11 +1,11 @@
 CC = gcc
 CFLAGS = -O3 -march=native -mtune=native -Wall -Wextra -g -std=c11
-SRC = src/tensor/tensor_core.c src/tensor/tensor_alloc.c src/tensor/tensor_view.c src/tensor/tensor_ops.c src/tensor/tensor_reduc.c src/tensor/tensor_matmul.c src/autograd/autograd_core.c src/autograd/autograd_ops.c src/autograd/autograd_view.c
+SRC = src/tensor/tensor_core.c src/tensor/tensor_alloc.c src/tensor/tensor_view.c src/tensor/tensor_ops.c src/tensor/tensor_reduc.c src/tensor/tensor_matmul.c src/autograd/autograd_core.c src/autograd/autograd_ops.c src/autograd/autograd_view.c src/autograd/autograd_reduc.c
 HEADERS = include/tensorlib/tensor.h include/tensorlib/tensor_matmul.h include/tensorlib/autograd.h tests/fixtures/test_common.h
 INCLUDES = -Iinclude/tensorlib -Itests/fixtures
 
 BIN = bin
-TESTS = $(BIN)/test_tensor_core $(BIN)/test_tensor_alloc $(BIN)/test_tensor_view $(BIN)/test_tensor_ops $(BIN)/test_tensor_reduc $(BIN)/test_tensor_matmul $(BIN)/test_autograd_core $(BIN)/test_autograd_ops $(BIN)/test_autograd_view
+TESTS = $(BIN)/test_tensor_core $(BIN)/test_tensor_alloc $(BIN)/test_tensor_view $(BIN)/test_tensor_ops $(BIN)/test_tensor_reduc $(BIN)/test_tensor_matmul $(BIN)/test_autograd_core $(BIN)/test_autograd_ops $(BIN)/test_autograd_view $(BIN)/test_autograd_reduc
 
 all: test
 
@@ -38,6 +38,9 @@ $(BIN)/test_autograd_ops: tests/unit/autograd/test_autograd_ops.c $(SRC) $(HEADE
 
 $(BIN)/test_autograd_view: tests/unit/autograd/test_autograd_view.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_view.c $(SRC) -lm
+
+$(BIN)/test_autograd_reduc: tests/unit/autograd/test_autograd_reduc.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_reduc.c $(SRC) -lm
 
 $(BIN)/bench_tensor_matmul: benchmarks/matmul/bench_tensor_matmul.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ benchmarks/matmul/bench_tensor_matmul.c $(SRC) -lm

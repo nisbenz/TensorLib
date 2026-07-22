@@ -18,6 +18,7 @@ set(TENSORLIB_SOURCES
     src/autograd/autograd_core.c
     src/autograd/autograd_ops.c
     src/autograd/autograd_view.c
+    src/autograd/autograd_reduc.c
     include/tensorlib/tensor_matmul.h
 )
 
@@ -44,6 +45,7 @@ set(TENSORLIB_TESTS
     autograd_core
     autograd_ops
     autograd_view
+    autograd_reduc
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
