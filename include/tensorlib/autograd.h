@@ -65,17 +65,14 @@ struct ag_node {
 };
 
 /*
- * Takes ownership of value, including when construction fails. Gradients and
- * graph nodes owned by the returned object are released with it.
- */
-ag_tensor* ag_from_owned_tensor(tensor* value, int requires_grad);
-void ag_tensor_retain(ag_tensor* value);
-void ag_tensor_release(ag_tensor* value);
-void ag_node_retain(ag_node* node);
-void ag_node_release(ag_node* node);
-
-/*
- * Planned API — declarations will be added as each implementation lands.
+ * Planned API — declarations will be added when the implementation begins.
+ *
+ * Lifetime and construction:
+ *   ag_tensor* ag_from_owned_tensor(tensor* value, int requires_grad);
+ *   void ag_tensor_retain(ag_tensor* value);
+ *   void ag_tensor_release(ag_tensor* value);
+ *   void ag_node_retain(ag_node* node);
+ *   void ag_node_release(ag_node* node);
  *
  * Differentiable operations:
  *   ag_tensor* ag_add(const ag_tensor* a, const ag_tensor* b);

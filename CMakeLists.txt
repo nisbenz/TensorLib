@@ -15,7 +15,6 @@ set(TENSORLIB_SOURCES
     src/tensor/tensor_view.c
     src/tensor/tensor_reduc.c
     src/tensor/tensor_matmul.c
-    src/autograd/autograd_core.c
     include/tensorlib/tensor_matmul.h
 )
 
@@ -39,16 +38,10 @@ set(TENSORLIB_TESTS
     tensor_ops
     tensor_reduc
     tensor_matmul
-    autograd_core
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
-    if (test_name MATCHES "^autograd_")
-        set(test_source tests/unit/autograd/test_${test_name}.c)
-    else()
-        set(test_source tests/unit/tensor/test_${test_name}.c)
-    endif()
-    add_executable(test_${test_name} ${test_source})
+    add_executable(test_${test_name} tests/unit/tensor/test_${test_name}.c)
     target_include_directories(test_${test_name} PRIVATE tests/fixtures)
     target_link_libraries(test_${test_name} PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
     add_test(NAME test_${test_name} COMMAND test_${test_name})
