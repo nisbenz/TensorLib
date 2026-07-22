@@ -1,6 +1,10 @@
 #include "autograd.h"
 #include "test_common.h"
 
+#if defined(_MSC_VER) && defined(_DEBUG)
+#include <crtdbg.h>
+#endif
+
 static ag_tensor* make_ag(int ndim, const int* dims, const float* values, int requires_grad) {
     tensor* raw = t_alloc(ndim, dims);
     if (raw == NULL) return NULL;
@@ -98,12 +102,20 @@ TEST(test_graph_retains_released_leaves_and_intermediates) {
 }
 
 TEST(test_repeated_graph_construction_and_destruction) {
+#if defined(_MSC_VER) && defined(_DEBUG)
+    _CrtMemState before, after, difference;
+    _CrtMemCheckpoint(&before);
+#endif
     for(int iteration=0;iteration<500;++iteration) {
         float value=1.0f+(float)iteration/1000.0f;
         ag_tensor* x=make_ag(0,NULL,&value,1), *e=ag_exp(x), *p=ag_mul(e,x), *loss=ag_log(p);
         ASSERT_EQ_INT(ag_backward(loss),0);
         ag_tensor_release(loss); ag_tensor_release(p); ag_tensor_release(e); ag_tensor_release(x);
     }
+#if defined(_MSC_VER) && defined(_DEBUG)
+    _CrtMemCheckpoint(&after);
+    ASSERT_TRUE(!_CrtMemDifference(&difference, &before, &after));
+#endif
 }
 
 int main(void) {
