@@ -202,3 +202,20 @@ int ag_backward(ag_tensor* loss) {
     t_free(seed);
     return status;
 }
+
+void ag_zero_grad(ag_tensor* value) {
+    if (value == NULL) return;
+    t_free(value->grad);
+    value->grad = NULL;
+}
+
+void ag_zero_grad_all(ag_tensor* root) {
+    if (root == NULL) return;
+    tensor_list tensors = {0};
+    node_list nodes = {0};
+    if (collect_graph(root, &tensors, &nodes) == 0) {
+        for (int i = 0; i < tensors.count; ++i) ag_zero_grad(tensors.values[i]);
+    }
+    free(nodes.values);
+    free(tensors.values);
+}

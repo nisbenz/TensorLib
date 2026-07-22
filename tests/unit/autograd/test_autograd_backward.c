@@ -95,6 +95,17 @@ TEST(test_batched_matmul_reduces_broadcast_weight_gradient) {
     ag_tensor_release(b); ag_tensor_release(a);
 }
 
+TEST(test_zero_grad_single_and_entire_graph) {
+    float value=2.0f; ag_tensor* x=make_ag(0,NULL,&value,1), *square=ag_mul(x,x);
+    ASSERT_EQ_INT(ag_backward(square),0);
+    ASSERT_NOT_NULL(x->grad); ASSERT_NOT_NULL(square->grad);
+    ag_zero_grad(x); ASSERT_NULL(x->grad); ASSERT_NOT_NULL(square->grad);
+    ASSERT_EQ_INT(ag_backward(square),0); ASSERT_EQ_FLOAT(x->grad->storage->data[0],4.0f);
+    ag_zero_grad_all(square); ASSERT_NULL(x->grad); ASSERT_NULL(square->grad);
+    ag_zero_grad(NULL); ag_zero_grad_all(NULL);
+    ag_tensor_release(square); ag_tensor_release(x);
+}
+
 int main(void) {
     printf("== autograd_backward.c ==\n");
     RUN_TEST(test_backward_chain_computes_weight_gradients);
@@ -104,5 +115,6 @@ int main(void) {
     RUN_TEST(test_repeated_backward_accumulates_without_reusing_stale_intermediates);
     RUN_TEST(test_backward_validation_leaves_existing_gradients_unchanged);
     RUN_TEST(test_batched_matmul_reduces_broadcast_weight_gradient);
+    RUN_TEST(test_zero_grad_single_and_entire_graph);
     TEST_SUITE_SUMMARY();
 }
