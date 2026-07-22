@@ -81,7 +81,8 @@ TEST(test_backward_validation_leaves_existing_gradients_unchanged) {
 
 TEST(test_batched_matmul_reduces_broadcast_weight_gradient) {
     int adims[3]={2,2,3}, bdims[3]={1,3,2}; float av[12], bv[6];
-    for(int i=0;i<12;++i) av[i]=(float)(i+1); for(int i=0;i<6;++i) bv[i]=1.0f;
+    for(int i=0;i<12;++i) av[i]=(float)(i+1);
+    for(int i=0;i<6;++i) bv[i]=1.0f;
     ag_tensor* a=make_ag(3,adims,av,0), *b=make_ag(3,bdims,bv,1);
     ag_tensor* product=ag_matmul(a,b), *r1=ag_sum(product,2,0), *r2=ag_sum(r1,1,0), *loss=ag_sum(r2,0,0);
     ASSERT_EQ_INT(ag_backward(loss),0);

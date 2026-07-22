@@ -50,6 +50,7 @@ set(TENSORLIB_TESTS
     autograd_reduc
     autograd_matmul
     autograd_backward
+    autograd_integration
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
