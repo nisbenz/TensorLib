@@ -21,12 +21,14 @@ set(TENSORLIB_SOURCES
     src/autograd/autograd_reduc.c
     src/autograd/autograd_matmul.c
     src/autograd/autograd_backward.c
+    src/init/rng.c
     include/tensorlib/tensor_matmul.h
 )
 
 add_library(tensorlib STATIC ${TENSORLIB_SOURCES}
             include/tensorlib/tensor.h
-            include/tensorlib/autograd.h)
+            include/tensorlib/autograd.h
+            include/tensorlib/nn.h)
 target_include_directories(tensorlib PUBLIC include/tensorlib)
 
 if (WIN32)
@@ -52,17 +54,20 @@ set(TENSORLIB_TESTS
     autograd_backward
     autograd_integration
     autograd_public_contract
+    nn_rng
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
-    if (test_name MATCHES "^autograd_")
+    if (test_name MATCHES "^nn_")
+        set(test_source tests/unit/nn/test_${test_name}.c)
+    elseif(test_name MATCHES "^autograd_")
         set(test_source tests/unit/autograd/test_${test_name}.c)
     else()
         set(test_source tests/unit/tensor/test_${test_name}.c)
     endif()
     add_executable(test_${test_name} ${test_source})
     target_include_directories(test_${test_name} PRIVATE tests/fixtures)
-    if (test_name STREQUAL "autograd_public_contract")
+    if (test_name STREQUAL "autograd_public_contract" OR test_name MATCHES "^nn_")
         target_include_directories(test_${test_name} PRIVATE include)
     endif()
     target_link_libraries(test_${test_name} PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
