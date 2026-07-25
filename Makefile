@@ -76,7 +76,7 @@ $(BIN)/test_nn_loss: tests/unit/nn/test_nn_loss.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_loss.c $(SRC) -lm
 
 $(BIN)/test_nn_sgd: tests/unit/nn/test_nn_sgd.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_sgd.c $(SRC) -lm
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/optim/test_nn_sgd.c $(SRC) -lm
 
 $(BIN)/test_nn_mlp: tests/unit/nn/test_nn_mlp.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_mlp.c $(SRC) -lm

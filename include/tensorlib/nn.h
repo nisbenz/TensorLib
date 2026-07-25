@@ -1,19 +1,6 @@
 #ifndef TENSORLIB_NN_H
 #define TENSORLIB_NN_H
 
-/*
- * Neural-network layer declarations for TensorLib.
- *
- * This header defines the public neural-network and optimization contracts.
- *
- * The neural-network layer stores the persistent model structure:
- *
- *     model -> modules -> parameters
- *
- * The dynamic Autograd graph is still created by calling ag_* operations
- * during each module forward pass. A module is not itself an Autograd node.
- */
-
 #include <stddef.h>
 #include <stdint.h>
 
@@ -31,12 +18,7 @@ typedef struct nn_mlp_config nn_mlp_config;
 typedef struct nn_sgd nn_sgd;
 
 
-/*
- * Deterministic random-number generator state.
- *
- * The algorithm remains an implementation detail. The seed is public so
- * callers can reproduce parameter initialization and training experiments.
- */
+/* Deterministic random-number generator state. */
 struct nn_rng {
     uint64_t state;
 };
@@ -52,18 +34,6 @@ typedef enum {
 } nn_init_kind;
 
 
-/*
- * A persistent trainable tensor.
- *
- * Ownership:
- * - The parameter owns value.
- * - value is an Autograd leaf with requires_grad == 1 when trainable.
- * - value->grad is allocated and accumulated by Autograd during backward.
- * - name is owned by the parameter and is used for diagnostics and state
- *   serialization.
- *
- * A parameter is not an operation node and must have creator == NULL.
- */
 struct nn_parameter {
     char* name;
     ag_tensor* value;
@@ -71,26 +41,12 @@ struct nn_parameter {
 };
 
 
-/*
- * Activation callback.
- *
- * input is borrowed. The callback returns one owned ag_tensor reference.
- * The activation descriptor is passed to the callback so future
- * parameterized activations can use activation->context.
- */
+
 typedef ag_tensor* (*nn_activation_forward_fn)(
     const nn_activation* activation,
     const ag_tensor* input
 );
 
-
-/*
- * Activation descriptor.
- *
- * Built-in activations are stateless and use context == NULL. A custom or
- * parameterized activation may store borrowed configuration in context; the
- * descriptor does not own that context.
- */
 struct nn_activation {
     const char* name;
     nn_activation_forward_fn forward;
@@ -107,16 +63,6 @@ typedef ag_tensor* (*nn_module_forward_fn)(
 typedef void (*nn_module_destroy_fn)(nn_module* module);
 
 
-/*
- * Common base structure embedded as the first field of every module type.
- *
- * Ownership:
- * - A module owns its registered parameters.
- * - A module owns its registered child modules.
- * - The parameter and child arrays are implementation-managed dynamic
- *   arrays.
- * - type_name is static or borrowed; name is owned by the module.
- */
 struct nn_module {
     const char* type_name;
     char* name;
@@ -136,18 +82,6 @@ struct nn_module {
 };
 
 
-/*
- * Fully connected layer:
- *
- *     output = input @ transpose(weight) + bias
- *
- * PyTorch-style parameter layout:
- *     weight: [out_features, in_features]
- *     bias:   [out_features]
- *
- * weight and bias are convenient aliases to parameters registered in base;
- * base remains the owner of the registered parameter objects.
- */
 struct nn_linear {
     nn_module base;
 
@@ -160,18 +94,6 @@ struct nn_linear {
 };
 
 
-/*
- * MLP construction settings.
- *
- * For hidden_sizes = {100} and hidden_count = 1, this creates:
- *
- *     Linear(input_features, 100)
- *     Linear(100, output_features)
- *
- * activations contains one descriptor per Linear layer, so its length must
- * be hidden_count + 1. An activation with forward == NULL means identity.
- * The config and its arrays are borrowed only during construction.
- */
 struct nn_mlp_config {
     int input_features;
 
@@ -188,12 +110,6 @@ struct nn_mlp_config {
 };
 
 
-/*
- * Generic multi-layer perceptron.
- *
- * Linear layers are owned by base.children. activations[i] is applied after
- * the i-th Linear layer. layer_count equals base.child_count.
- */
 struct nn_mlp {
     nn_module base;
 
@@ -201,21 +117,12 @@ struct nn_mlp {
     size_t layer_count;
 };
 
-/*
- * Vanilla SGD optimizer. The optimizer borrows module and owns no parameters.
- */
 struct nn_sgd {
     nn_module* module;
     float learning_rate;
 };
 
 
-/*
- * Built-in activation descriptors.
- *
- * These return small descriptors by value. The returned descriptors do not
- * own resources and are safe to store inside nn_mlp::activations.
- */
 nn_activation nn_activation_relu(void);
 nn_activation nn_activation_gelu(void);
 nn_activation nn_activation_sigmoid(void);
@@ -228,15 +135,7 @@ nn_activation nn_activation_custom(
     const void* context
 );
 
-/*
- * Stable classification operations.
- *
- * Softmax and log-softmax operate over the final dimension. Cross-entropy
- * expects logits shaped [..., classes] and a raw target tensor containing
- * exact integer-valued class indices with the matching prefix shape. It
- * returns one scalar mean loss. Invalid pointer-returning requests return
- * NULL.
- */
+/
 ag_tensor* nn_softmax(const ag_tensor* logits);
 ag_tensor* nn_log_softmax(const ag_tensor* logits);
 ag_tensor* nn_cross_entropy(
@@ -272,12 +171,7 @@ nn_parameter* nn_parameter_create(
 void nn_parameter_destroy(nn_parameter* parameter);
 
 
-/*
- * Module registration API.
- *
- * Registration transfers ownership of parameter or child to module on
- * success. A failed registration leaves ownership with the caller.
- */
+
 int nn_module_register_parameter(
     nn_module* module,
     nn_parameter* parameter
@@ -288,11 +182,6 @@ int nn_module_register_child(
     nn_module* child
 );
 
-/*
- * Recursively count and access parameters for optimizer/model traversal.
- * Traversal visits a module's direct parameters first, then its children
- * depth-first in registration order.
- */
 size_t nn_module_parameter_count(const nn_module* module);
 nn_parameter* nn_module_parameter_at(
     const nn_module* module,
@@ -344,11 +233,6 @@ ag_tensor* nn_mlp_forward(
 );
 
 
-/*
- * Vanilla SGD. Step returns zero on success and preflights every eligible
- * parameter before performing any update. Zero-grad recursively releases all
- * accumulated parameter gradients.
- */
 nn_sgd* nn_sgd_create(nn_module* module, float learning_rate);
 int nn_sgd_step(nn_sgd* optimizer);
 void nn_sgd_zero_grad(nn_sgd* optimizer);
