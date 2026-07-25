@@ -21,6 +21,29 @@ ag_tensor* ag_from_owned_tensor(tensor* value, int requires_grad) {
     return result;
 }
 
+ag_tensor* ag_detach(const ag_tensor* value) {
+    if (value == NULL || !tensor_has_valid_metadata(value->value)) return NULL;
+
+    tensor* alias = (tensor*)calloc(1, sizeof(*alias));
+    if (alias == NULL) return NULL;
+    alias->ndim = value->value->ndim;
+    alias->offset = value->value->offset;
+    if (tensor_copy_metadata(value->value->ndim,
+                             value->value->dims,
+                             value->value->strides,
+                             &alias->dims,
+                             &alias->strides) != 0) {
+        t_free(alias);
+        return NULL;
+    }
+    add_ref_count(value->value->storage, alias);
+    if (alias->storage == NULL) {
+        t_free(alias);
+        return NULL;
+    }
+    return ag_from_owned_tensor(alias, 0);
+}
+
 void ag_tensor_retain(ag_tensor* value) {
     if (value == NULL || value->ref_count <= 0) return;
     value->ref_count++;

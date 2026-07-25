@@ -91,6 +91,12 @@ struct ag_node {
 
 /* Takes ownership of value, including when construction fails. */
 ag_tensor* ag_from_owned_tensor(tensor* value, int requires_grad);
+/*
+ * Returns a zero-copy leaf alias with requires_grad == 0, grad == NULL, and
+ * creator == NULL. Shape, strides, offset, storage, and storage version are
+ * shared with value.
+ */
+ag_tensor* ag_detach(const ag_tensor* value);
 void ag_tensor_retain(ag_tensor* value);
 void ag_tensor_release(ag_tensor* value);
 void ag_node_retain(ag_node* node);
