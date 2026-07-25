@@ -5,6 +5,20 @@
 
 #include "tensor.h"
 
+/*
+ * TensorLib records a dynamic reverse-mode graph during eager forward
+ * execution. Graph nodes retain their inputs; outputs own their creator nodes.
+ * Backward retains the graph and repeated calls accumulate gradients.
+ *
+ * Backward is transactional: validation or allocation failure leaves all
+ * previously accumulated gradients unchanged. Broadcast contributions are
+ * reduced back to each input's original shape before accumulation.
+ *
+ * Values participating in a graph must not be changed before backward.
+ * Library-controlled in-place writes must use tensor_mark_modified(); direct
+ * storage writes are supported only for initialization before graph capture.
+ */
+
 /* Forward declarations allow tensors and graph nodes to refer to each other. */
 typedef struct ag_tensor ag_tensor;
 typedef struct ag_node ag_node;
@@ -93,8 +107,10 @@ ag_tensor* ag_sum(const ag_tensor* value, int dim, int keepdim);
 ag_tensor* ag_mean(const ag_tensor* value, int dim, int keepdim);
 ag_tensor* ag_max(const ag_tensor* value, int dim, int keepdim);
 ag_tensor* ag_matmul(const ag_tensor* a, const ag_tensor* b);
+/* Scalar outputs are seeded with one; non-scalars require an explicit seed. */
 int ag_backward(ag_tensor* loss);
 int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient);
+/* Gradients are owned tensors; zeroing releases them and stores NULL. */
 void ag_zero_grad(ag_tensor* value);
 void ag_zero_grad_all(ag_tensor* root);
 
