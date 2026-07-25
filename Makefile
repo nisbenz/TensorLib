@@ -5,7 +5,7 @@ HEADERS = include/tensorlib/tensor.h include/tensorlib/tensor_matmul.h include/t
 INCLUDES = -Iinclude/tensorlib -Itests/fixtures
 
 BIN = bin
-TESTS = $(BIN)/test_tensor_core $(BIN)/test_tensor_alloc $(BIN)/test_tensor_view $(BIN)/test_tensor_ops $(BIN)/test_tensor_reduc $(BIN)/test_tensor_matmul $(BIN)/test_autograd_core $(BIN)/test_autograd_ops $(BIN)/test_autograd_view $(BIN)/test_autograd_reduc $(BIN)/test_autograd_matmul $(BIN)/test_autograd_backward $(BIN)/test_autograd_integration $(BIN)/test_autograd_public_contract $(BIN)/test_nn_rng $(BIN)/test_nn_parameter $(BIN)/test_nn_module
+TESTS = $(BIN)/test_tensor_core $(BIN)/test_tensor_alloc $(BIN)/test_tensor_view $(BIN)/test_tensor_ops $(BIN)/test_tensor_reduc $(BIN)/test_tensor_matmul $(BIN)/test_autograd_core $(BIN)/test_autograd_ops $(BIN)/test_autograd_view $(BIN)/test_autograd_reduc $(BIN)/test_autograd_matmul $(BIN)/test_autograd_backward $(BIN)/test_autograd_integration $(BIN)/test_autograd_public_contract $(BIN)/test_nn_rng $(BIN)/test_nn_parameter $(BIN)/test_nn_module $(BIN)/test_nn_init
 
 all: test
 
@@ -65,6 +65,9 @@ $(BIN)/test_nn_parameter: tests/unit/nn/test_nn_parameter.c $(SRC) $(HEADERS) | 
 
 $(BIN)/test_nn_module: tests/unit/nn/test_nn_module.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_module.c $(SRC) -lm
+
+$(BIN)/test_nn_init: tests/unit/nn/test_nn_init.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_init.c $(SRC) -lm
 
 $(BIN)/autograd_example: examples/autograd_example.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ examples/autograd_example.c $(SRC) -lm

@@ -59,6 +59,7 @@ set(TENSORLIB_TESTS
     nn_rng
     nn_parameter
     nn_module
+    nn_init
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
