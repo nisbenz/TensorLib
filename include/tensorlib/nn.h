@@ -264,7 +264,11 @@ int nn_module_register_child(
     nn_module* child
 );
 
-/* Recursively count and access parameters for optimizer/model traversal. */
+/*
+ * Recursively count and access parameters for optimizer/model traversal.
+ * Traversal visits a module's direct parameters first, then its children
+ * depth-first in registration order.
+ */
 size_t nn_module_parameter_count(const nn_module* module);
 nn_parameter* nn_module_parameter_at(
     const nn_module* module,

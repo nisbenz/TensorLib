@@ -23,6 +23,7 @@ set(TENSORLIB_SOURCES
     src/autograd/autograd_backward.c
     src/init/rng.c
     src/nn/parameter.c
+    src/nn/module.c
     include/tensorlib/tensor_matmul.h
 )
 
@@ -57,6 +58,7 @@ set(TENSORLIB_TESTS
     autograd_public_contract
     nn_rng
     nn_parameter
+    nn_module
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
