@@ -1,5 +1,5 @@
 #include "./../../../include/tensorlib/autograd.h"
-#include "./../../../include/tensorlib/autograd.h"
+#include <stdlib.h>
 #include "./../../fixtures/test_common.h"
 
 #if defined(_MSC_VER) && defined(_DEBUG)
@@ -119,6 +119,177 @@ TEST(test_repeated_graph_construction_and_destruction) {
 #endif
 }
 
+static float logical_weighted_sum(tensor* value, const float* weights) {
+    int* coords = value->ndim > 0
+                ? (int*)calloc((size_t)value->ndim, sizeof(int)) : NULL;
+    float result = 0.0f;
+    for (int i = 0; i < tensor_numel(value); ++i) {
+        result += value->storage->data[get_flat_index_nd(value, coords)] * weights[i];
+        advance_coords(coords, value->dims, value->ndim);
+    }
+    free(coords);
+    return result;
+}
+
+static float evaluate_view_loss(int operation, const float* values) {
+    tensor* input = NULL;
+    tensor* view = NULL;
+    float result = NAN;
+    if (operation == 0 || operation == 1) {
+        int dims[2] = {2, 3};
+        int reshaped_dims[2] = {3, 2};
+        float weights[6] = {0.2f, 0.4f, 0.7f, 1.1f, 1.3f, 1.8f};
+        input = t_alloc(2, dims);
+        for (int i = 0; i < 6; ++i) input->storage->data[i] = values[i];
+        view = operation == 0 ? t_reshape(input, 2, reshaped_dims)
+                              : t_transpose(input, 0, 1);
+        result = logical_weighted_sum(view, weights);
+    } else if (operation == 2) {
+        int dims[1] = {4};
+        float weights[2] = {0.6f, 1.4f};
+        input = t_alloc(1, dims);
+        for (int i = 0; i < 4; ++i) input->storage->data[i] = values[i];
+        view = t_slice(input, 0, 1, 3);
+        result = logical_weighted_sum(view, weights);
+    } else {
+        int dims[2] = {2, 1};
+        int expanded_dims[2] = {2, 3};
+        float weights[6] = {0.1f, 0.3f, 0.5f, 0.7f, 1.0f, 1.2f};
+        input = t_alloc(2, dims);
+        input->storage->data[0] = values[0];
+        input->storage->data[1] = values[1];
+        view = t_expand(input, 2, expanded_dims);
+        result = logical_weighted_sum(view, weights);
+    }
+    t_free(view);
+    t_free(input);
+    return result;
+}
+
+static ag_tensor* weighted_view_loss(ag_tensor* input, int operation) {
+    ag_tensor* view = NULL;
+    ag_tensor* weights = NULL;
+    ag_tensor* product = NULL;
+    ag_tensor* first = NULL;
+    ag_tensor* loss = NULL;
+    if (operation == 0 || operation == 1) {
+        int output_dims[2] = {3, 2};
+        float weight_values[6] = {0.2f, 0.4f, 0.7f, 1.1f, 1.3f, 1.8f};
+        view = operation == 0 ? ag_reshape(input, 2, output_dims)
+                              : ag_transpose(input, 0, 1);
+        weights = make_ag(2, output_dims, weight_values, 0);
+    } else if (operation == 2) {
+        int output_dims[1] = {2};
+        float weight_values[2] = {0.6f, 1.4f};
+        view = ag_slice(input, 0, 1, 3);
+        weights = make_ag(1, output_dims, weight_values, 0);
+    } else {
+        int output_dims[2] = {2, 3};
+        float weight_values[6] = {0.1f, 0.3f, 0.5f, 0.7f, 1.0f, 1.2f};
+        view = ag_expand(input, 2, output_dims);
+        weights = make_ag(2, output_dims, weight_values, 0);
+    }
+    product = ag_mul(view, weights);
+    if (product->value->ndim == 1) {
+        loss = ag_sum(product, 0, 0);
+    } else {
+        first = ag_sum(product, 1, 0);
+        loss = ag_sum(first, 0, 0);
+    }
+    ag_tensor_release(first);
+    ag_tensor_release(product);
+    ag_tensor_release(weights);
+    ag_tensor_release(view);
+    return loss;
+}
+
+TEST(test_each_view_primitive_matches_finite_difference) {
+    float matrix_values[6] = {0.4f, 0.7f, 1.0f, 1.3f, 1.6f, 1.9f};
+    float vector_values[4] = {0.2f, 0.5f, 0.9f, 1.4f};
+    float expand_values[2] = {0.8f, 1.5f};
+    const float epsilon = 1e-3f;
+    for (int operation = 0; operation < 4; ++operation) {
+        float* values = operation < 2 ? matrix_values
+                      : operation == 2 ? vector_values : expand_values;
+        int count = operation < 2 ? 6 : operation == 2 ? 4 : 2;
+        int matrix_dims[2] = {2, 3};
+        int vector_dims[1] = {4};
+        int expand_dims[2] = {2, 1};
+        ag_tensor* input = operation < 2
+                         ? make_ag(2, matrix_dims, values, 1)
+                         : operation == 2
+                         ? make_ag(1, vector_dims, values, 1)
+                         : make_ag(2, expand_dims, values, 1);
+        ag_tensor* loss = weighted_view_loss(input, operation);
+        ASSERT_EQ_INT(ag_backward(loss), 0);
+        for (int i = 0; i < count; ++i) {
+            float original = values[i];
+            values[i] = original + epsilon;
+            float plus = evaluate_view_loss(operation, values);
+            values[i] = original - epsilon;
+            float minus = evaluate_view_loss(operation, values);
+            values[i] = original;
+            ASSERT_FLOAT_NEAR(input->grad->storage->data[i],
+                              (plus - minus) / (2.0f * epsilon), 6e-4f);
+        }
+        ag_tensor_release(loss);
+        ag_tensor_release(input);
+    }
+}
+
+static float evaluate_reduction_loss(int operation, const float* values) {
+    float result = 0.0f;
+    for (int row = 0; row < 2; ++row) {
+        if (operation == 0) {
+            for (int column = 0; column < 3; ++column) {
+                result += values[row * 3 + column];
+            }
+        } else if (operation == 1) {
+            for (int column = 0; column < 3; ++column) {
+                result += values[row * 3 + column] / 3.0f;
+            }
+        } else {
+            float maximum = values[row * 3];
+            for (int column = 1; column < 3; ++column) {
+                if (values[row * 3 + column] > maximum) {
+                    maximum = values[row * 3 + column];
+                }
+            }
+            result += maximum;
+        }
+    }
+    return result;
+}
+
+TEST(test_each_reduction_primitive_matches_finite_difference) {
+    int dims[2] = {2, 3};
+    const float initial[6] = {0.2f, 1.1f, 0.5f, 1.7f, 0.3f, 0.8f};
+    const float epsilon = 1e-3f;
+    for (int operation = 0; operation < 3; ++operation) {
+        float values[6];
+        for (int i = 0; i < 6; ++i) values[i] = initial[i];
+        ag_tensor* input = make_ag(2, dims, values, 1);
+        ag_tensor* reduced = operation == 0 ? ag_sum(input, 1, 0)
+                           : operation == 1 ? ag_mean(input, 1, 0)
+                                            : ag_max(input, 1, 0);
+        ag_tensor* loss = ag_sum(reduced, 0, 0);
+        ASSERT_EQ_INT(ag_backward(loss), 0);
+        for (int i = 0; i < 6; ++i) {
+            float original = values[i];
+            values[i] = original + epsilon;
+            float plus = evaluate_reduction_loss(operation, values);
+            values[i] = original - epsilon;
+            float minus = evaluate_reduction_loss(operation, values);
+            values[i] = original;
+            ASSERT_FLOAT_NEAR(input->grad->storage->data[i],
+                              (plus - minus) / (2.0f * epsilon), 2e-4f);
+        }
+        ag_tensor_release(loss);
+        ag_tensor_release(reduced);
+        ag_tensor_release(input);
+    }
+}
+
 int main(void) {
     printf("== autograd_integration.c ==\n");
     RUN_TEST(test_composed_gradient_matches_central_difference);
@@ -127,5 +298,7 @@ int main(void) {
     RUN_TEST(test_non_gradient_input_participates_without_receiving_grad);
     RUN_TEST(test_graph_retains_released_leaves_and_intermediates);
     RUN_TEST(test_repeated_graph_construction_and_destruction);
+    RUN_TEST(test_each_view_primitive_matches_finite_difference);
+    RUN_TEST(test_each_reduction_primitive_matches_finite_difference);
     TEST_SUITE_SUMMARY();
 }
