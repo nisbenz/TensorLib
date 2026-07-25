@@ -4,8 +4,7 @@
 /*
  * Neural-network layer declarations for TensorLib.
  *
- * This header deliberately contains declarations and ownership contracts
- * only. Implementations belong in a future nn/ source directory.
+ * This header defines the public neural-network and optimization contracts.
  *
  * The neural-network layer stores the persistent model structure:
  *
@@ -247,7 +246,7 @@ ag_tensor* nn_cross_entropy(
 
 
 /*
- * RNG API — declarations only; implementation is future work.
+ * RNG API.
  * Invalid random requests return NAN.
  */
 void nn_rng_seed(nn_rng* rng, uint64_t seed);
@@ -256,7 +255,7 @@ float nn_rng_normal(nn_rng* rng, float mean, float stddev);
 
 
 /*
- * Parameter API — declarations only; implementation is future work.
+ * Parameter API.
  *
  * The constructor allocates the tensor, initializes its storage, wraps it as
  * an Autograd leaf, and transfers ownership of the result to the caller.
@@ -274,8 +273,7 @@ void nn_parameter_destroy(nn_parameter* parameter);
 
 
 /*
- * Module registration API — declarations only; implementation is future
- * work.
+ * Module registration API.
  *
  * Registration transfers ownership of parameter or child to module on
  * success. A failed registration leaves ownership with the caller.
@@ -309,7 +307,7 @@ ag_tensor* nn_module_forward(
 
 
 /*
- * Linear-layer API — declarations only; implementation is future work.
+ * Linear-layer API.
  */
 nn_linear* nn_linear_create(
     const char* name,
@@ -330,7 +328,7 @@ ag_tensor* nn_linear_forward(
 
 
 /*
- * MLP API — declarations only; implementation is future work.
+ * MLP API.
  */
 nn_mlp* nn_mlp_create(
     const char* name,
