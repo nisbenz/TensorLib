@@ -108,6 +108,12 @@ void ag_tensor_release(ag_tensor* value);
 void ag_node_retain(ag_node* node);
 void ag_node_release(ag_node* node);
 
+/*
+ * Differentiable forward operations mirror the corresponding raw t_*
+ * operation's shape, broadcasting, view, and numerical behavior. Invalid
+ * arguments return NULL. A result records a creator only when at least one
+ * input requires gradients; otherwise it is an untracked leaf.
+ */
 ag_tensor* ag_add(const ag_tensor* a, const ag_tensor* b);
 ag_tensor* ag_sub(const ag_tensor* a, const ag_tensor* b);
 ag_tensor* ag_mul(const ag_tensor* a, const ag_tensor* b);
@@ -144,14 +150,5 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient);
 /* Gradients are owned tensors; zeroing releases them and stores NULL. */
 void ag_zero_grad(ag_tensor* value);
 void ag_zero_grad_all(ag_tensor* root);
-
-/*
- * Planned API — declarations will be added as implementations land.
- *
- * Differentiable operations:
- *
- * Backward and gradient management:
- *   ag_tensor* ag_detach(const ag_tensor* value);
- */
 
 #endif /* TENSORLIB_AUTOGRAD_H */
