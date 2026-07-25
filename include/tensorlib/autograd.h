@@ -32,6 +32,7 @@ typedef enum {
     AG_OP_NEG,
     AG_OP_EXP,
     AG_OP_LOG,
+    AG_OP_POW,
     AG_OP_MATMUL,
     AG_OP_SUM,
     AG_OP_MEAN,
@@ -109,6 +110,11 @@ ag_tensor* ag_div(const ag_tensor* a, const ag_tensor* b);
 ag_tensor* ag_neg(const ag_tensor* value);
 ag_tensor* ag_exp(const ag_tensor* value);
 ag_tensor* ag_log(const ag_tensor* value);
+/*
+ * Raises each element to a scalar exponent. Backward uses
+ * exponent * x^(exponent - 1), with exact zero/one exponent special cases.
+ */
+ag_tensor* ag_pow(const ag_tensor* value, float exponent);
 ag_tensor* ag_reshape(const ag_tensor* value, int new_ndim, const int* new_dims);
 ag_tensor* ag_transpose(const ag_tensor* value, int dim0, int dim1);
 ag_tensor* ag_slice(const ag_tensor* value, int dim, int start, int end);

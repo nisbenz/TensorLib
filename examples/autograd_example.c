@@ -17,6 +17,7 @@ static const char* operation_name(ag_op operation) {
         case AG_OP_NEG: return "NEG";
         case AG_OP_EXP: return "EXP";
         case AG_OP_LOG: return "LOG";
+        case AG_OP_POW: return "POW";
         case AG_OP_MATMUL: return "MATMUL";
         case AG_OP_SUM: return "SUM";
         case AG_OP_MEAN: return "MEAN";

@@ -146,6 +146,68 @@ TEST(test_unary_handles_scalar_view_and_null) {
     ag_tensor_release(result); ag_tensor_release(input);
 }
 
+TEST(test_pow_forward_backward_and_edge_exponents) {
+    int dims[1] = {3};
+    float values[3] = {1.0f, 2.0f, 3.0f};
+    float upstream_values[3] = {1.0f, 2.0f, 0.5f};
+    ag_tensor* input = make_ag(1, dims, values, 1);
+    ag_tensor* cube = ag_pow(input, 3.0f);
+    tensor* upstream = t_alloc(1, dims);
+    for (int i = 0; i < 3; ++i) upstream->storage->data[i] = upstream_values[i];
+    ASSERT_NOT_NULL(cube);
+    ASSERT_EQ_INT(cube->creator->operation, AG_OP_POW);
+    ASSERT_EQ_INT(ag_backward_with_grad(cube, upstream), 0);
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_FLOAT_NEAR(cube->value->storage->data[i], values[i] * values[i] * values[i], 1e-6f);
+        ASSERT_FLOAT_NEAR(input->grad->storage->data[i],
+                          upstream_values[i] * 3.0f * values[i] * values[i], 1e-5f);
+    }
+    ag_zero_grad(input);
+
+    ag_tensor* zero_power = ag_pow(input, 0.0f);
+    ag_tensor* identity = ag_pow(input, 1.0f);
+    ASSERT_EQ_INT(ag_backward_with_grad(zero_power, upstream), 0);
+    for (int i = 0; i < 3; ++i) ASSERT_EQ_FLOAT(input->grad->storage->data[i], 0.0f);
+    ag_zero_grad(input);
+    ASSERT_EQ_INT(ag_backward_with_grad(identity, upstream), 0);
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_EQ_FLOAT(input->grad->storage->data[i], upstream_values[i]);
+    }
+
+    ag_tensor_release(identity);
+    ag_tensor_release(zero_power);
+    t_free(upstream);
+    ag_tensor_release(cube);
+    ag_tensor_release(input);
+    ASSERT_NULL(ag_pow(NULL, 2.0f));
+}
+
+TEST(test_pow_scalar_and_view_gradient_matches_central_difference) {
+    int dims[2] = {2, 2};
+    float values[4] = {0.7f, 1.1f, 1.5f, 1.9f};
+    tensor* base = t_alloc(2, dims);
+    for (int i = 0; i < 4; ++i) base->storage->data[i] = values[i];
+    tensor* view = t_transpose(base, 0, 1);
+    t_free(base);
+    ag_tensor* input = ag_from_owned_tensor(view, 1);
+    ag_tensor* powered = ag_pow(input, 2.5f);
+    ag_tensor* row = ag_sum(powered, 1, 0);
+    ag_tensor* loss = ag_sum(row, 0, 0);
+    ASSERT_EQ_INT(ag_backward(loss), 0);
+    const float epsilon = 1e-3f;
+    for (int i = 0; i < 4; ++i) {
+        float x = input->value->storage->data[i];
+        float numerical = (powf(x + epsilon, 2.5f) - powf(x - epsilon, 2.5f)) /
+                          (2.0f * epsilon);
+        int logical_index = i == 1 ? 2 : i == 2 ? 1 : i;
+        ASSERT_FLOAT_NEAR(input->grad->storage->data[logical_index], numerical, 5e-4f);
+    }
+    ag_tensor_release(loss);
+    ag_tensor_release(row);
+    ag_tensor_release(powered);
+    ag_tensor_release(input);
+}
+
 int main(void) {
     printf("== autograd_ops.c ==\n");
     RUN_TEST(test_binary_forwards_create_typed_nodes_and_retain_inputs);
@@ -155,5 +217,7 @@ int main(void) {
     RUN_TEST(test_binary_rejects_null_and_incompatible_shapes);
     RUN_TEST(test_unary_forwards_and_local_gradients);
     RUN_TEST(test_unary_handles_scalar_view_and_null);
+    RUN_TEST(test_pow_forward_backward_and_edge_exponents);
+    RUN_TEST(test_pow_scalar_and_view_gradient_matches_central_difference);
     TEST_SUITE_SUMMARY();
 }
