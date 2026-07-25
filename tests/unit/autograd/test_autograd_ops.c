@@ -461,6 +461,113 @@ TEST(test_gelu_view_gradient_matches_central_difference) {
     ag_tensor_release(input);
 }
 
+static float evaluate_binary_scalar(ag_op operation, float a, float b) {
+    switch (operation) {
+        case AG_OP_ADD: return a + b;
+        case AG_OP_SUB: return a - b;
+        case AG_OP_MUL: return a * b;
+        case AG_OP_DIV: return a / b;
+        default: return NAN;
+    }
+}
+
+TEST(test_existing_arithmetic_primitives_match_individual_finite_differences) {
+    const float epsilon = 1e-3f;
+    const float a_value = 1.7f;
+    const float b_value = 0.8f;
+    ag_op binary_ops[4] = {AG_OP_ADD, AG_OP_SUB, AG_OP_MUL, AG_OP_DIV};
+    ag_tensor* (*binary_functions[4])(const ag_tensor*, const ag_tensor*) = {
+        ag_add, ag_sub, ag_mul, ag_div
+    };
+    for (int op = 0; op < 4; ++op) {
+        ag_tensor* a = make_ag(0, NULL, &a_value, 1);
+        ag_tensor* b = make_ag(0, NULL, &b_value, 1);
+        ag_tensor* result = binary_functions[op](a, b);
+        ASSERT_EQ_INT(ag_backward(result), 0);
+        float numerical_a =
+            (evaluate_binary_scalar(binary_ops[op], a_value + epsilon, b_value) -
+             evaluate_binary_scalar(binary_ops[op], a_value - epsilon, b_value)) /
+            (2.0f * epsilon);
+        float numerical_b =
+            (evaluate_binary_scalar(binary_ops[op], a_value, b_value + epsilon) -
+             evaluate_binary_scalar(binary_ops[op], a_value, b_value - epsilon)) /
+            (2.0f * epsilon);
+        ASSERT_FLOAT_NEAR(a->grad->storage->data[0], numerical_a, 8e-5f);
+        ASSERT_FLOAT_NEAR(b->grad->storage->data[0], numerical_b, 2e-4f);
+        ag_tensor_release(result);
+        ag_tensor_release(b);
+        ag_tensor_release(a);
+    }
+
+    ag_tensor* (*unary_functions[3])(const ag_tensor*) = {ag_neg, ag_exp, ag_log};
+    for (int op = 0; op < 3; ++op) {
+        ag_tensor* input = make_ag(0, NULL, &a_value, 1);
+        ag_tensor* result = unary_functions[op](input);
+        ASSERT_EQ_INT(ag_backward(result), 0);
+        float plus = op == 0 ? -(a_value + epsilon)
+                   : op == 1 ? expf(a_value + epsilon)
+                             : logf(a_value + epsilon);
+        float minus = op == 0 ? -(a_value - epsilon)
+                    : op == 1 ? expf(a_value - epsilon)
+                              : logf(a_value - epsilon);
+        ASSERT_FLOAT_NEAR(input->grad->storage->data[0],
+                          (plus - minus) / (2.0f * epsilon), 3e-4f);
+        ag_tensor_release(result);
+        ag_tensor_release(input);
+    }
+}
+
+static float evaluate_broadcast_branch(const float* x, const float* weights) {
+    float result = 0.0f;
+    for (int row = 0; row < 2; ++row) {
+        for (int column = 0; column < 3; ++column) {
+            result += 2.0f * x[row] * weights[column];
+        }
+    }
+    return result;
+}
+
+TEST(test_broadcast_branched_arithmetic_matches_finite_difference) {
+    int x_dims[2] = {2, 1};
+    int weight_dims[2] = {1, 3};
+    float x_values[2] = {0.4f, 1.1f};
+    float weight_values[3] = {0.3f, 0.7f, 1.2f};
+    ag_tensor* x = make_ag(2, x_dims, x_values, 1);
+    ag_tensor* weights = make_ag(2, weight_dims, weight_values, 1);
+    ag_tensor* product = ag_mul(x, weights);
+    ag_tensor* branched = ag_add(product, product);
+    ag_tensor* row_sum = ag_sum(branched, 1, 0);
+    ag_tensor* loss = ag_sum(row_sum, 0, 0);
+    ASSERT_EQ_INT(ag_backward(loss), 0);
+    const float epsilon = 1e-3f;
+    for (int i = 0; i < 2; ++i) {
+        float original = x_values[i];
+        x_values[i] = original + epsilon;
+        float plus = evaluate_broadcast_branch(x_values, weight_values);
+        x_values[i] = original - epsilon;
+        float minus = evaluate_broadcast_branch(x_values, weight_values);
+        x_values[i] = original;
+        ASSERT_FLOAT_NEAR(x->grad->storage->data[i],
+                          (plus - minus) / (2.0f * epsilon), 3e-4f);
+    }
+    for (int i = 0; i < 3; ++i) {
+        float original = weight_values[i];
+        weight_values[i] = original + epsilon;
+        float plus = evaluate_broadcast_branch(x_values, weight_values);
+        weight_values[i] = original - epsilon;
+        float minus = evaluate_broadcast_branch(x_values, weight_values);
+        weight_values[i] = original;
+        ASSERT_FLOAT_NEAR(weights->grad->storage->data[i],
+                          (plus - minus) / (2.0f * epsilon), 3e-4f);
+    }
+    ag_tensor_release(loss);
+    ag_tensor_release(row_sum);
+    ag_tensor_release(branched);
+    ag_tensor_release(product);
+    ag_tensor_release(weights);
+    ag_tensor_release(x);
+}
+
 int main(void) {
     printf("== autograd_ops.c ==\n");
     RUN_TEST(test_binary_forwards_create_typed_nodes_and_retain_inputs);
@@ -482,5 +589,7 @@ int main(void) {
     RUN_TEST(test_tanh_view_gradient_matches_central_difference);
     RUN_TEST(test_gelu_backward_matches_tanh_approximation);
     RUN_TEST(test_gelu_view_gradient_matches_central_difference);
+    RUN_TEST(test_existing_arithmetic_primitives_match_individual_finite_differences);
+    RUN_TEST(test_broadcast_branched_arithmetic_matches_finite_difference);
     TEST_SUITE_SUMMARY();
 }
