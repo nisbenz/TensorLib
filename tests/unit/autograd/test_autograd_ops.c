@@ -297,6 +297,56 @@ TEST(test_relu_strided_and_scalar_gradients) {
     ag_tensor_release(scalar_input);
 }
 
+TEST(test_sigmoid_seeded_backward_and_saturation) {
+    int dims[1] = {4};
+    float values[4] = {-20.0f, -2.0f, 0.0f, 20.0f};
+    float upstream_values[4] = {3.0f, 2.0f, 1.0f, 4.0f};
+    ag_tensor* input = make_ag(1, dims, values, 1);
+    ag_tensor* result = ag_sigmoid(input);
+    tensor* upstream = t_alloc(1, dims);
+    for (int i = 0; i < 4; ++i) upstream->storage->data[i] = upstream_values[i];
+    ASSERT_NOT_NULL(result);
+    ASSERT_EQ_INT(result->creator->operation, AG_OP_SIGMOID);
+    ASSERT_EQ_INT(ag_backward_with_grad(result, upstream), 0);
+    for (int i = 0; i < 4; ++i) {
+        float y = 1.0f / (1.0f + expf(-values[i]));
+        ASSERT_FLOAT_NEAR(result->value->storage->data[i], y, 1e-6f);
+        ASSERT_FLOAT_NEAR(input->grad->storage->data[i],
+                          upstream_values[i] * y * (1.0f - y), 1e-6f);
+    }
+    t_free(upstream);
+    ag_tensor_release(result);
+    ag_tensor_release(input);
+    ASSERT_NULL(ag_sigmoid(NULL));
+}
+
+TEST(test_sigmoid_view_gradient_matches_central_difference) {
+    int dims[2] = {2, 2};
+    float values[4] = {-3.0f, 0.5f, 2.0f, 4.0f};
+    tensor* base = t_alloc(2, dims);
+    for (int i = 0; i < 4; ++i) base->storage->data[i] = values[i];
+    tensor* view = t_transpose(base, 0, 1);
+    t_free(base);
+    ag_tensor* input = ag_from_owned_tensor(view, 1);
+    ag_tensor* result = ag_sigmoid(input);
+    ag_tensor* row = ag_sum(result, 1, 0);
+    ag_tensor* loss = ag_sum(row, 0, 0);
+    ASSERT_EQ_INT(ag_backward(loss), 0);
+    const float epsilon = 1e-3f;
+    for (int logical = 0; logical < 4; ++logical) {
+        int storage_index = logical == 1 ? 2 : logical == 2 ? 1 : logical;
+        float x = values[storage_index];
+        float plus = 1.0f / (1.0f + expf(-(x + epsilon)));
+        float minus = 1.0f / (1.0f + expf(-(x - epsilon)));
+        ASSERT_FLOAT_NEAR(input->grad->storage->data[logical],
+                          (plus - minus) / (2.0f * epsilon), 3e-5f);
+    }
+    ag_tensor_release(loss);
+    ag_tensor_release(row);
+    ag_tensor_release(result);
+    ag_tensor_release(input);
+}
+
 int main(void) {
     printf("== autograd_ops.c ==\n");
     RUN_TEST(test_binary_forwards_create_typed_nodes_and_retain_inputs);
@@ -312,5 +362,7 @@ int main(void) {
     RUN_TEST(test_sqrt_scalar_gradient_matches_central_difference);
     RUN_TEST(test_relu_backward_defines_zero_and_nan_behavior);
     RUN_TEST(test_relu_strided_and_scalar_gradients);
+    RUN_TEST(test_sigmoid_seeded_backward_and_saturation);
+    RUN_TEST(test_sigmoid_view_gradient_matches_central_difference);
     TEST_SUITE_SUMMARY();
 }

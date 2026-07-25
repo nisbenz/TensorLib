@@ -20,6 +20,7 @@ static const char* operation_name(ag_op operation) {
         case AG_OP_POW: return "POW";
         case AG_OP_SQRT: return "SQRT";
         case AG_OP_RELU: return "RELU";
+        case AG_OP_SIGMOID: return "SIGMOID";
         case AG_OP_MATMUL: return "MATMUL";
         case AG_OP_SUM: return "SUM";
         case AG_OP_MEAN: return "MEAN";

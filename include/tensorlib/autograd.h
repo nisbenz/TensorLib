@@ -35,6 +35,7 @@ typedef enum {
     AG_OP_POW,
     AG_OP_SQRT,
     AG_OP_RELU,
+    AG_OP_SIGMOID,
     AG_OP_MATMUL,
     AG_OP_SUM,
     AG_OP_MEAN,
@@ -121,6 +122,8 @@ ag_tensor* ag_pow(const ag_tensor* value, float exponent);
 ag_tensor* ag_sqrt(const ag_tensor* value);
 /* ReLU uses derivative zero at zero and a NaN gradient for NaN input. */
 ag_tensor* ag_relu(const ag_tensor* value);
+/* Sigmoid backward reuses the forward output y as y * (1 - y). */
+ag_tensor* ag_sigmoid(const ag_tensor* value);
 ag_tensor* ag_reshape(const ag_tensor* value, int new_ndim, const int* new_dims);
 ag_tensor* ag_transpose(const ag_tensor* value, int dim0, int dim1);
 ag_tensor* ag_slice(const ag_tensor* value, int dim, int start, int end);

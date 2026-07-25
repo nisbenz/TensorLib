@@ -283,3 +283,23 @@ static int backward_relu(const ag_node* node,
 ag_tensor* ag_relu(const ag_tensor* value) {
     return apply_unary(value, AG_OP_RELU, t_relu, backward_relu);
 }
+
+static float derivative_sigmoid(float input, float output) {
+    (void)input;
+    return output * (1.0f - output);
+}
+
+static int backward_sigmoid(const ag_node* node,
+                            const tensor* output_gradient,
+                            tensor** input_gradients) {
+    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
+        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!node->inputs[0]->requires_grad) return 0;
+    input_gradients[0] = apply_unary_derivative(node, output_gradient,
+                                                derivative_sigmoid);
+    return input_gradients[0] == NULL;
+}
+
+ag_tensor* ag_sigmoid(const ag_tensor* value) {
+    return apply_unary(value, AG_OP_SIGMOID, t_sigmoid, backward_sigmoid);
+}
