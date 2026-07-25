@@ -12,6 +12,9 @@ all: test
 example: $(BIN)/autograd_example
 	./$(BIN)/autograd_example
 
+mnist: $(BIN)/mnist_mlp
+	./$(BIN)/mnist_mlp
+
 $(BIN):
 	mkdir -p $(BIN)
 
@@ -75,7 +78,7 @@ $(BIN)/test_nn_linear: tests/unit/nn/test_nn_linear.c $(SRC) $(HEADERS) | $(BIN)
 $(BIN)/test_nn_loss: tests/unit/nn/test_nn_loss.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_loss.c $(SRC) -lm
 
-$(BIN)/test_nn_sgd: tests/unit/nn/test_nn_sgd.c $(SRC) $(HEADERS) | $(BIN)
+$(BIN)/test_nn_sgd: tests/unit/optim/test_nn_sgd.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/optim/test_nn_sgd.c $(SRC) -lm
 
 $(BIN)/test_nn_mlp: tests/unit/nn/test_nn_mlp.c $(SRC) $(HEADERS) | $(BIN)
@@ -83,6 +86,9 @@ $(BIN)/test_nn_mlp: tests/unit/nn/test_nn_mlp.c $(SRC) $(HEADERS) | $(BIN)
 
 $(BIN)/autograd_example: examples/autograd_example.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ examples/autograd_example.c $(SRC) -lm
+
+$(BIN)/mnist_mlp: examples/mnsit/mnist_mlp.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ examples/mnsit/mnist_mlp.c $(SRC) -lm
 
 $(BIN)/bench_tensor_matmul: benchmarks/matmul/bench_tensor_matmul.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ benchmarks/matmul/bench_tensor_matmul.c $(SRC) -lm
@@ -122,4 +128,4 @@ benchmark-openblas-reuse: $(BIN)/bench_openblas_matmul_reuse
 clean:
 	rm -rf $(BIN)
 
-.PHONY: all test example benchmark-all benchmark-matmul benchmark-matmul-reuse benchmark-packed-views benchmark-openblas benchmark-openblas-reuse clean
+.PHONY: all test example mnist benchmark-all benchmark-matmul benchmark-matmul-reuse benchmark-packed-views benchmark-openblas benchmark-openblas-reuse clean

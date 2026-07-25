@@ -71,7 +71,9 @@ set(TENSORLIB_TESTS
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
-    if (test_name MATCHES "^nn_")
+    if (test_name STREQUAL "nn_sgd")
+        set(test_source tests/unit/optim/test_${test_name}.c)
+    elseif(test_name MATCHES "^nn_")
         set(test_source tests/unit/nn/test_${test_name}.c)
     elseif(test_name MATCHES "^autograd_")
         set(test_source tests/unit/autograd/test_${test_name}.c)
@@ -89,6 +91,11 @@ endforeach()
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/autograd_example.c")
     add_executable(autograd_example examples/autograd_example.c)
     target_link_libraries(autograd_example PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
+endif()
+
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/mnsit/mnist_mlp.c")
+    add_executable(mnist_mlp examples/mnsit/mnist_mlp.c)
+    target_link_libraries(mnist_mlp PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
 endif()
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_tensor_matmul.c")
