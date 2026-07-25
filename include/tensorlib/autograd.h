@@ -33,6 +33,7 @@ typedef enum {
     AG_OP_EXP,
     AG_OP_LOG,
     AG_OP_POW,
+    AG_OP_SQRT,
     AG_OP_MATMUL,
     AG_OP_SUM,
     AG_OP_MEAN,
@@ -115,6 +116,8 @@ ag_tensor* ag_log(const ag_tensor* value);
  * exponent * x^(exponent - 1), with exact zero/one exponent special cases.
  */
 ag_tensor* ag_pow(const ag_tensor* value, float exponent);
+/* Backward computes upstream / (2 * sqrt(value)); IEEE domains are preserved. */
+ag_tensor* ag_sqrt(const ag_tensor* value);
 ag_tensor* ag_reshape(const ag_tensor* value, int new_ndim, const int* new_dims);
 ag_tensor* ag_transpose(const ag_tensor* value, int dim0, int dim1);
 ag_tensor* ag_slice(const ag_tensor* value, int dim, int start, int end);

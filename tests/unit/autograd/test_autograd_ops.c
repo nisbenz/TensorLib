@@ -208,6 +208,41 @@ TEST(test_pow_scalar_and_view_gradient_matches_central_difference) {
     ag_tensor_release(input);
 }
 
+TEST(test_sqrt_forward_backward_preserves_ieee_domains) {
+    int dims[1] = {4};
+    float values[4] = {0.0f, 4.0f, 9.0f, -1.0f};
+    float upstream_values[4] = {1.0f, 2.0f, 3.0f, 1.0f};
+    ag_tensor* input = make_ag(1, dims, values, 1);
+    ag_tensor* result = ag_sqrt(input);
+    tensor* upstream = t_alloc(1, dims);
+    for (int i = 0; i < 4; ++i) upstream->storage->data[i] = upstream_values[i];
+    ASSERT_NOT_NULL(result);
+    ASSERT_EQ_INT(result->creator->operation, AG_OP_SQRT);
+    ASSERT_EQ_INT(ag_backward_with_grad(result, upstream), 0);
+    ASSERT_POS_INF(input->grad->storage->data[0]);
+    ASSERT_FLOAT_NEAR(input->grad->storage->data[1], 0.5f, 1e-6f);
+    ASSERT_FLOAT_NEAR(input->grad->storage->data[2], 0.5f, 1e-6f);
+    ASSERT_NAN(input->grad->storage->data[3]);
+    ASSERT_NAN(result->value->storage->data[3]);
+    t_free(upstream);
+    ag_tensor_release(result);
+    ag_tensor_release(input);
+    ASSERT_NULL(ag_sqrt(NULL));
+}
+
+TEST(test_sqrt_scalar_gradient_matches_central_difference) {
+    float value = 2.25f;
+    ag_tensor* input = make_ag(0, NULL, &value, 1);
+    ag_tensor* result = ag_sqrt(input);
+    ASSERT_EQ_INT(ag_backward(result), 0);
+    const float epsilon = 1e-3f;
+    float numerical = (sqrtf(value + epsilon) - sqrtf(value - epsilon)) /
+                      (2.0f * epsilon);
+    ASSERT_FLOAT_NEAR(input->grad->storage->data[0], numerical, 5e-5f);
+    ag_tensor_release(result);
+    ag_tensor_release(input);
+}
+
 int main(void) {
     printf("== autograd_ops.c ==\n");
     RUN_TEST(test_binary_forwards_create_typed_nodes_and_retain_inputs);
@@ -219,5 +254,7 @@ int main(void) {
     RUN_TEST(test_unary_handles_scalar_view_and_null);
     RUN_TEST(test_pow_forward_backward_and_edge_exponents);
     RUN_TEST(test_pow_scalar_and_view_gradient_matches_central_difference);
+    RUN_TEST(test_sqrt_forward_backward_preserves_ieee_domains);
+    RUN_TEST(test_sqrt_scalar_gradient_matches_central_difference);
     TEST_SUITE_SUMMARY();
 }
