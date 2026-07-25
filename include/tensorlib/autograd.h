@@ -36,6 +36,7 @@ typedef enum {
     AG_OP_SQRT,
     AG_OP_RELU,
     AG_OP_SIGMOID,
+    AG_OP_TANH,
     AG_OP_MATMUL,
     AG_OP_SUM,
     AG_OP_MEAN,
@@ -124,6 +125,8 @@ ag_tensor* ag_sqrt(const ag_tensor* value);
 ag_tensor* ag_relu(const ag_tensor* value);
 /* Sigmoid backward reuses the forward output y as y * (1 - y). */
 ag_tensor* ag_sigmoid(const ag_tensor* value);
+/* Tanh backward reuses the forward output y as 1 - y^2. */
+ag_tensor* ag_tanh(const ag_tensor* value);
 ag_tensor* ag_reshape(const ag_tensor* value, int new_ndim, const int* new_dims);
 ag_tensor* ag_transpose(const ag_tensor* value, int dim0, int dim1);
 ag_tensor* ag_slice(const ag_tensor* value, int dim, int start, int end);

@@ -303,3 +303,23 @@ static int backward_sigmoid(const ag_node* node,
 ag_tensor* ag_sigmoid(const ag_tensor* value) {
     return apply_unary(value, AG_OP_SIGMOID, t_sigmoid, backward_sigmoid);
 }
+
+static float derivative_tanh(float input, float output) {
+    (void)input;
+    return 1.0f - output * output;
+}
+
+static int backward_tanh(const ag_node* node,
+                         const tensor* output_gradient,
+                         tensor** input_gradients) {
+    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
+        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!node->inputs[0]->requires_grad) return 0;
+    input_gradients[0] = apply_unary_derivative(node, output_gradient,
+                                                derivative_tanh);
+    return input_gradients[0] == NULL;
+}
+
+ag_tensor* ag_tanh(const ag_tensor* value) {
+    return apply_unary(value, AG_OP_TANH, t_tanh, backward_tanh);
+}
