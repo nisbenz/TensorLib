@@ -243,6 +243,60 @@ TEST(test_sqrt_scalar_gradient_matches_central_difference) {
     ag_tensor_release(input);
 }
 
+TEST(test_relu_backward_defines_zero_and_nan_behavior) {
+    int dims[1] = {4};
+    float values[4] = {-2.0f, 0.0f, 3.0f, NAN};
+    float upstream_values[4] = {2.0f, 2.0f, 2.0f, 2.0f};
+    ag_tensor* input = make_ag(1, dims, values, 1);
+    ag_tensor* result = ag_relu(input);
+    tensor* upstream = t_alloc(1, dims);
+    for (int i = 0; i < 4; ++i) upstream->storage->data[i] = upstream_values[i];
+    ASSERT_NOT_NULL(result);
+    ASSERT_EQ_INT(result->creator->operation, AG_OP_RELU);
+    ASSERT_EQ_INT(ag_backward_with_grad(result, upstream), 0);
+    ASSERT_EQ_FLOAT(input->grad->storage->data[0], 0.0f);
+    ASSERT_EQ_FLOAT(input->grad->storage->data[1], 0.0f);
+    ASSERT_EQ_FLOAT(input->grad->storage->data[2], 2.0f);
+    ASSERT_NAN(input->grad->storage->data[3]);
+    t_free(upstream);
+    ag_tensor_release(result);
+    ag_tensor_release(input);
+    ASSERT_NULL(ag_relu(NULL));
+}
+
+TEST(test_relu_strided_and_scalar_gradients) {
+    int dims[2] = {2, 2};
+    float values[4] = {-1.0f, 2.0f, 3.0f, -4.0f};
+    tensor* base = t_alloc(2, dims);
+    for (int i = 0; i < 4; ++i) base->storage->data[i] = values[i];
+    tensor* view = t_transpose(base, 0, 1);
+    t_free(base);
+    ag_tensor* input = ag_from_owned_tensor(view, 1);
+    ag_tensor* result = ag_relu(input);
+    ag_tensor* row = ag_sum(result, 1, 0);
+    ag_tensor* loss = ag_sum(row, 0, 0);
+    ASSERT_EQ_INT(ag_backward(loss), 0);
+    float expected[4] = {0.0f, 1.0f, 1.0f, 0.0f};
+    for (int i = 0; i < 4; ++i) {
+        ASSERT_EQ_FLOAT(input->grad->storage->data[i], expected[i]);
+    }
+    ag_tensor_release(loss);
+    ag_tensor_release(row);
+    ag_tensor_release(result);
+    ag_tensor_release(input);
+
+    float scalar = 0.7f;
+    ag_tensor* scalar_input = make_ag(0, NULL, &scalar, 1);
+    ag_tensor* scalar_result = ag_relu(scalar_input);
+    ASSERT_EQ_INT(ag_backward(scalar_result), 0);
+    const float epsilon = 1e-3f;
+    float numerical = (fmaxf(scalar + epsilon, 0.0f) -
+                       fmaxf(scalar - epsilon, 0.0f)) / (2.0f * epsilon);
+    ASSERT_FLOAT_NEAR(scalar_input->grad->storage->data[0], numerical, 2e-5f);
+    ag_tensor_release(scalar_result);
+    ag_tensor_release(scalar_input);
+}
+
 int main(void) {
     printf("== autograd_ops.c ==\n");
     RUN_TEST(test_binary_forwards_create_typed_nodes_and_retain_inputs);
@@ -256,5 +310,7 @@ int main(void) {
     RUN_TEST(test_pow_scalar_and_view_gradient_matches_central_difference);
     RUN_TEST(test_sqrt_forward_backward_preserves_ieee_domains);
     RUN_TEST(test_sqrt_scalar_gradient_matches_central_difference);
+    RUN_TEST(test_relu_backward_defines_zero_and_nan_behavior);
+    RUN_TEST(test_relu_strided_and_scalar_gradients);
     TEST_SUITE_SUMMARY();
 }

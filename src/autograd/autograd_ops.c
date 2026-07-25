@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdlib.h>
 
 #include "./../../include/tensorlib/autograd_internal.h"
@@ -232,4 +233,53 @@ static int backward_sqrt(const ag_node* node,
 
 ag_tensor* ag_sqrt(const ag_tensor* value) {
     return apply_unary(value, AG_OP_SQRT, t_sqrt, backward_sqrt);
+}
+
+typedef float (*unary_derivative_fn)(float input, float output);
+
+static tensor* apply_unary_derivative(const ag_node* node,
+                                      const tensor* output_gradient,
+                                      unary_derivative_fn derivative) {
+    tensor* input = t_contiguous(node->inputs[0]->value);
+    tensor* output = t_contiguous(node->output->value);
+    tensor* upstream = t_contiguous((tensor*)output_gradient);
+    tensor* result = input != NULL ? t_alloc(input->ndim, input->dims) : NULL;
+    if (input == NULL || output == NULL || upstream == NULL || result == NULL) {
+        t_free(result);
+        t_free(upstream);
+        t_free(output);
+        t_free(input);
+        return NULL;
+    }
+    for (int i = 0; i < tensor_numel(result); ++i) {
+        float x = input->storage->data[input->offset + i];
+        float y = output->storage->data[output->offset + i];
+        float gradient = upstream->storage->data[upstream->offset + i];
+        result->storage->data[i] = gradient * derivative(x, y);
+    }
+    t_free(upstream);
+    t_free(output);
+    t_free(input);
+    return result;
+}
+
+static float derivative_relu(float input, float output) {
+    (void)output;
+    if (isnan(input)) return NAN;
+    return input > 0.0f ? 1.0f : 0.0f;
+}
+
+static int backward_relu(const ag_node* node,
+                         const tensor* output_gradient,
+                         tensor** input_gradients) {
+    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
+        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!node->inputs[0]->requires_grad) return 0;
+    input_gradients[0] = apply_unary_derivative(node, output_gradient,
+                                                derivative_relu);
+    return input_gradients[0] == NULL;
+}
+
+ag_tensor* ag_relu(const ag_tensor* value) {
+    return apply_unary(value, AG_OP_RELU, t_relu, backward_relu);
 }
