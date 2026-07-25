@@ -29,6 +29,7 @@ typedef struct nn_module nn_module;
 typedef struct nn_linear nn_linear;
 typedef struct nn_mlp nn_mlp;
 typedef struct nn_mlp_config nn_mlp_config;
+typedef struct nn_sgd nn_sgd;
 
 
 /*
@@ -220,9 +221,26 @@ nn_activation nn_activation_custom(
     const void* context
 );
 
+/*
+ * Stable classification operations.
+ *
+ * Softmax and log-softmax operate over the final dimension. Cross-entropy
+ * expects logits shaped [..., classes] and a raw target tensor containing
+ * exact integer-valued class indices with the matching prefix shape. It
+ * returns one scalar mean loss. Invalid pointer-returning requests return
+ * NULL.
+ */
+ag_tensor* nn_softmax(const ag_tensor* logits);
+ag_tensor* nn_log_softmax(const ag_tensor* logits);
+ag_tensor* nn_cross_entropy(
+    const ag_tensor* logits,
+    const tensor* targets
+);
+
 
 /*
  * RNG API — declarations only; implementation is future work.
+ * Invalid random requests return NAN.
  */
 void nn_rng_seed(nn_rng* rng, uint64_t seed);
 float nn_rng_uniform(nn_rng* rng, float min, float max);
