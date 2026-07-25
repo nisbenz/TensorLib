@@ -168,6 +168,33 @@ TEST(test_t_clone_materializes_strided_view_contiguously) {
     t_free(a);
 }
 
+TEST(test_storage_versions_are_shared_by_views_and_independent_in_clones) {
+    int dims[2] = {2, 3};
+    tensor* base = t_alloc(2, dims);
+    tensor* view = t_transpose(base, 0, 1);
+    tensor* clone = t_clone(view);
+    ASSERT_NOT_NULL(base);
+    ASSERT_NOT_NULL(view);
+    ASSERT_NOT_NULL(clone);
+    ASSERT_EQ_INT(base->storage->version, 0);
+    ASSERT_EQ_INT(view->storage->version, 0);
+    ASSERT_EQ_INT(clone->storage->version, 0);
+
+    tensor_mark_modified(view);
+    ASSERT_EQ_INT(base->storage->version, 1);
+    ASSERT_EQ_INT(view->storage->version, 1);
+    ASSERT_EQ_INT(clone->storage->version, 0);
+
+    tensor_mark_modified(clone);
+    ASSERT_EQ_INT(base->storage->version, 1);
+    ASSERT_EQ_INT(clone->storage->version, 1);
+    tensor_mark_modified(NULL);
+
+    t_free(clone);
+    t_free(view);
+    t_free(base);
+}
+
 TEST(test_add_ref_count_links_storage_and_bumps_count) {
     int dims[2] = {2, 2};
     Storage* s = s_alloc(2, dims);
@@ -221,6 +248,7 @@ int main(void) {
     RUN_TEST(test_init_t_null_args_returns_error);
     RUN_TEST(test_t_clone_deep_copies_data);
     RUN_TEST(test_t_clone_materializes_strided_view_contiguously);
+    RUN_TEST(test_storage_versions_are_shared_by_views_and_independent_in_clones);
     RUN_TEST(test_add_ref_count_links_storage_and_bumps_count);
     RUN_TEST(test_add_ref_count_null_args_is_safe);
     TEST_SUITE_SUMMARY();

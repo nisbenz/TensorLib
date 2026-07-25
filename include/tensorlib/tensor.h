@@ -2,11 +2,13 @@
 #define TENSORLIB_TENSOR_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct {
     float* data;
     int ref_count;
     int size;
+    uint64_t version;
 } Storage;
 
 typedef struct {
@@ -47,6 +49,12 @@ Storage* s_alloc(int ndim, const int* dims);
 tensor* t_alloc(int ndim, const int* dims);
 void t_free(tensor* t);
 tensor* t_clone(tensor* t);
+/*
+ * Marks a completed in-place value update. Views share this counter. Direct
+ * storage writes are supported for initialization before graph capture; later
+ * writes must call this function for autograd mutation detection.
+ */
+void tensor_mark_modified(tensor* value);
 int is_contiguous(tensor* t);
 tensor* t_contiguous(tensor* t);
 void calc_strides(int ndim, const int* dims, int* strides);

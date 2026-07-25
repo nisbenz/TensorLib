@@ -16,6 +16,7 @@ Storage* s_alloc(int ndim, const int* dims) {
     if (s == NULL) return NULL;
     s->ref_count = 1;
     s->size = (int)count;
+    s->version = 0;
     s->data = (float*)malloc(count * sizeof(float));
     if (s->data == NULL) {
         free(s);
@@ -86,6 +87,7 @@ int init_t(tensor* c, tensor* ref) {
     if (c->storage == NULL) return 1;
     c->storage->ref_count = 1;
     c->storage->size = total_elements;
+    c->storage->version = 0;
     c->storage->data = (float*)calloc((size_t)total_elements, sizeof(float));
     if (c->storage->data == NULL) {
         free(c->storage);
@@ -136,4 +138,9 @@ tensor* t_clone(tensor* t) {
     }
     free(coords);
     return a;
+}
+
+void tensor_mark_modified(tensor* value) {
+    if (value == NULL || value->storage == NULL) return;
+    value->storage->version++;
 }
