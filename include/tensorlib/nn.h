@@ -135,7 +135,6 @@ nn_activation nn_activation_custom(
     const void* context
 );
 
-/
 ag_tensor* nn_softmax(const ag_tensor* logits);
 ag_tensor* nn_log_softmax(const ag_tensor* logits);
 ag_tensor* nn_cross_entropy(
