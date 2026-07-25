@@ -24,6 +24,7 @@ set(TENSORLIB_SOURCES
     src/init/rng.c
     src/nn/parameter.c
     src/nn/module.c
+    src/nn/linear.c
     include/tensorlib/tensor_matmul.h
 )
 
@@ -60,6 +61,7 @@ set(TENSORLIB_TESTS
     nn_parameter
     nn_module
     nn_init
+    nn_linear
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
