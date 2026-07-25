@@ -51,6 +51,7 @@ set(TENSORLIB_TESTS
     autograd_matmul
     autograd_backward
     autograd_integration
+    autograd_public_contract
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
@@ -61,6 +62,9 @@ foreach(test_name IN LISTS TENSORLIB_TESTS)
     endif()
     add_executable(test_${test_name} ${test_source})
     target_include_directories(test_${test_name} PRIVATE tests/fixtures)
+    if (test_name STREQUAL "autograd_public_contract")
+        target_include_directories(test_${test_name} PRIVATE include)
+    endif()
     target_link_libraries(test_${test_name} PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
     add_test(NAME test_${test_name} COMMAND test_${test_name})
 endforeach()
