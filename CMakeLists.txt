@@ -26,6 +26,7 @@ set(TENSORLIB_SOURCES
     src/nn/module.c
     src/nn/linear.c
     src/losses/classification.c
+    src/optim/sgd.c
     include/tensorlib/tensor_matmul.h
 )
 
@@ -64,6 +65,7 @@ set(TENSORLIB_TESTS
     nn_init
     nn_linear
     nn_loss
+    nn_sgd
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)

@@ -202,6 +202,14 @@ struct nn_mlp {
     size_t layer_count;
 };
 
+/*
+ * Vanilla SGD optimizer. The optimizer borrows module and owns no parameters.
+ */
+struct nn_sgd {
+    nn_module* module;
+    float learning_rate;
+};
+
 
 /*
  * Built-in activation descriptors.
@@ -336,5 +344,16 @@ ag_tensor* nn_mlp_forward(
     const nn_mlp* model,
     const ag_tensor* input
 );
+
+
+/*
+ * Vanilla SGD. Step returns zero on success and preflights every eligible
+ * parameter before performing any update. Zero-grad recursively releases all
+ * accumulated parameter gradients.
+ */
+nn_sgd* nn_sgd_create(nn_module* module, float learning_rate);
+int nn_sgd_step(nn_sgd* optimizer);
+void nn_sgd_zero_grad(nn_sgd* optimizer);
+void nn_sgd_destroy(nn_sgd* optimizer);
 
 #endif /* TENSORLIB_NN_H */
