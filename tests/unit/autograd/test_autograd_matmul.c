@@ -1,4 +1,5 @@
 #include "./../../../include/tensorlib/autograd.h"
+#include <stdlib.h>
 #include "./../../fixtures/test_common.h"
 static ag_tensor* make_ag(int ndim, const int* dims, const float* values) {
     tensor* raw = t_alloc(ndim, dims);
@@ -119,6 +120,168 @@ TEST(test_matmul_rejects_invalid_operands) {
     ag_tensor_release(b); ag_tensor_release(a);
 }
 
+static float logical_sum(tensor* value) {
+    int* coords = value->ndim > 0
+                ? (int*)calloc((size_t)value->ndim, sizeof(int)) : NULL;
+    float sum = 0.0f;
+    for (int i = 0; i < tensor_numel(value); ++i) {
+        sum += value->storage->data[get_flat_index_nd(value, coords)];
+        advance_coords(coords, value->dims, value->ndim);
+    }
+    free(coords);
+    return sum;
+}
+
+static float evaluate_matmul_sum(int a_ndim, const int* a_dims, const float* a_values,
+                                 int b_ndim, const int* b_dims, const float* b_values) {
+    tensor* a = t_alloc(a_ndim, a_dims);
+    tensor* b = t_alloc(b_ndim, b_dims);
+    for (int i = 0; i < tensor_numel(a); ++i) a->storage->data[i] = a_values[i];
+    for (int i = 0; i < tensor_numel(b); ++i) b->storage->data[i] = b_values[i];
+    tensor* output = t_matmul(a, b);
+    float result = logical_sum(output);
+    t_free(output);
+    t_free(b);
+    t_free(a);
+    return result;
+}
+
+static ag_tensor* sum_all(ag_tensor* value) {
+    ag_tensor_retain(value);
+    ag_tensor* current = value;
+    while (current->value->ndim > 0) {
+        ag_tensor* next = ag_sum(current, current->value->ndim - 1, 0);
+        ag_tensor_release(current);
+        current = next;
+    }
+    return current;
+}
+
+static void finite_check_matmul_case(int a_ndim, const int* a_dims, float* a_values,
+                                     int b_ndim, const int* b_dims, float* b_values,
+                                     float tolerance) {
+    ag_tensor* a = make_ag(a_ndim, a_dims, a_values);
+    ag_tensor* b = make_ag(b_ndim, b_dims, b_values);
+    ag_tensor* output = ag_matmul(a, b);
+    ag_tensor* loss = sum_all(output);
+    ASSERT_EQ_INT(ag_backward(loss), 0);
+    const float epsilon = 1e-3f;
+    for (int i = 0; i < tensor_numel(a->value); ++i) {
+        float original = a_values[i];
+        a_values[i] = original + epsilon;
+        float plus = evaluate_matmul_sum(a_ndim, a_dims, a_values,
+                                         b_ndim, b_dims, b_values);
+        a_values[i] = original - epsilon;
+        float minus = evaluate_matmul_sum(a_ndim, a_dims, a_values,
+                                          b_ndim, b_dims, b_values);
+        a_values[i] = original;
+        ASSERT_FLOAT_NEAR(a->grad->storage->data[i],
+                          (plus - minus) / (2.0f * epsilon), tolerance);
+    }
+    for (int i = 0; i < tensor_numel(b->value); ++i) {
+        float original = b_values[i];
+        b_values[i] = original + epsilon;
+        float plus = evaluate_matmul_sum(a_ndim, a_dims, a_values,
+                                         b_ndim, b_dims, b_values);
+        b_values[i] = original - epsilon;
+        float minus = evaluate_matmul_sum(a_ndim, a_dims, a_values,
+                                          b_ndim, b_dims, b_values);
+        b_values[i] = original;
+        ASSERT_FLOAT_NEAR(b->grad->storage->data[i],
+                          (plus - minus) / (2.0f * epsilon), tolerance);
+    }
+    ag_tensor_release(loss);
+    ag_tensor_release(output);
+    ag_tensor_release(b);
+    ag_tensor_release(a);
+}
+
+TEST(test_all_matmul_rank_forms_match_finite_differences) {
+    int vector_dims[1] = {2};
+    float vv_a[2] = {0.4f, 0.9f}, vv_b[2] = {0.3f, 1.1f};
+    finite_check_matmul_case(1, vector_dims, vv_a, 1, vector_dims, vv_b, 2e-4f);
+
+    int right_dims[2] = {2, 3};
+    float vm_a[2] = {0.4f, 0.9f};
+    float vm_b[6] = {0.2f, 0.5f, 0.7f, 1.0f, 1.2f, 1.5f};
+    finite_check_matmul_case(1, vector_dims, vm_a, 2, right_dims, vm_b, 5e-4f);
+
+    int left_dims[2] = {3, 2};
+    float mv_a[6] = {0.2f, 0.5f, 0.7f, 1.0f, 1.2f, 1.5f};
+    float mv_b[2] = {0.4f, 0.9f};
+    finite_check_matmul_case(2, left_dims, mv_a, 1, vector_dims, mv_b, 5e-4f);
+
+    int matrix_a_dims[2] = {2, 3};
+    int matrix_b_dims[2] = {3, 2};
+    float mm_a[6] = {0.2f, 0.4f, 0.6f, 0.8f, 1.0f, 1.2f};
+    float mm_b[6] = {0.3f, 0.5f, 0.7f, 0.9f, 1.1f, 1.3f};
+    finite_check_matmul_case(2, matrix_a_dims, mm_a,
+                             2, matrix_b_dims, mm_b, 1e-3f);
+
+    int batch_a_dims[3] = {2, 2, 2};
+    int batch_b_dims[3] = {1, 2, 2};
+    float batch_a[8] = {0.2f,0.4f,0.6f,0.8f,1.0f,1.2f,1.4f,1.6f};
+    float batch_b[4] = {0.3f,0.5f,0.7f,0.9f};
+    finite_check_matmul_case(3, batch_a_dims, batch_a,
+                             3, batch_b_dims, batch_b, 2e-3f);
+}
+
+static float evaluate_transposed_matmul_sum(const float* a_values,
+                                            const float* b_values) {
+    int a_dims[2] = {3, 2};
+    int b_dims[2] = {2, 3};
+    tensor* a_base = t_alloc(2, a_dims);
+    tensor* b_base = t_alloc(2, b_dims);
+    for (int i = 0; i < 6; ++i) {
+        a_base->storage->data[i] = a_values[i];
+        b_base->storage->data[i] = b_values[i];
+    }
+    tensor* a = t_transpose(a_base, 0, 1);
+    tensor* b = t_transpose(b_base, 0, 1);
+    tensor* output = t_matmul(a, b);
+    float result = logical_sum(output);
+    t_free(output); t_free(b); t_free(a); t_free(b_base); t_free(a_base);
+    return result;
+}
+
+TEST(test_transposed_matmul_matches_finite_difference) {
+    int a_dims[2] = {3, 2};
+    int b_dims[2] = {2, 3};
+    float a_values[6] = {0.2f,0.4f,0.6f,0.8f,1.0f,1.2f};
+    float b_values[6] = {0.3f,0.5f,0.7f,0.9f,1.1f,1.3f};
+    ag_tensor* a_base = make_ag(2, a_dims, a_values);
+    ag_tensor* b_base = make_ag(2, b_dims, b_values);
+    ag_tensor* a = ag_transpose(a_base, 0, 1);
+    ag_tensor* b = ag_transpose(b_base, 0, 1);
+    ag_tensor* output = ag_matmul(a, b);
+    ag_tensor* loss = sum_all(output);
+    ASSERT_EQ_INT(ag_backward(loss), 0);
+    const float epsilon = 1e-3f;
+    for (int i = 0; i < 6; ++i) {
+        float original = a_values[i];
+        a_values[i] = original + epsilon;
+        float plus = evaluate_transposed_matmul_sum(a_values, b_values);
+        a_values[i] = original - epsilon;
+        float minus = evaluate_transposed_matmul_sum(a_values, b_values);
+        a_values[i] = original;
+        ASSERT_FLOAT_NEAR(a_base->grad->storage->data[i],
+                          (plus - minus) / (2.0f * epsilon), 1e-3f);
+    }
+    for (int i = 0; i < 6; ++i) {
+        float original = b_values[i];
+        b_values[i] = original + epsilon;
+        float plus = evaluate_transposed_matmul_sum(a_values, b_values);
+        b_values[i] = original - epsilon;
+        float minus = evaluate_transposed_matmul_sum(a_values, b_values);
+        b_values[i] = original;
+        ASSERT_FLOAT_NEAR(b_base->grad->storage->data[i],
+                          (plus - minus) / (2.0f * epsilon), 1e-3f);
+    }
+    ag_tensor_release(loss); ag_tensor_release(output);
+    ag_tensor_release(b); ag_tensor_release(a);
+    ag_tensor_release(b_base); ag_tensor_release(a_base);
+}
+
 int main(void) {
     printf("== autograd_matmul.c ==\n");
     RUN_TEST(test_matrix_matrix_backward);
@@ -127,5 +290,7 @@ int main(void) {
     RUN_TEST(test_vector_matrix_and_matrix_vector_backward_shapes);
     RUN_TEST(test_batched_broadcast_backward_preserves_contribution_batch_shape);
     RUN_TEST(test_matmul_rejects_invalid_operands);
+    RUN_TEST(test_all_matmul_rank_forms_match_finite_differences);
+    RUN_TEST(test_transposed_matmul_matches_finite_difference);
     TEST_SUITE_SUMMARY();
 }
