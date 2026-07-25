@@ -290,6 +290,60 @@ TEST(test_each_reduction_primitive_matches_finite_difference) {
     }
 }
 
+TEST(test_completed_autograd_lifecycle_stress) {
+#if defined(_MSC_VER) && defined(_DEBUG)
+    _CrtMemState before, after, difference;
+    _CrtMemCheckpoint(&before);
+#endif
+    for (int iteration = 0; iteration < 500; ++iteration) {
+        float value = 0.5f + (float)(iteration % 100) / 200.0f;
+        ag_tensor* input = make_ag(0, NULL, &value, 1);
+        ag_tensor* squared = ag_pow(input, 2.0f);
+        ag_tensor* root = ag_sqrt(squared);
+        ag_tensor* activated = ag_gelu(root);
+        ag_tensor* hyperbolic = ag_tanh(activated);
+        ag_tensor* probability = ag_sigmoid(hyperbolic);
+        ag_tensor* positive = ag_relu(probability);
+        ag_tensor* detached = ag_detach(positive);
+        ag_tensor* branch = ag_add(positive, positive);
+        ag_tensor* scaled = ag_mul(branch, detached);
+        ag_tensor* exponent = ag_exp(scaled);
+        ag_tensor* loss = ag_log(exponent);
+        ASSERT_NOT_NULL(loss);
+        ASSERT_EQ_INT(ag_backward(loss), 0);
+        ASSERT_NOT_NULL(input->grad);
+        ASSERT_NULL(detached->grad);
+        float first_gradient = input->grad->storage->data[0];
+        ASSERT_EQ_INT(ag_backward(loss), 0);
+        ASSERT_FLOAT_NEAR(input->grad->storage->data[0],
+                          2.0f * first_gradient, 1e-5f);
+
+        ag_zero_grad_all(loss);
+        ASSERT_NULL(input->grad);
+        ASSERT_NULL(loss->grad);
+        tensor_mark_modified(detached->value);
+        ASSERT_EQ_INT(ag_backward(loss), 1);
+        ASSERT_NULL(input->grad);
+
+        ag_tensor_release(loss);
+        ag_tensor_release(exponent);
+        ag_tensor_release(scaled);
+        ag_tensor_release(branch);
+        ag_tensor_release(detached);
+        ag_tensor_release(positive);
+        ag_tensor_release(probability);
+        ag_tensor_release(hyperbolic);
+        ag_tensor_release(activated);
+        ag_tensor_release(root);
+        ag_tensor_release(squared);
+        ag_tensor_release(input);
+    }
+#if defined(_MSC_VER) && defined(_DEBUG)
+    _CrtMemCheckpoint(&after);
+    ASSERT_TRUE(!_CrtMemDifference(&difference, &before, &after));
+#endif
+}
+
 int main(void) {
     printf("== autograd_integration.c ==\n");
     RUN_TEST(test_composed_gradient_matches_central_difference);
@@ -300,5 +354,6 @@ int main(void) {
     RUN_TEST(test_repeated_graph_construction_and_destruction);
     RUN_TEST(test_each_view_primitive_matches_finite_difference);
     RUN_TEST(test_each_reduction_primitive_matches_finite_difference);
+    RUN_TEST(test_completed_autograd_lifecycle_stress);
     TEST_SUITE_SUMMARY();
 }
