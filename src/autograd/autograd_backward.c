@@ -57,6 +57,26 @@ static int collect_graph(ag_tensor* value, tensor_list* tensors, node_list* node
     return append_node(nodes, value->creator);
 }
 
+static int graph_versions_match(const node_list* nodes) {
+    for (int node_index = 0; node_index < nodes->count; ++node_index) {
+        const ag_node* node = nodes->values[node_index];
+        if (node == NULL || node->output == NULL ||
+            !tensor_has_valid_metadata(node->output->value) ||
+            node->output->value->storage->version != node->output_version) {
+            return 0;
+        }
+        for (int input_index = 0; input_index < node->input_count; ++input_index) {
+            if (node->inputs[input_index] == NULL ||
+                !tensor_has_valid_metadata(node->inputs[input_index]->value) ||
+                node->inputs[input_index]->value->storage->version !=
+                    node->input_versions[input_index]) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
 static tensor* reduce_to_shape(tensor* contribution, const tensor* target) {
     if (!tensor_has_valid_metadata(contribution) || !tensor_has_valid_metadata(target) ||
         contribution->ndim < target->ndim) {
@@ -146,6 +166,7 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
     tensor** pass_gradients = NULL;
     int status = 1;
     if (collect_graph(output, &tensors, &nodes) != 0) goto cleanup;
+    if (!graph_versions_match(&nodes)) goto cleanup;
 
     pass_gradients = (tensor**)calloc((size_t)tensors.count, sizeof(*pass_gradients));
     if (pass_gradients == NULL) goto cleanup;

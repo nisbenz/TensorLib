@@ -107,6 +107,63 @@ TEST(test_zero_grad_single_and_entire_graph) {
     ag_tensor_release(square); ag_tensor_release(x);
 }
 
+TEST(test_backward_rejects_modified_shared_storage_transactionally) {
+    int dims[2] = {2, 2};
+    float values[4] = {0.2f, 0.4f, 0.6f, 0.8f};
+    ag_tensor* input = make_ag(2, dims, values, 1);
+    ag_tensor* exponent = ag_exp(input);
+    ag_tensor* row_sum = ag_sum(exponent, 1, 0);
+    ag_tensor* loss = ag_sum(row_sum, 0, 0);
+    ASSERT_NOT_NULL(loss);
+    ASSERT_EQ_INT(ag_backward(loss), 0);
+
+    float before[4];
+    for (int i = 0; i < 4; ++i) before[i] = input->grad->storage->data[i];
+    tensor* alias = t_transpose(input->value, 0, 1);
+    ASSERT_NOT_NULL(alias);
+    alias->storage->data[0] += 1.0f;
+    tensor_mark_modified(alias);
+
+    ASSERT_EQ_INT(ag_backward(loss), 1);
+    for (int i = 0; i < 4; ++i) {
+        ASSERT_EQ_FLOAT(input->grad->storage->data[i], before[i]);
+    }
+
+    t_free(alias);
+    ag_tensor_release(loss);
+    ag_tensor_release(row_sum);
+    ag_tensor_release(exponent);
+
+    ag_tensor* rebuilt_exp = ag_exp(input);
+    ag_tensor* rebuilt_row = ag_sum(rebuilt_exp, 1, 0);
+    ag_tensor* rebuilt_loss = ag_sum(rebuilt_row, 0, 0);
+    ASSERT_NOT_NULL(rebuilt_loss);
+    ag_zero_grad(input);
+    ASSERT_EQ_INT(ag_backward(rebuilt_loss), 0);
+
+    ag_tensor_release(rebuilt_loss);
+    ag_tensor_release(rebuilt_row);
+    ag_tensor_release(rebuilt_exp);
+    ag_tensor_release(input);
+}
+
+TEST(test_backward_rejects_modified_intermediate_output) {
+    float value = 0.5f;
+    ag_tensor* input = make_ag(0, NULL, &value, 1);
+    ag_tensor* exponent = ag_exp(input);
+    ag_tensor* loss = ag_log(exponent);
+    ASSERT_NOT_NULL(loss);
+    exponent->value->storage->data[0] += 1.0f;
+    tensor_mark_modified(exponent->value);
+    ASSERT_EQ_INT(ag_backward(loss), 1);
+    ASSERT_NULL(input->grad);
+    ASSERT_NULL(exponent->grad);
+    ASSERT_NULL(loss->grad);
+    ag_tensor_release(loss);
+    ag_tensor_release(exponent);
+    ag_tensor_release(input);
+}
+
 int main(void) {
     printf("== autograd_backward.c ==\n");
     RUN_TEST(test_backward_chain_computes_weight_gradients);
@@ -117,5 +174,7 @@ int main(void) {
     RUN_TEST(test_backward_validation_leaves_existing_gradients_unchanged);
     RUN_TEST(test_batched_matmul_reduces_broadcast_weight_gradient);
     RUN_TEST(test_zero_grad_single_and_entire_graph);
+    RUN_TEST(test_backward_rejects_modified_shared_storage_transactionally);
+    RUN_TEST(test_backward_rejects_modified_intermediate_output);
     TEST_SUITE_SUMMARY();
 }

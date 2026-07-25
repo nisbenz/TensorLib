@@ -82,6 +82,10 @@ struct ag_node {
     void* context;
     void (*free_context)(void* context);
 
+    /* Storage versions captured after forward for stale-graph detection. */
+    uint64_t* input_versions;
+    uint64_t output_version;
+
     int ref_count;
 };
 

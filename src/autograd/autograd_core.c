@@ -49,6 +49,7 @@ void ag_node_release(ag_node* node) {
     for (int i = 0; i < node->input_count; ++i) {
         ag_tensor_release(node->inputs[i]);
     }
+    free(node->input_versions);
     free(node->inputs);
     free(node);
 }
@@ -98,6 +99,15 @@ ag_tensor* ag_make_result(tensor* output,
         ag_tensor_release(result);
         return NULL;
     }
+    node->input_versions = (uint64_t*)calloc((size_t)input_count,
+                                             sizeof(*node->input_versions));
+    if (node->input_versions == NULL) {
+        free(node->inputs);
+        free(node);
+        if (free_context != NULL) free_context(context);
+        ag_tensor_release(result);
+        return NULL;
+    }
 
     node->operation = operation;
     node->input_count = input_count;
@@ -108,8 +118,10 @@ ag_tensor* ag_make_result(tensor* output,
     node->ref_count = 1;
     for (int i = 0; i < input_count; ++i) {
         node->inputs[i] = inputs[i];
+        node->input_versions[i] = inputs[i]->value->storage->version;
         ag_tensor_retain(inputs[i]);
     }
+    node->output_version = output->storage->version;
     result->creator = node;
     return result;
 }
