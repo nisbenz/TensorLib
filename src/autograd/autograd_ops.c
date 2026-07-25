@@ -323,3 +323,31 @@ static int backward_tanh(const ag_node* node,
 ag_tensor* ag_tanh(const ag_tensor* value) {
     return apply_unary(value, AG_OP_TANH, t_tanh, backward_tanh);
 }
+
+static float derivative_gelu(float input, float output) {
+    (void)output;
+    const float sqrt_two_over_pi = 0.7978845608028654f;
+    const float coefficient = 0.044715f;
+    float input_squared = input * input;
+    float u = sqrt_two_over_pi *
+              (input + coefficient * input * input_squared);
+    float tanh_u = tanhf(u);
+    return 0.5f * (1.0f + tanh_u) +
+           0.5f * input * (1.0f - tanh_u * tanh_u) *
+           sqrt_two_over_pi * (1.0f + 3.0f * coefficient * input_squared);
+}
+
+static int backward_gelu(const ag_node* node,
+                         const tensor* output_gradient,
+                         tensor** input_gradients) {
+    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
+        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!node->inputs[0]->requires_grad) return 0;
+    input_gradients[0] = apply_unary_derivative(node, output_gradient,
+                                                derivative_gelu);
+    return input_gradients[0] == NULL;
+}
+
+ag_tensor* ag_gelu(const ag_tensor* value) {
+    return apply_unary(value, AG_OP_GELU, t_gelu, backward_gelu);
+}

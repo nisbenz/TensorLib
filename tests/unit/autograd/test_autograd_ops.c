@@ -396,6 +396,71 @@ TEST(test_tanh_view_gradient_matches_central_difference) {
     ag_tensor_release(input);
 }
 
+static float gelu_derivative_reference(float x) {
+    const float c = 0.7978845608028654f;
+    const float a = 0.044715f;
+    float u = c * (x + a * x * x * x);
+    float t = tanhf(u);
+    return 0.5f * (1.0f + t) +
+           0.5f * x * (1.0f - t * t) * c * (1.0f + 3.0f * a * x * x);
+}
+
+TEST(test_gelu_backward_matches_tanh_approximation) {
+    int dims[1] = {6};
+    float values[6] = {-5.0f, -1.0f, 0.0f, 1.0f, 5.0f, NAN};
+    float upstream_values[6] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 1.0f};
+    ag_tensor* input = make_ag(1, dims, values, 1);
+    ag_tensor* result = ag_gelu(input);
+    tensor* upstream = t_alloc(1, dims);
+    for (int i = 0; i < 6; ++i) upstream->storage->data[i] = upstream_values[i];
+    ASSERT_NOT_NULL(result);
+    ASSERT_EQ_INT(result->creator->operation, AG_OP_GELU);
+    ASSERT_EQ_INT(ag_backward_with_grad(result, upstream), 0);
+    for (int i = 0; i < 5; ++i) {
+        ASSERT_FLOAT_NEAR(input->grad->storage->data[i],
+                          upstream_values[i] * gelu_derivative_reference(values[i]), 2e-6f);
+    }
+    ASSERT_NAN(result->value->storage->data[5]);
+    ASSERT_NAN(input->grad->storage->data[5]);
+    t_free(upstream);
+    ag_tensor_release(result);
+    ag_tensor_release(input);
+    ASSERT_NULL(ag_gelu(NULL));
+}
+
+TEST(test_gelu_view_gradient_matches_central_difference) {
+    int dims[2] = {2, 2};
+    float values[4] = {-2.0f, -0.4f, 0.8f, 2.5f};
+    tensor* base = t_alloc(2, dims);
+    for (int i = 0; i < 4; ++i) base->storage->data[i] = values[i];
+    tensor* view = t_transpose(base, 0, 1);
+    t_free(base);
+    ag_tensor* input = ag_from_owned_tensor(view, 1);
+    ag_tensor* result = ag_gelu(input);
+    ag_tensor* row = ag_sum(result, 1, 0);
+    ag_tensor* loss = ag_sum(row, 0, 0);
+    ASSERT_EQ_INT(ag_backward(loss), 0);
+    const float epsilon = 1e-3f;
+    for (int logical = 0; logical < 4; ++logical) {
+        int storage_index = logical == 1 ? 2 : logical == 2 ? 1 : logical;
+        float x = values[storage_index];
+        float plus = 0.5f * (x + epsilon) *
+                     (1.0f + tanhf(0.7978845608028654f *
+                     ((x + epsilon) + 0.044715f * (x + epsilon) *
+                     (x + epsilon) * (x + epsilon))));
+        float minus = 0.5f * (x - epsilon) *
+                      (1.0f + tanhf(0.7978845608028654f *
+                      ((x - epsilon) + 0.044715f * (x - epsilon) *
+                      (x - epsilon) * (x - epsilon))));
+        ASSERT_FLOAT_NEAR(input->grad->storage->data[logical],
+                          (plus - minus) / (2.0f * epsilon), 2e-4f);
+    }
+    ag_tensor_release(loss);
+    ag_tensor_release(row);
+    ag_tensor_release(result);
+    ag_tensor_release(input);
+}
+
 int main(void) {
     printf("== autograd_ops.c ==\n");
     RUN_TEST(test_binary_forwards_create_typed_nodes_and_retain_inputs);
@@ -415,5 +480,7 @@ int main(void) {
     RUN_TEST(test_sigmoid_view_gradient_matches_central_difference);
     RUN_TEST(test_tanh_seeded_backward_and_saturation);
     RUN_TEST(test_tanh_view_gradient_matches_central_difference);
+    RUN_TEST(test_gelu_backward_matches_tanh_approximation);
+    RUN_TEST(test_gelu_view_gradient_matches_central_difference);
     TEST_SUITE_SUMMARY();
 }
