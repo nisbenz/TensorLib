@@ -1,5 +1,23 @@
 CC = gcc
-CFLAGS = -O3 -march=native -mtune=native -Wall -Wextra -g -std=c11 -fopenmp
+
+# Core optimization flags
+# -flto: link-time optimization (cross-module inlining, dead code elimination)
+# -fno-math-errno: math functions don't set errno (avoids stores to errno)
+# -fno-signed-zeros: treats -0 as +0 for more algebraic transforms
+# -fno-trapping-math: assume no FP exceptions are generated
+# -freciprocal-math: allows x/y -> x*(1/y) and similar
+# -funroll-loops: unroll loops where profitable
+# -fprefetch-loop-arrays: generate prefetch for array accesses in loops
+OPT_FLAGS = -flto -fno-math-errno -fno-signed-zeros -fno-trapping-math -freciprocal-math -funroll-loops -fprefetch-loop-arrays
+
+# Release build flags (with debug symbols)
+CFLAGS = -O3 -march=native -mtune=native $(OPT_FLAGS) -Wall -Wextra -g -std=c11 -fopenmp
+
+# PGO generation flags (no -g to avoid profile pollution)
+PGO_CFLAGS = -O3 -march=native -mtune=native $(OPT_FLAGS) -Wall -Wextra -std=c11 -fopenmp -fprofile-generate
+
+# PGO use flags (no -g for maximum performance)
+PGO_USE_CFLAGS = -O3 -march=native -mtune=native $(OPT_FLAGS) -Wall -Wextra -std=c11 -fopenmp -fprofile-use
 SRC = src/tensor/tensor_core.c src/tensor/tensor_alloc.c src/tensor/tensor_view.c src/tensor/tensor_ops.c src/tensor/tensor_gather.c src/tensor/tensor_reduc.c src/tensor/tensor_matmul.c src/autograd/autograd_core.c src/autograd/autograd_ops.c src/autograd/autograd_view.c src/autograd/autograd_gather.c src/autograd/autograd_reduc.c src/autograd/autograd_matmul.c src/autograd/autograd_backward.c src/init/rng.c src/nn/parameter.c src/nn/module.c src/nn/linear.c src/nn/embedding.c src/nn/positional_embedding.c src/nn/layer_norm.c src/nn/dropout.c src/nn/multihead_attention.c src/nn/decoder_block.c src/nn/decoder.c src/nn/mlp.c src/losses/classification.c src/nn/causal_mask.c src/optim/sgd.c src/optim/optim_common.c src/optim/adamw.c src/serialization/checkpoint.c
 HEADERS = include/tensorlib/tensor.h include/tensorlib/tensor_matmul.h include/tensorlib/autograd.h include/tensorlib/nn.h tests/fixtures/test_common.h
 INCLUDES = -Iinclude/tensorlib -Itests/fixtures
@@ -128,6 +146,22 @@ $(BIN)/mnist_mlp: examples/mnsit/mnist_mlp.c $(SRC) $(HEADERS) | $(BIN)
 
 $(BIN)/tiny_lm: examples/tiny_lm/tiny_lm.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ examples/tiny_lm/tiny_lm.c $(SRC) -lm
+
+# PGO: build with instrumentation
+$(BIN)/tiny_lm_pgo_gen: examples/tiny_lm/tiny_lm.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(PGO_CFLAGS) -Iinclude $(INCLUDES) -o $@ examples/tiny_lm/tiny_lm.c $(SRC) -lm
+
+# PGO: rebuild using collected profiles
+$(BIN)/tiny_lm_pgo_use: examples/tiny_lm/tiny_lm.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(PGO_USE_CFLAGS) -Iinclude $(INCLUDES) -o $@ examples/tiny_lm/tiny_lm.c $(SRC) -lm
+
+# Full PGO pipeline: generate profiles via training, then rebuild optimized
+pgo-tiny-lm: $(BIN)/tiny_lm_pgo_gen
+	@echo "=== PGO Step 1: instrumented binary built. Run training to collect profiles..."
+	./$(BIN)/tiny_lm_pgo_gen "$(CORPUS)" --steps 2000 --generate 0 --checkpoint tiny_lm_pgo.chk
+	@echo "=== PGO Step 2: profiles collected. Rebuilding with -fprofile-use..."
+	$(MAKE) $(BIN)/tiny_lm_pgo_use
+	@echo "=== PGO complete. Optimized binary at $(BIN)/tiny_lm_pgo_use"
 
 $(BIN)/bench_tensor_matmul: benchmarks/matmul/bench_tensor_matmul.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ benchmarks/matmul/bench_tensor_matmul.c $(SRC) -lm
