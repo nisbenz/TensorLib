@@ -73,6 +73,8 @@ struct ag_tensor {
     ag_node* creator;
 
     int ref_count;
+
+    int graph_index;
 };
 
 
