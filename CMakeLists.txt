@@ -122,6 +122,12 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/mnsit/mnist_mlp.c")
     target_link_libraries(mnist_mlp PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
 endif()
 
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/tiny_lm/tiny_lm.c")
+    add_executable(tiny_lm examples/tiny_lm/tiny_lm.c)
+    target_link_libraries(tiny_lm PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
+    add_test(NAME test_tiny_lm_help COMMAND tiny_lm --help)
+endif()
+
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_tensor_matmul.c")
     add_executable(bench_tensor_matmul benchmarks/matmul/bench_tensor_matmul.c)
     target_link_libraries(bench_tensor_matmul PRIVATE tensorlib ${TENSORLIB_MATH_LIB})

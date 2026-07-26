@@ -15,6 +15,9 @@ example: $(BIN)/autograd_example
 mnist: $(BIN)/mnist_mlp
 	./$(BIN)/mnist_mlp
 
+tiny-lm: $(BIN)/tiny_lm
+	./$(BIN)/tiny_lm --help
+
 $(BIN):
 	mkdir -p $(BIN)
 
@@ -123,6 +126,9 @@ $(BIN)/autograd_example: examples/autograd_example.c $(SRC) $(HEADERS) | $(BIN)
 $(BIN)/mnist_mlp: examples/mnsit/mnist_mlp.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ examples/mnsit/mnist_mlp.c $(SRC) -lm
 
+$(BIN)/tiny_lm: examples/tiny_lm/tiny_lm.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ examples/tiny_lm/tiny_lm.c $(SRC) -lm
+
 $(BIN)/bench_tensor_matmul: benchmarks/matmul/bench_tensor_matmul.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ benchmarks/matmul/bench_tensor_matmul.c $(SRC) -lm
 
@@ -161,4 +167,4 @@ benchmark-openblas-reuse: $(BIN)/bench_openblas_matmul_reuse
 clean:
 	rm -rf $(BIN)
 
-.PHONY: all test example mnist benchmark-all benchmark-matmul benchmark-matmul-reuse benchmark-packed-views benchmark-openblas benchmark-openblas-reuse clean
+.PHONY: all test example mnist tiny-lm benchmark-all benchmark-matmul benchmark-matmul-reuse benchmark-packed-views benchmark-openblas benchmark-openblas-reuse clean
