@@ -28,6 +28,7 @@ set(TENSORLIB_SOURCES
     src/nn/module.c
     src/nn/linear.c
     src/nn/embedding.c
+    src/nn/layer_norm.c
     src/nn/mlp.c
     src/losses/classification.c
     src/optim/sgd.c
@@ -70,6 +71,7 @@ set(TENSORLIB_TESTS
     nn_init
     nn_linear
     nn_embedding
+    nn_layer_norm
     nn_loss
     nn_sgd
     nn_mlp

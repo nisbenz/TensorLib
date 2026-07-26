@@ -52,8 +52,9 @@ static int nn_initialize_parameter(tensor* value,
 
     if (value == NULL) return -1;
     count = tensor_numel(value);
-    if (initializer == NN_INIT_ZERO) {
-        for (int i = 0; i < count; ++i) value->storage->data[i] = 0.0f;
+    if (initializer == NN_INIT_ZERO || initializer == NN_INIT_ONE) {
+        float fill = initializer == NN_INIT_ZERO ? 0.0f : 1.0f;
+        for (int i = 0; i < count; ++i) value->storage->data[i] = fill;
         return 0;
     }
     if (rng == NULL ||

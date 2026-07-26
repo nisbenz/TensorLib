@@ -14,6 +14,7 @@ typedef struct nn_activation nn_activation;
 typedef struct nn_module nn_module;
 typedef struct nn_linear nn_linear;
 typedef struct nn_embedding nn_embedding;
+typedef struct nn_layer_norm nn_layer_norm;
 typedef struct nn_mlp nn_mlp;
 typedef struct nn_mlp_config nn_mlp_config;
 typedef struct nn_sgd nn_sgd;
@@ -31,7 +32,8 @@ typedef enum {
     NN_INIT_XAVIER_UNIFORM,
     NN_INIT_XAVIER_NORMAL,
     NN_INIT_HE_UNIFORM,
-    NN_INIT_HE_NORMAL
+    NN_INIT_HE_NORMAL,
+    NN_INIT_ONE
 } nn_init_kind;
 
 
@@ -101,6 +103,17 @@ struct nn_embedding {
 
     int vocabulary_size;
     int embedding_width;
+};
+
+struct nn_layer_norm {
+    nn_module base;
+
+    nn_parameter* weight;
+    nn_parameter* bias;
+
+    int normalized_width;
+    float epsilon;
+    int affine;
 };
 
 
@@ -241,6 +254,24 @@ void nn_embedding_destroy(nn_embedding* layer);
 ag_tensor* nn_embedding_forward(
     const nn_embedding* layer,
     const ag_tensor* indices
+);
+
+/*
+ * Normalize the final input dimension using biased variance. When affine is
+ * enabled, the learned scale and bias have shape [normalized_width].
+ */
+nn_layer_norm* nn_layer_norm_create(
+    const char* name,
+    int normalized_width,
+    float epsilon,
+    int affine
+);
+
+void nn_layer_norm_destroy(nn_layer_norm* layer);
+
+ag_tensor* nn_layer_norm_forward(
+    const nn_layer_norm* layer,
+    const ag_tensor* input
 );
 
 
