@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -O3 -march=native -mtune=native -Wall -Wextra -g -std=c11
+CFLAGS = -O3 -march=native -mtune=native -Wall -Wextra -g -std=c11 -fopenmp
 SRC = src/tensor/tensor_core.c src/tensor/tensor_alloc.c src/tensor/tensor_view.c src/tensor/tensor_ops.c src/tensor/tensor_gather.c src/tensor/tensor_reduc.c src/tensor/tensor_matmul.c src/autograd/autograd_core.c src/autograd/autograd_ops.c src/autograd/autograd_view.c src/autograd/autograd_gather.c src/autograd/autograd_reduc.c src/autograd/autograd_matmul.c src/autograd/autograd_backward.c src/init/rng.c src/nn/parameter.c src/nn/module.c src/nn/linear.c src/nn/embedding.c src/nn/positional_embedding.c src/nn/layer_norm.c src/nn/dropout.c src/nn/multihead_attention.c src/nn/decoder_block.c src/nn/decoder.c src/nn/mlp.c src/losses/classification.c src/nn/causal_mask.c src/optim/sgd.c src/optim/optim_common.c src/optim/adamw.c src/serialization/checkpoint.c
 HEADERS = include/tensorlib/tensor.h include/tensorlib/tensor_matmul.h include/tensorlib/autograd.h include/tensorlib/nn.h tests/fixtures/test_common.h
 INCLUDES = -Iinclude/tensorlib -Itests/fixtures
@@ -138,11 +138,14 @@ $(BIN)/bench_tensor_matmul_reuse: benchmarks/matmul/bench_tensor_matmul_reuse.c 
 $(BIN)/bench_tensor_matmul_packed_views: benchmarks/matmul/bench_tensor_matmul_packed_views.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ benchmarks/matmul/bench_tensor_matmul_packed_views.c $(SRC) -lm
 
+OPENBLAS_INCLUDE = -IC:/msys64/ucrt64/include/openblas
+OPENBLAS_LIB = -LC:/msys64/ucrt64/lib -lopenblas
+
 $(BIN)/bench_openblas_matmul: benchmarks/matmul/bench_openblas_matmul.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ benchmarks/matmul/bench_openblas_matmul.c $(SRC) -lopenblas -lm
+	$(CC) $(CFLAGS) $(INCLUDES) $(OPENBLAS_INCLUDE) -o $@ benchmarks/matmul/bench_openblas_matmul.c $(SRC) $(OPENBLAS_LIB) -lm
 
 $(BIN)/bench_openblas_matmul_reuse: benchmarks/matmul/bench_openblas_matmul_reuse.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ benchmarks/matmul/bench_openblas_matmul_reuse.c $(SRC) -lopenblas -lm
+	$(CC) $(CFLAGS) $(INCLUDES) $(OPENBLAS_INCLUDE) -o $@ benchmarks/matmul/bench_openblas_matmul_reuse.c $(SRC) $(OPENBLAS_LIB) -lm
 
 test: $(TESTS)
 	@for t in $(TESTS); do ./$$t || exit 1; echo; done
@@ -156,15 +159,27 @@ benchmark-matmul-reuse: $(BIN)/bench_tensor_matmul_reuse
 benchmark-packed-views: $(BIN)/bench_tensor_matmul_packed_views
 	./$(BIN)/bench_tensor_matmul_packed_views
 
-benchmark-all: benchmark-matmul benchmark-matmul-reuse benchmark-packed-views benchmark-openblas benchmark-openblas-reuse
-
 benchmark-openblas: $(BIN)/bench_openblas_matmul
-	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./$(BIN)/bench_openblas_matmul
+	./$(BIN)/bench_openblas_matmul
 
 benchmark-openblas-reuse: $(BIN)/bench_openblas_matmul_reuse
-	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./$(BIN)/bench_openblas_matmul_reuse
+	./$(BIN)/bench_openblas_matmul_reuse
+
+benchmark-compare:
+	@echo "===== TensorLib (OpenMP) ====="
+	OMP_NUM_THREADS=1 ./$(BIN)/bench_tensor_matmul | head -4
+	@echo ""
+	OMP_NUM_THREADS= ./$(BIN)/bench_tensor_matmul | head -4
+	@echo ""
+	@echo "===== OpenBLAS ====="
+	OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 ./$(BIN)/bench_openblas_matmul | head -4
+	@echo ""
+	OMP_NUM_THREADS= OPENBLAS_NUM_THREADS=0 ./$(BIN)/bench_openblas_matmul | head -4
+	@echo ""
+
+benchmark-all: benchmark-matmul benchmark-matmul-reuse benchmark-packed-views benchmark-openblas benchmark-openblas-reuse
 
 clean:
 	rm -rf $(BIN)
 
-.PHONY: all test example mnist tiny-lm benchmark-all benchmark-matmul benchmark-matmul-reuse benchmark-packed-views benchmark-openblas benchmark-openblas-reuse clean
+.PHONY: all test example mnist tiny-lm benchmark-all benchmark-matmul benchmark-matmul-reuse benchmark-packed-views benchmark-openblas benchmark-openblas-reuse benchmark-compare clean

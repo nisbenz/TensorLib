@@ -910,7 +910,6 @@ static tensor* try_packed_matrix_matmul(const tensor* a,
         !matmul_avx2_available()) {
         return NULL;
     }
-
     /*
      * Keep packing below t_matmul's public dispatch boundary. This lets
      * autograd and ordinary callers get the same view-aware kernel choice.
