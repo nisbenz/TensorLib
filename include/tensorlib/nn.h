@@ -144,9 +144,9 @@ struct nn_dropout {
 struct nn_multihead_attention {
     nn_module base;
 
-    nn_linear* query;
-    nn_linear* key;
-    nn_linear* value;
+    /* Fused Q/K/V projection weights [3,C,C] and biases [3,C]. */
+    nn_parameter* qkv_weight;
+    nn_parameter* qkv_bias;
     nn_linear* output;
     nn_dropout* output_dropout;
 
@@ -173,6 +173,7 @@ struct nn_decoder_config {
     int context_length;
     int channels;
     int head_count;
+    int layer_count;
     float dropout_probability;
     float layer_norm_epsilon;
 };
@@ -182,7 +183,8 @@ struct nn_decoder {
 
     nn_embedding* token_embedding;
     nn_positional_embedding* positional_embedding;
-    nn_decoder_block* blocks[2];
+    nn_decoder_block** blocks;
+    size_t block_count;
     nn_layer_norm* final_norm;
     nn_linear* language_model_head;
 
@@ -451,7 +453,7 @@ ag_tensor* nn_decoder_block_forward(
 );
 
 /*
- * Fixed-v1 two-layer decoder. Inputs and targets are non-gradient float token
+ * Configurable-depth decoder. Inputs and targets are non-gradient float token
  * IDs shaped [B,T]. Forward returns [B,T,V]; loss returns a scalar mean.
  */
 nn_decoder* nn_decoder_create(

@@ -22,7 +22,22 @@ static ag_tensor* input_from(const float* values, int time, int requires_grad)
     return ag_from_owned_tensor(raw, requires_grad);
 }
 
-static void identity_projection(nn_linear* layer)
+static void identity_qkv_projection(nn_multihead_attention* attention)
+{
+    for (int i = 0; i < 12; ++i) {
+        attention->qkv_weight->value->value->storage->data[i] = 0.0f;
+    }
+    for (int projection = 0; projection < 3; ++projection) {
+        int offset = projection * 4;
+        attention->qkv_weight->value->value->storage->data[offset] = 1.0f;
+        attention->qkv_weight->value->value->storage->data[offset + 3] = 1.0f;
+    }
+    for (int i = 0; i < 6; ++i) {
+        attention->qkv_bias->value->value->storage->data[i] = 0.0f;
+    }
+}
+
+static void identity_output_projection(nn_linear* layer)
 {
     for (int i = 0; i < 4; ++i) {
         layer->weight->value->value->storage->data[i] = 0.0f;
@@ -40,10 +55,8 @@ static nn_multihead_attention* identity_attention(nn_rng* rng)
         "attention", 2, 1, 0.0f, rng);
 
     if (attention == NULL) return NULL;
-    identity_projection(attention->query);
-    identity_projection(attention->key);
-    identity_projection(attention->value);
-    identity_projection(attention->output);
+    identity_qkv_projection(attention);
+    identity_output_projection(attention->output);
     return attention;
 }
 
@@ -182,8 +195,8 @@ static void test_topology_validation_and_eval_rng(void)
     CHECK(nn_multihead_attention_create("bad", 2, 1, 0, NULL) == NULL);
     attention = nn_multihead_attention_create("attention", 2, 2, 0.5f, &rng);
     CHECK(attention != NULL);
-    CHECK(attention != NULL && attention->base.child_count == 5);
-    CHECK(attention != NULL && nn_module_parameter_count(&attention->base) == 8);
+    CHECK(attention != NULL && attention->base.child_count == 2);
+    CHECK(attention != NULL && nn_module_parameter_count(&attention->base) == 4);
     CHECK(nn_multihead_attention_forward(NULL, valid) == NULL);
     CHECK(nn_multihead_attention_forward(attention, NULL) == NULL);
     CHECK(nn_multihead_attention_forward(attention, wrong_rank) == NULL);

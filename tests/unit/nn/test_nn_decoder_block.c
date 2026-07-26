@@ -33,12 +33,8 @@ static void zero_parameter(nn_parameter* parameter)
 
 static void zero_residual_branches(nn_decoder_block* block)
 {
-    zero_parameter(block->attention->query->weight);
-    zero_parameter(block->attention->query->bias);
-    zero_parameter(block->attention->key->weight);
-    zero_parameter(block->attention->key->bias);
-    zero_parameter(block->attention->value->weight);
-    zero_parameter(block->attention->value->bias);
+    zero_parameter(block->attention->qkv_weight);
+    zero_parameter(block->attention->qkv_bias);
     zero_parameter(block->attention->output->weight);
     zero_parameter(block->attention->output->bias);
     zero_parameter(block->mlp_input->weight);
@@ -62,7 +58,7 @@ static void test_residual_forward_backward_and_topology(void)
     input = block_input(4, 1);
     CHECK(block != NULL);
     CHECK(block != NULL && block->base.child_count == 6);
-    CHECK(block != NULL && nn_module_parameter_count(&block->base) == 16);
+    CHECK(block != NULL && nn_module_parameter_count(&block->base) == 12);
     zero_residual_branches(block);
     output = nn_module_forward(&block->base, input);
     CHECK(output != NULL);

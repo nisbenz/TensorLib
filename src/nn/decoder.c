@@ -31,6 +31,21 @@ static char* decoder_child_name(const char* name, const char* suffix)
     return result;
 }
 
+static char* decoder_block_name(const char* name, size_t index)
+{
+    int required;
+    char* result;
+
+    if (name == NULL) return NULL;
+    required = snprintf(NULL, 0, "%s.blocks.%zu", name, index);
+    if (required < 0 || (size_t)required == SIZE_MAX) return NULL;
+    result = (char*)malloc((size_t)required + 1);
+    if (result != NULL) {
+        snprintf(result, (size_t)required + 1, "%s.blocks.%zu", name, index);
+    }
+    return result;
+}
+
 static int decoder_config_valid(const nn_decoder_config* config)
 {
     return config != NULL &&
@@ -38,6 +53,9 @@ static int decoder_config_valid(const nn_decoder_config* config)
            config->context_length > 0 &&
            config->channels > 0 &&
            config->head_count > 0 &&
+           config->layer_count > 0 &&
+           (size_t)config->layer_count <=
+               SIZE_MAX / sizeof(nn_decoder_block*) &&
            config->channels % config->head_count == 0 &&
            isfinite(config->dropout_probability) &&
            config->dropout_probability >= 0.0f &&
@@ -75,6 +93,10 @@ nn_decoder* nn_decoder_create(const char* name,
         return NULL;
     }
     decoder->config = *config;
+    decoder->block_count = (size_t)config->layer_count;
+    decoder->blocks = (nn_decoder_block**)calloc(
+        decoder->block_count, sizeof(*decoder->blocks));
+    if (decoder->blocks == NULL) goto fail;
 
     child_name = decoder_child_name(name, "token_embedding");
     if (child_name == NULL) goto fail;
@@ -110,9 +132,8 @@ nn_decoder* nn_decoder_create(const char* name,
         goto fail;
     }
 
-    for (int index = 0; index < 2; ++index) {
-        const char* suffix = index == 0 ? "blocks.0" : "blocks.1";
-        child_name = decoder_child_name(name, suffix);
+    for (size_t index = 0; index < decoder->block_count; ++index) {
+        child_name = decoder_block_name(name, index);
         if (child_name == NULL) goto fail;
         decoder->blocks[index] = nn_decoder_block_create(
             child_name,
@@ -166,6 +187,7 @@ nn_decoder* nn_decoder_create(const char* name,
 
 fail:
     nn_module_destroy_base(&decoder->base);
+    free(decoder->blocks);
     free(decoder);
     return NULL;
 }
@@ -174,6 +196,7 @@ void nn_decoder_destroy(nn_decoder* decoder)
 {
     if (decoder == NULL) return;
     nn_module_destroy_base(&decoder->base);
+    free(decoder->blocks);
     free(decoder);
 }
 
@@ -199,17 +222,21 @@ ag_tensor* nn_decoder_forward(const nn_decoder* decoder,
     if (!token_input_valid(decoder, token_ids) ||
         decoder->token_embedding == NULL ||
         decoder->positional_embedding == NULL ||
-        decoder->blocks[0] == NULL || decoder->blocks[1] == NULL ||
+        decoder->blocks == NULL || decoder->block_count == 0 ||
+        decoder->block_count != (size_t)decoder->config.layer_count ||
         decoder->final_norm == NULL ||
         decoder->language_model_head == NULL) {
         return NULL;
+    }
+    for (size_t index = 0; index < decoder->block_count; ++index) {
+        if (decoder->blocks[index] == NULL) return NULL;
     }
     tokens = nn_embedding_forward(decoder->token_embedding, token_ids);
     if (tokens == NULL) goto cleanup;
     current = nn_positional_embedding_forward(
         decoder->positional_embedding, tokens);
     if (current == NULL) goto cleanup;
-    for (int index = 0; index < 2; ++index) {
+    for (size_t index = 0; index < decoder->block_count; ++index) {
         next = nn_decoder_block_forward(decoder->blocks[index], current);
         if (next == NULL) goto cleanup;
         ag_tensor_release(current);

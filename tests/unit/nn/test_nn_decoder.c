@@ -20,6 +20,7 @@ static nn_decoder_config test_config(float dropout)
     config.context_length = 4;
     config.channels = 8;
     config.head_count = 2;
+    config.layer_count = 2;
     config.dropout_probability = dropout;
     config.layer_norm_epsilon = 1e-5f;
     return config;
@@ -68,10 +69,11 @@ static void test_topology_forward_loss_and_backward(void)
     tokens = token_ids(inputs, 2, 4, 0);
     targets = target_ids(targets_values, 2, 4);
     CHECK(decoder != NULL);
+    CHECK(decoder != NULL && decoder->block_count == 2);
     CHECK(decoder != NULL && decoder->base.child_count == 6);
     CHECK(decoder != NULL && decoder->blocks[0] != decoder->blocks[1]);
     parameter_count = nn_module_parameter_count(&decoder->base);
-    CHECK(parameter_count == 38);
+    CHECK(parameter_count == 30);
     for (size_t i = 0; i < parameter_count; ++i) {
         nn_parameter* parameter = nn_module_parameter_at(&decoder->base, i);
         CHECK(parameter != NULL && parameter->name != NULL);
@@ -128,6 +130,9 @@ static void test_validation_and_mode_propagation(void)
     invalid.head_count = 3;
     CHECK(nn_decoder_create("bad", &invalid, &rng) == NULL);
     invalid = config;
+    invalid.layer_count = 0;
+    CHECK(nn_decoder_create("bad", &invalid, &rng) == NULL);
+    invalid = config;
     invalid.dropout_probability = 1.0f;
     CHECK(nn_decoder_create("bad", &invalid, &rng) == NULL);
     CHECK(nn_decoder_create(NULL, &config, &rng) == NULL);
@@ -158,6 +163,40 @@ static void test_validation_and_mode_propagation(void)
     ag_tensor_release(valid);
     nn_decoder_destroy(decoder);
     nn_decoder_destroy(NULL);
+}
+
+static void test_configurable_depth(void)
+{
+    nn_rng rng;
+    nn_decoder_config config = test_config(0.0f);
+    float input_values[4] = {0, 1, 2, 3};
+    nn_decoder* decoder;
+    ag_tensor* tokens;
+    ag_tensor* logits;
+
+    config.layer_count = 3;
+    nn_rng_seed(&rng, 55);
+    decoder = nn_decoder_create("deep", &config, &rng);
+    tokens = token_ids(input_values, 1, 4, 0);
+    CHECK(decoder != NULL);
+    CHECK(decoder != NULL && decoder->block_count == 3);
+    CHECK(decoder != NULL && decoder->base.child_count == 7);
+    CHECK(decoder != NULL &&
+          nn_module_parameter_count(&decoder->base) == 42);
+    CHECK(decoder != NULL &&
+          strcmp(decoder->blocks[2]->base.name, "deep.blocks.2") == 0);
+    logits = nn_decoder_forward(decoder, tokens);
+    CHECK(logits != NULL);
+    if (logits != NULL) {
+        CHECK(logits->value->ndim == 3);
+        CHECK(logits->value->dims[0] == 1);
+        CHECK(logits->value->dims[1] == 4);
+        CHECK(logits->value->dims[2] == 5);
+    }
+
+    ag_tensor_release(logits);
+    ag_tensor_release(tokens);
+    nn_decoder_destroy(decoder);
 }
 
 static void test_tiny_batch_overfit(void)
@@ -228,6 +267,7 @@ int main(void)
 {
     test_topology_forward_loss_and_backward();
     test_validation_and_mode_propagation();
+    test_configurable_depth();
     test_tiny_batch_overfit();
     if (failures != 0) {
         fprintf(stderr, "%d decoder checks failed\n", failures);

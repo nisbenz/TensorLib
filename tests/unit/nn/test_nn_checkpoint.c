@@ -161,6 +161,7 @@ static nn_decoder_config decoder_config(float dropout)
     config.context_length = 4;
     config.channels = 8;
     config.head_count = 2;
+    config.layer_count = 2;
     config.dropout_probability = dropout;
     config.layer_norm_epsilon = 1e-5f;
     return config;

@@ -32,24 +32,31 @@ static char* attention_child_name(const char* name, const char* suffix)
     return result;
 }
 
-static nn_linear* create_projection(const char* name,
-                                    const char* suffix,
-                                    int channels,
-                                    nn_rng* rng)
+static nn_parameter* create_parameter(const char* name,
+                                      const char* suffix,
+                                      int ndim,
+                                      const int* dims,
+                                      nn_init_kind initializer,
+                                      nn_rng* rng)
 {
     char* child_name = attention_child_name(name, suffix);
-    nn_linear* result;
+    nn_parameter* result;
 
     if (child_name == NULL) return NULL;
-    result = nn_linear_create(child_name,
-                              channels,
-                              channels,
-                              1,
-                              NN_INIT_XAVIER_UNIFORM,
-                              NN_INIT_ZERO,
-                              rng);
+    result = nn_parameter_create(
+        child_name, ndim, dims, 1, initializer, rng);
     free(child_name);
     return result;
+}
+
+static int register_parameter(nn_module* module, nn_parameter* parameter)
+{
+    if (parameter == NULL) return -1;
+    if (nn_module_register_parameter(module, parameter) != 0) {
+        nn_parameter_destroy(parameter);
+        return -1;
+    }
+    return 0;
 }
 
 static int register_child(nn_module* parent, nn_module* child)
@@ -71,6 +78,9 @@ nn_multihead_attention* nn_multihead_attention_create(
 {
     nn_multihead_attention* attention;
     char* dropout_name;
+    int weight_dims[3];
+    int bias_dims[2];
+    float scale;
 
     if (channels <= 0 || head_count <= 0 || channels % head_count != 0 ||
         rng == NULL) {
@@ -90,28 +100,43 @@ nn_multihead_attention* nn_multihead_attention_create(
     attention->head_count = head_count;
     attention->head_width = channels / head_count;
 
-    attention->query = create_projection(name, "query", channels, rng);
-    if (register_child(&attention->base,
-                       attention->query == NULL ? NULL :
-                       &attention->query->base) != 0) {
-        attention->query = NULL;
+    weight_dims[0] = 3;
+    weight_dims[1] = channels;
+    weight_dims[2] = channels;
+    attention->qkv_weight = create_parameter(
+        name, "qkv_weight", 3, weight_dims, NN_INIT_ZERO, rng);
+    if (register_parameter(&attention->base, attention->qkv_weight) != 0) {
+        attention->qkv_weight = NULL;
         goto fail;
     }
-    attention->key = create_projection(name, "key", channels, rng);
-    if (register_child(&attention->base,
-                       attention->key == NULL ? NULL :
-                       &attention->key->base) != 0) {
-        attention->key = NULL;
+    scale = sqrtf(3.0f / (float)channels);
+    for (int index = 0;
+         index < tensor_numel(attention->qkv_weight->value->value);
+         ++index) {
+        attention->qkv_weight->value->value->storage->data[index] =
+            nn_rng_uniform(rng, -scale, scale);
+    }
+
+    bias_dims[0] = 3;
+    bias_dims[1] = channels;
+    attention->qkv_bias = create_parameter(
+        name, "qkv_bias", 2, bias_dims, NN_INIT_ZERO, rng);
+    if (register_parameter(&attention->base, attention->qkv_bias) != 0) {
+        attention->qkv_bias = NULL;
         goto fail;
     }
-    attention->value = create_projection(name, "value", channels, rng);
-    if (register_child(&attention->base,
-                       attention->value == NULL ? NULL :
-                       &attention->value->base) != 0) {
-        attention->value = NULL;
-        goto fail;
-    }
-    attention->output = create_projection(name, "output", channels, rng);
+
+    dropout_name = attention_child_name(name, "output");
+    if (dropout_name == NULL) goto fail;
+    attention->output = nn_linear_create(
+        dropout_name,
+        channels,
+        channels,
+        1,
+        NN_INIT_XAVIER_UNIFORM,
+        NN_INIT_ZERO,
+        rng);
+    free(dropout_name);
     if (register_child(&attention->base,
                        attention->output == NULL ? NULL :
                        &attention->output->base) != 0) {
@@ -144,21 +169,55 @@ void nn_multihead_attention_destroy(nn_multihead_attention* attention)
     free(attention);
 }
 
-static ag_tensor* project_heads(const nn_linear* projection,
+static ag_tensor* fused_qkv_projection(
+                                const nn_multihead_attention* attention,
                                 const ag_tensor* input,
+                                int batch,
+                                int time)
+{
+    int input_shape[4] = {1, batch, time, attention->channels};
+    int weight_shape[4] = {3, 1, attention->channels, attention->channels};
+    int bias_shape[4] = {3, 1, 1, attention->channels};
+    ag_tensor* expanded_input = NULL;
+    ag_tensor* expanded_weight = NULL;
+    ag_tensor* expanded_bias = NULL;
+    ag_tensor* product = NULL;
+    ag_tensor* result = NULL;
+
+    expanded_input = ag_reshape(input, 4, input_shape);
+    if (expanded_input == NULL) goto cleanup;
+    expanded_weight = ag_reshape(
+        attention->qkv_weight->value, 4, weight_shape);
+    if (expanded_weight == NULL) goto cleanup;
+    product = ag_matmul(expanded_input, expanded_weight);
+    if (product == NULL) goto cleanup;
+    expanded_bias = ag_reshape(attention->qkv_bias->value, 4, bias_shape);
+    if (expanded_bias == NULL) goto cleanup;
+    result = ag_add(product, expanded_bias);
+
+cleanup:
+    ag_tensor_release(product);
+    ag_tensor_release(expanded_bias);
+    ag_tensor_release(expanded_weight);
+    ag_tensor_release(expanded_input);
+    return result;
+}
+
+static ag_tensor* project_heads(const ag_tensor* qkv,
+                                int projection,
                                 int batch,
                                 int time,
                                 int heads,
                                 int width)
 {
     int shape[4] = {batch, time, heads, width};
-    ag_tensor* projected = nn_linear_forward(projection, input);
+    ag_tensor* selected = ag_slice(qkv, 0, projection, projection + 1);
     ag_tensor* reshaped;
     ag_tensor* transposed;
 
-    if (projected == NULL) return NULL;
-    reshaped = ag_reshape(projected, 4, shape);
-    ag_tensor_release(projected);
+    if (selected == NULL) return NULL;
+    reshaped = ag_reshape(selected, 4, shape);
+    ag_tensor_release(selected);
     if (reshaped == NULL) return NULL;
     transposed = ag_transpose(reshaped, 1, 2);
     ag_tensor_release(reshaped);
@@ -169,6 +228,7 @@ ag_tensor* nn_multihead_attention_forward(
     const nn_multihead_attention* attention,
     const ag_tensor* input)
 {
+    ag_tensor* qkv = NULL;
     ag_tensor* query = NULL;
     ag_tensor* key = NULL;
     ag_tensor* value = NULL;
@@ -190,20 +250,22 @@ ag_tensor* nn_multihead_attention_forward(
         !tensor_has_valid_metadata(input->value) ||
         input->value->ndim != 3 ||
         input->value->dims[2] != attention->channels ||
-        attention->query == NULL || attention->key == NULL ||
-        attention->value == NULL || attention->output == NULL ||
+        attention->qkv_weight == NULL || attention->qkv_bias == NULL ||
+        attention->output == NULL ||
         attention->output_dropout == NULL) {
         return NULL;
     }
     batch = input->value->dims[0];
     time = input->value->dims[1];
-    query = project_heads(attention->query, input, batch, time,
+    qkv = fused_qkv_projection(attention, input, batch, time);
+    if (qkv == NULL) goto cleanup;
+    query = project_heads(qkv, 0, batch, time,
                           attention->head_count, attention->head_width);
     if (query == NULL) goto cleanup;
-    key = project_heads(attention->key, input, batch, time,
+    key = project_heads(qkv, 1, batch, time,
                         attention->head_count, attention->head_width);
     if (key == NULL) goto cleanup;
-    value = project_heads(attention->value, input, batch, time,
+    value = project_heads(qkv, 2, batch, time,
                           attention->head_count, attention->head_width);
     if (value == NULL) goto cleanup;
     transposed_key = ag_transpose(key, 2, 3);
@@ -242,5 +304,6 @@ cleanup:
     ag_tensor_release(value);
     ag_tensor_release(key);
     ag_tensor_release(query);
+    ag_tensor_release(qkv);
     return result;
 }
