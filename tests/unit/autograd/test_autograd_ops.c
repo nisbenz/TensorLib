@@ -105,6 +105,101 @@ TEST(test_binary_rejects_null_and_incompatible_shapes) {
     ag_tensor_release(b); ag_tensor_release(a);
 }
 
+TEST(test_scalar_arithmetic_forward_backward_and_lifecycle) {
+    int dims[1] = {3};
+    float values[3] = {2.0f, -4.0f, 0.5f};
+    float upstream_values[3] = {1.0f, 2.0f, -3.0f};
+    ag_tensor* input = make_ag(1, dims, values, 1);
+    tensor* upstream = t_alloc(1, dims);
+    ag_tensor* multiplied;
+    ag_tensor* divided;
+    tensor* gradients[1] = {NULL};
+
+    for (int i = 0; i < 3; ++i) {
+        upstream->storage->data[i] = upstream_values[i];
+    }
+    multiplied = ag_mul_scalar(input, -2.0f);
+    divided = ag_div_scalar(input, 4.0f);
+    ASSERT_NOT_NULL(multiplied);
+    ASSERT_NOT_NULL(divided);
+    ASSERT_EQ_INT(multiplied->creator->operation, AG_OP_MUL_SCALAR);
+    ASSERT_EQ_INT(divided->creator->operation, AG_OP_DIV_SCALAR);
+    ASSERT_EQ_INT(multiplied->creator->input_count, 1);
+    ASSERT_EQ_INT(input->ref_count, 3);
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_EQ_FLOAT(multiplied->value->storage->data[i], values[i] * -2.0f);
+        ASSERT_EQ_FLOAT(divided->value->storage->data[i], values[i] / 4.0f);
+    }
+    ASSERT_EQ_INT(multiplied->creator->backward(
+        multiplied->creator, upstream, gradients), 0);
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_EQ_FLOAT(gradients[0]->storage->data[i],
+                        upstream_values[i] * -2.0f);
+    }
+    t_free(gradients[0]);
+    gradients[0] = NULL;
+    ASSERT_EQ_INT(divided->creator->backward(
+        divided->creator, upstream, gradients), 0);
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_EQ_FLOAT(gradients[0]->storage->data[i],
+                        upstream_values[i] / 4.0f);
+    }
+    t_free(gradients[0]);
+    ag_tensor_release(divided);
+    ag_tensor_release(multiplied);
+    ASSERT_EQ_INT(input->ref_count, 1);
+    t_free(upstream);
+    ag_tensor_release(input);
+}
+
+TEST(test_scalar_arithmetic_views_ieee_and_finite_difference) {
+    int dims[2] = {2, 2};
+    float values[4] = {1.5f, -2.0f, 3.0f, 4.0f};
+    tensor* raw = t_alloc(2, dims);
+    ag_tensor* input;
+    ag_tensor* multiplied;
+    ag_tensor* divided;
+    ag_tensor* row_sum;
+    ag_tensor* loss;
+    const float epsilon = 1e-3f;
+
+    for (int i = 0; i < 4; ++i) raw->storage->data[i] = values[i];
+    input = ag_from_owned_tensor(t_transpose(raw, 0, 1), 1);
+    t_free(raw);
+    multiplied = ag_mul_scalar(input, 1.75f);
+    divided = ag_div_scalar(multiplied, 2.5f);
+    row_sum = ag_sum(divided, 1, 0);
+    loss = ag_sum(row_sum, 0, 0);
+    ASSERT_EQ_INT(ag_backward(loss), 0);
+    for (int i = 0; i < 4; ++i) {
+        float x = values[i];
+        float numerical = (((x + epsilon) * 1.75f / 2.5f) -
+                           ((x - epsilon) * 1.75f / 2.5f)) /
+                          (2.0f * epsilon);
+        ASSERT_FLOAT_NEAR(input->grad->storage->data[i], numerical, 1e-4f);
+    }
+    ag_tensor_release(loss);
+    ag_tensor_release(row_sum);
+    ag_tensor_release(divided);
+    ag_tensor_release(multiplied);
+    ag_tensor_release(input);
+
+    {
+        float scalar_value = 0.0f;
+        ag_tensor* scalar = make_ag(0, NULL, &scalar_value, 0);
+        ag_tensor* untracked = ag_mul_scalar(scalar, 0.0f);
+        ag_tensor* ieee = ag_div_scalar(scalar, 0.0f);
+        ASSERT_NOT_NULL(untracked);
+        ASSERT_NULL(untracked->creator);
+        ASSERT_NAN(ieee->value->storage->data[0]);
+        ASSERT_NULL(ag_mul_scalar(NULL, 2.0f));
+        ASSERT_NULL(ag_div_scalar(NULL, 2.0f));
+        ag_tensor_release(ieee);
+        ag_tensor_release(untracked);
+        ag_tensor_release(scalar);
+    }
+}
+
 TEST(test_unary_forwards_and_local_gradients) {
     int dims[1] = {3};
     float values[3] = {0.5f, 1.0f, 2.0f};
@@ -575,6 +670,8 @@ int main(void) {
     RUN_TEST(test_binary_local_gradients_match_derivatives);
     RUN_TEST(test_broadcast_forward_and_local_gradient_use_output_shape);
     RUN_TEST(test_binary_rejects_null_and_incompatible_shapes);
+    RUN_TEST(test_scalar_arithmetic_forward_backward_and_lifecycle);
+    RUN_TEST(test_scalar_arithmetic_views_ieee_and_finite_difference);
     RUN_TEST(test_unary_forwards_and_local_gradients);
     RUN_TEST(test_unary_handles_scalar_view_and_null);
     RUN_TEST(test_pow_forward_backward_and_edge_exponents);

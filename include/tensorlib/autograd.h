@@ -46,7 +46,9 @@ typedef enum {
     AG_OP_TRANSPOSE,
     AG_OP_SLICE,
     AG_OP_EXPAND,
-    AG_OP_GATHER_ROWS
+    AG_OP_GATHER_ROWS,
+    AG_OP_MUL_SCALAR,
+    AG_OP_DIV_SCALAR
 } ag_op;
 
 
@@ -119,6 +121,8 @@ ag_tensor* ag_add(const ag_tensor* a, const ag_tensor* b);
 ag_tensor* ag_sub(const ag_tensor* a, const ag_tensor* b);
 ag_tensor* ag_mul(const ag_tensor* a, const ag_tensor* b);
 ag_tensor* ag_div(const ag_tensor* a, const ag_tensor* b);
+ag_tensor* ag_mul_scalar(const ag_tensor* value, float scalar);
+ag_tensor* ag_div_scalar(const ag_tensor* value, float scalar);
 ag_tensor* ag_neg(const ag_tensor* value);
 ag_tensor* ag_exp(const ag_tensor* value);
 ag_tensor* ag_log(const ag_tensor* value);

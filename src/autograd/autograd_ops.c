@@ -120,6 +120,69 @@ ag_tensor* ag_div(const ag_tensor* a, const ag_tensor* b) {
     return apply_binary(a, b, AG_OP_DIV, t_div, backward_div);
 }
 
+typedef struct {
+    float scalar;
+} scalar_context;
+
+typedef tensor* (*scalar_forward_fn)(tensor*, float);
+
+static int backward_mul_scalar(const ag_node* node,
+                               const tensor* output_gradient,
+                               tensor** input_gradients) {
+    if (node == NULL || node->input_count != 1 || node->context == NULL ||
+        input_gradients == NULL ||
+        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!node->inputs[0]->requires_grad) return 0;
+    input_gradients[0] = t_mul_scalar(
+        (tensor*)output_gradient, ((scalar_context*)node->context)->scalar);
+    return input_gradients[0] == NULL;
+}
+
+static int backward_div_scalar(const ag_node* node,
+                               const tensor* output_gradient,
+                               tensor** input_gradients) {
+    if (node == NULL || node->input_count != 1 || node->context == NULL ||
+        input_gradients == NULL ||
+        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!node->inputs[0]->requires_grad) return 0;
+    input_gradients[0] = t_div_scalar(
+        (tensor*)output_gradient, ((scalar_context*)node->context)->scalar);
+    return input_gradients[0] == NULL;
+}
+
+static ag_tensor* apply_scalar(const ag_tensor* value,
+                               float scalar,
+                               ag_op operation,
+                               scalar_forward_fn forward,
+                               ag_backward_fn backward) {
+    scalar_context* context;
+    tensor* output;
+    ag_tensor* inputs[1];
+
+    if (value == NULL || forward == NULL || backward == NULL) return NULL;
+    output = forward(value->value, scalar);
+    if (output == NULL) return NULL;
+    context = (scalar_context*)malloc(sizeof(*context));
+    if (context == NULL) {
+        t_free(output);
+        return NULL;
+    }
+    context->scalar = scalar;
+    inputs[0] = (ag_tensor*)value;
+    return ag_make_result(output, operation, 1, inputs,
+                          backward, context, free);
+}
+
+ag_tensor* ag_mul_scalar(const ag_tensor* value, float scalar) {
+    return apply_scalar(value, scalar, AG_OP_MUL_SCALAR,
+                        t_mul_scalar, backward_mul_scalar);
+}
+
+ag_tensor* ag_div_scalar(const ag_tensor* value, float scalar) {
+    return apply_scalar(value, scalar, AG_OP_DIV_SCALAR,
+                        t_div_scalar, backward_div_scalar);
+}
+
 static int backward_neg(const ag_node* node,
                         const tensor* output_gradient,
                         tensor** input_gradients) {

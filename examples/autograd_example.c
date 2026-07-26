@@ -14,6 +14,8 @@ static const char* operation_name(ag_op operation) {
         case AG_OP_SUB: return "SUB";
         case AG_OP_MUL: return "MUL";
         case AG_OP_DIV: return "DIV";
+        case AG_OP_MUL_SCALAR: return "MUL_SCALAR";
+        case AG_OP_DIV_SCALAR: return "DIV_SCALAR";
         case AG_OP_NEG: return "NEG";
         case AG_OP_EXP: return "EXP";
         case AG_OP_LOG: return "LOG";

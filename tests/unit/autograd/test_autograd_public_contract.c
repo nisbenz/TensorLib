@@ -611,6 +611,8 @@ static int test_invalid_operation_arguments(void)
     CHECK(ag_sub(x, NULL) == NULL);
     CHECK(ag_mul(NULL, NULL) == NULL);
     CHECK(ag_div(x, NULL) == NULL);
+    CHECK(ag_mul_scalar(NULL, 2.0f) == NULL);
+    CHECK(ag_div_scalar(NULL, 2.0f) == NULL);
     CHECK(ag_neg(NULL) == NULL);
     CHECK(ag_exp(NULL) == NULL);
     CHECK(ag_log(NULL) == NULL);
