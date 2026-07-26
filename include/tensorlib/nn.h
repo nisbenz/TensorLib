@@ -17,6 +17,7 @@ typedef struct nn_embedding nn_embedding;
 typedef struct nn_positional_embedding nn_positional_embedding;
 typedef struct nn_layer_norm nn_layer_norm;
 typedef struct nn_dropout nn_dropout;
+typedef struct nn_multihead_attention nn_multihead_attention;
 typedef struct nn_mlp nn_mlp;
 typedef struct nn_mlp_config nn_mlp_config;
 typedef struct nn_sgd nn_sgd;
@@ -135,6 +136,20 @@ struct nn_dropout {
     float probability;
     /* Non-owning; must outlive this module. */
     nn_rng* rng;
+};
+
+struct nn_multihead_attention {
+    nn_module base;
+
+    nn_linear* query;
+    nn_linear* key;
+    nn_linear* value;
+    nn_linear* output;
+    nn_dropout* output_dropout;
+
+    int channels;
+    int head_count;
+    int head_width;
 };
 
 
@@ -359,6 +374,25 @@ void nn_dropout_destroy(nn_dropout* layer);
 
 ag_tensor* nn_dropout_forward(
     const nn_dropout* layer,
+    const ag_tensor* input
+);
+
+/*
+ * Decoder-style multi-head causal self-attention over [B,T,C].
+ * Channels must divide evenly across heads.
+ */
+nn_multihead_attention* nn_multihead_attention_create(
+    const char* name,
+    int channels,
+    int head_count,
+    float dropout_probability,
+    nn_rng* rng
+);
+
+void nn_multihead_attention_destroy(nn_multihead_attention* attention);
+
+ag_tensor* nn_multihead_attention_forward(
+    const nn_multihead_attention* attention,
     const ag_tensor* input
 );
 

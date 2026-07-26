@@ -31,6 +31,7 @@ set(TENSORLIB_SOURCES
     src/nn/positional_embedding.c
     src/nn/layer_norm.c
     src/nn/dropout.c
+    src/nn/multihead_attention.c
     src/nn/mlp.c
     src/losses/classification.c
     src/nn/causal_mask.c
@@ -80,6 +81,7 @@ set(TENSORLIB_TESTS
     nn_positional_embedding
     nn_layer_norm
     nn_dropout
+    nn_multihead_attention
     nn_loss
     nn_causal_mask
     nn_sgd
