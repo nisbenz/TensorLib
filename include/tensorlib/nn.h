@@ -15,6 +15,7 @@ typedef struct nn_module nn_module;
 typedef struct nn_linear nn_linear;
 typedef struct nn_embedding nn_embedding;
 typedef struct nn_layer_norm nn_layer_norm;
+typedef struct nn_dropout nn_dropout;
 typedef struct nn_mlp nn_mlp;
 typedef struct nn_mlp_config nn_mlp_config;
 typedef struct nn_sgd nn_sgd;
@@ -114,6 +115,14 @@ struct nn_layer_norm {
     int normalized_width;
     float epsilon;
     int affine;
+};
+
+struct nn_dropout {
+    nn_module base;
+
+    float probability;
+    /* Non-owning; must outlive this module. */
+    nn_rng* rng;
 };
 
 
@@ -216,6 +225,10 @@ ag_tensor* nn_module_forward(
     const ag_tensor* input
 );
 
+/* Recursively set/query train mode. Evaluation disables stochastic modules. */
+void nn_module_set_training(nn_module* module, int training);
+int nn_module_is_training(const nn_module* module);
+
 
 /*
  * Linear-layer API.
@@ -271,6 +284,23 @@ void nn_layer_norm_destroy(nn_layer_norm* layer);
 
 ag_tensor* nn_layer_norm_forward(
     const nn_layer_norm* layer,
+    const ag_tensor* input
+);
+
+/*
+ * Inverted dropout. A non-null RNG is required when probability is non-zero.
+ * Evaluation returns an owned identity reference and does not advance the RNG.
+ */
+nn_dropout* nn_dropout_create(
+    const char* name,
+    float probability,
+    nn_rng* rng
+);
+
+void nn_dropout_destroy(nn_dropout* layer);
+
+ag_tensor* nn_dropout_forward(
+    const nn_dropout* layer,
     const ag_tensor* input
 );
 

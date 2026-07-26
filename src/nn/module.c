@@ -219,3 +219,17 @@ ag_tensor* nn_module_forward(const nn_module* module, const ag_tensor* input)
     if (module == NULL || input == NULL || module->forward == NULL) return NULL;
     return module->forward(module, input);
 }
+
+void nn_module_set_training(nn_module* module, int training)
+{
+    if (module == NULL) return;
+    module->training = training != 0;
+    for (size_t i = 0; i < module->child_count; ++i) {
+        nn_module_set_training(module->children[i], training);
+    }
+}
+
+int nn_module_is_training(const nn_module* module)
+{
+    return module != NULL && module->training != 0;
+}
