@@ -34,6 +34,8 @@ set(TENSORLIB_SOURCES
     src/losses/classification.c
     src/nn/causal_mask.c
     src/optim/sgd.c
+    src/optim/optim_common.c
+    src/optim/adamw.c
     include/tensorlib/tensor_matmul.h
 )
 
@@ -78,11 +80,12 @@ set(TENSORLIB_TESTS
     nn_loss
     nn_causal_mask
     nn_sgd
+    nn_adamw
     nn_mlp
 )
 
 foreach(test_name IN LISTS TENSORLIB_TESTS)
-    if (test_name STREQUAL "nn_sgd")
+    if (test_name MATCHES "^nn_(sgd|adamw)$")
         set(test_source tests/unit/optim/test_${test_name}.c)
     elseif(test_name MATCHES "^nn_")
         set(test_source tests/unit/nn/test_${test_name}.c)

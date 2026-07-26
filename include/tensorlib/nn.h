@@ -19,6 +19,8 @@ typedef struct nn_dropout nn_dropout;
 typedef struct nn_mlp nn_mlp;
 typedef struct nn_mlp_config nn_mlp_config;
 typedef struct nn_sgd nn_sgd;
+typedef struct nn_adamw_config nn_adamw_config;
+typedef struct nn_adamw nn_adamw;
 
 
 /* Deterministic random-number generator state. */
@@ -152,6 +154,27 @@ struct nn_mlp {
 struct nn_sgd {
     nn_module* module;
     float learning_rate;
+};
+
+struct nn_adamw_config {
+    float learning_rate;
+    float beta1;
+    float beta2;
+    float epsilon;
+    float weight_decay;
+    /* Zero disables clipping. */
+    float max_grad_norm;
+};
+
+struct nn_adamw {
+    nn_module* module;
+    nn_adamw_config config;
+
+    nn_parameter** parameters;
+    tensor** first_moments;
+    tensor** second_moments;
+    uint64_t* steps;
+    size_t parameter_count;
 };
 
 
@@ -331,5 +354,22 @@ nn_sgd* nn_sgd_create(nn_module* module, float learning_rate);
 int nn_sgd_step(nn_sgd* optimizer);
 void nn_sgd_zero_grad(nn_sgd* optimizer);
 void nn_sgd_destroy(nn_sgd* optimizer);
+
+/* Optimizer-independent recursive gradient utilities. */
+void nn_module_zero_grad(nn_module* module);
+int nn_clip_grad_norm(
+    nn_module* module,
+    float max_norm,
+    float* total_norm
+);
+
+nn_adamw_config nn_adamw_default_config(void);
+nn_adamw* nn_adamw_create(
+    nn_module* module,
+    const nn_adamw_config* config
+);
+int nn_adamw_step(nn_adamw* optimizer);
+void nn_adamw_zero_grad(nn_adamw* optimizer);
+void nn_adamw_destroy(nn_adamw* optimizer);
 
 #endif /* TENSORLIB_NN_H */

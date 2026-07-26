@@ -117,16 +117,8 @@ int nn_sgd_step(nn_sgd* optimizer)
 
 void nn_sgd_zero_grad(nn_sgd* optimizer)
 {
-    size_t count;
-
     if (optimizer == NULL || !nn_sgd_module_valid(optimizer->module)) return;
-    count = nn_module_parameter_count(optimizer->module);
-    for (size_t i = 0; i < count; ++i) {
-        nn_parameter* parameter = nn_module_parameter_at(optimizer->module, i);
-        if (parameter != NULL && parameter->value != NULL) {
-            ag_zero_grad(parameter->value);
-        }
-    }
+    nn_module_zero_grad(optimizer->module);
 }
 
 void nn_sgd_destroy(nn_sgd* optimizer)
