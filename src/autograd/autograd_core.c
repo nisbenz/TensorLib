@@ -18,6 +18,7 @@ ag_tensor* ag_from_owned_tensor(tensor* value, int requires_grad) {
     result->value = value;
     result->requires_grad = requires_grad != 0;
     result->ref_count = 1;
+    result->graph_index = -1;
     return result;
 }
 

@@ -8,6 +8,8 @@ if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -march=native -mtune=native")
 endif()
 
+find_package(OpenMP REQUIRED)
+
 set(TENSORLIB_SOURCES
     src/tensor/tensor_core.c
     src/tensor/tensor_ops.c
@@ -49,6 +51,7 @@ add_library(tensorlib STATIC ${TENSORLIB_SOURCES}
             include/tensorlib/autograd.h
             include/tensorlib/nn.h)
 target_include_directories(tensorlib PUBLIC include/tensorlib)
+target_link_libraries(tensorlib PUBLIC OpenMP::OpenMP)
 
 if (WIN32)
     set(TENSORLIB_MATH_LIB)
