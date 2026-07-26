@@ -29,12 +29,13 @@ cmake --build build --target mnist_mlp
 ./build/mnist_mlp
 ```
 
-Paths, epoch count, batch size, and output weights path can be overridden:
+Paths, epoch count, batch size, and output checkpoint path can be overridden:
 
 ```sh
-./bin/mnist_mlp IMAGE_FILE LABEL_FILE 10 64 WEIGHTS_FILE
+./bin/mnist_mlp IMAGE_FILE LABEL_FILE 10 64 CHECKPOINT_FILE
 ```
 
-The default output is `examples/mnsit/mnist_mlp.weights`. The binary file
-starts with the `TLWEIGHT` magic bytes and stores versioned, named parameter
-shapes followed by contiguous 32-bit floating-point values.
+The default output is `examples/mnsit/mnist_mlp.weights`. It is written through
+TensorLib's transactional checkpoint API using the versioned `TLCKPT` format
+and contains the model's named float32 parameters. The loader also accepts
+older `TLWEIGHT` v1 files.

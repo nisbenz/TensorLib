@@ -317,85 +317,6 @@ static void print_confusion_matrix(
     }
 }
 
-/*
- * TensorLib does not currently provide parameter serialization. This compact
- * binary format stores enough metadata to validate and reload each parameter:
- * magic, version, parameter count, then name, shape, and contiguous float data.
- */
-static int save_weights(const nn_module* module, const char* path)
-{
-    static const unsigned char magic[8] = {
-        'T', 'L', 'W', 'E', 'I', 'G', 'H', 'T'
-    };
-    const uint32_t version = 1;
-    size_t parameter_count = nn_module_parameter_count(module);
-    uint32_t serialized_count;
-    FILE* file;
-
-    if (parameter_count > UINT32_MAX) return -1;
-    serialized_count = (uint32_t)parameter_count;
-    file = fopen(path, "wb");
-    if (file == NULL) {
-        fprintf(stderr, "Could not create weights file '%s': %s\n",
-                path, strerror(errno));
-        return -1;
-    }
-    if (fwrite(magic, 1, sizeof(magic), file) != sizeof(magic) ||
-        fwrite(&version, sizeof(version), 1, file) != 1 ||
-        fwrite(&serialized_count, sizeof(serialized_count), 1, file) != 1) {
-        goto fail;
-    }
-    for (size_t i = 0; i < parameter_count; ++i) {
-        nn_parameter* parameter = nn_module_parameter_at(module, i);
-        tensor* value;
-        size_t name_length;
-        uint32_t serialized_name_length;
-        uint32_t ndim;
-        uint64_t element_count;
-
-        if (parameter == NULL || parameter->name == NULL ||
-            parameter->value == NULL ||
-            !tensor_has_valid_metadata(parameter->value->value)) {
-            goto fail;
-        }
-        value = parameter->value->value;
-        name_length = strlen(parameter->name);
-        if (name_length > UINT32_MAX || value->ndim < 0 ||
-            !is_contiguous(value)) {
-            goto fail;
-        }
-        serialized_name_length = (uint32_t)name_length;
-        ndim = (uint32_t)value->ndim;
-        element_count = (uint64_t)tensor_numel(value);
-        if (fwrite(&serialized_name_length,
-                   sizeof(serialized_name_length), 1, file) != 1 ||
-            fwrite(parameter->name, 1, name_length, file) != name_length ||
-            fwrite(&ndim, sizeof(ndim), 1, file) != 1) {
-            goto fail;
-        }
-        for (int dim = 0; dim < value->ndim; ++dim) {
-            int32_t size = value->dims[dim];
-            if (fwrite(&size, sizeof(size), 1, file) != 1) goto fail;
-        }
-        if (fwrite(&element_count, sizeof(element_count), 1, file) != 1 ||
-            fwrite(value->storage->data + value->offset,
-                   sizeof(float), (size_t)element_count, file) !=
-                (size_t)element_count) {
-            goto fail;
-        }
-    }
-    if (fclose(file) != 0) {
-        fprintf(stderr, "Could not finish weights file '%s'.\n", path);
-        return -1;
-    }
-    return 0;
-
-fail:
-    fclose(file);
-    fprintf(stderr, "Failed while writing weights file '%s'.\n", path);
-    return -1;
-}
-
 static int parse_positive_int(const char* text, int* result)
 {
     char* end;
@@ -496,7 +417,10 @@ int main(int argc, char** argv)
                (double)test_loss, (double)test_accuracy * 100.0);
     }
     print_confusion_matrix(confusion);
-    if (save_weights(&model->base, weights_path) != 0) goto cleanup;
+    if (nn_checkpoint_save(weights_path, &model->base, NULL, NULL) != 0) {
+        fprintf(stderr, "Could not save checkpoint '%s'.\n", weights_path);
+        goto cleanup;
+    }
     printf("\nSaved %zu parameter tensors to %s\n",
            nn_module_parameter_count(&model->base), weights_path);
     status = EXIT_SUCCESS;
