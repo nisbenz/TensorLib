@@ -33,6 +33,7 @@ set(TENSORLIB_SOURCES
     src/nn/dropout.c
     src/nn/multihead_attention.c
     src/nn/decoder_block.c
+    src/nn/decoder.c
     src/nn/mlp.c
     src/losses/classification.c
     src/nn/causal_mask.c
@@ -84,6 +85,7 @@ set(TENSORLIB_TESTS
     nn_dropout
     nn_multihead_attention
     nn_decoder_block
+    nn_decoder
     nn_loss
     nn_causal_mask
     nn_sgd

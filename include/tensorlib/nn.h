@@ -19,6 +19,8 @@ typedef struct nn_layer_norm nn_layer_norm;
 typedef struct nn_dropout nn_dropout;
 typedef struct nn_multihead_attention nn_multihead_attention;
 typedef struct nn_decoder_block nn_decoder_block;
+typedef struct nn_decoder_config nn_decoder_config;
+typedef struct nn_decoder nn_decoder;
 typedef struct nn_mlp nn_mlp;
 typedef struct nn_mlp_config nn_mlp_config;
 typedef struct nn_sgd nn_sgd;
@@ -164,6 +166,27 @@ struct nn_decoder_block {
     nn_dropout* mlp_dropout;
 
     int channels;
+};
+
+struct nn_decoder_config {
+    int vocabulary_size;
+    int context_length;
+    int channels;
+    int head_count;
+    float dropout_probability;
+    float layer_norm_epsilon;
+};
+
+struct nn_decoder {
+    nn_module base;
+
+    nn_embedding* token_embedding;
+    nn_positional_embedding* positional_embedding;
+    nn_decoder_block* blocks[2];
+    nn_layer_norm* final_norm;
+    nn_linear* language_model_head;
+
+    nn_decoder_config config;
 };
 
 
@@ -425,6 +448,29 @@ void nn_decoder_block_destroy(nn_decoder_block* block);
 ag_tensor* nn_decoder_block_forward(
     const nn_decoder_block* block,
     const ag_tensor* input
+);
+
+/*
+ * Fixed-v1 two-layer decoder. Inputs and targets are non-gradient float token
+ * IDs shaped [B,T]. Forward returns [B,T,V]; loss returns a scalar mean.
+ */
+nn_decoder* nn_decoder_create(
+    const char* name,
+    const nn_decoder_config* config,
+    nn_rng* rng
+);
+
+void nn_decoder_destroy(nn_decoder* decoder);
+
+ag_tensor* nn_decoder_forward(
+    const nn_decoder* decoder,
+    const ag_tensor* token_ids
+);
+
+ag_tensor* nn_decoder_loss(
+    const nn_decoder* decoder,
+    const ag_tensor* token_ids,
+    const tensor* targets
 );
 
 
