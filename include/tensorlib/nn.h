@@ -18,6 +18,7 @@ typedef struct nn_positional_embedding nn_positional_embedding;
 typedef struct nn_layer_norm nn_layer_norm;
 typedef struct nn_dropout nn_dropout;
 typedef struct nn_multihead_attention nn_multihead_attention;
+typedef struct nn_decoder_block nn_decoder_block;
 typedef struct nn_mlp nn_mlp;
 typedef struct nn_mlp_config nn_mlp_config;
 typedef struct nn_sgd nn_sgd;
@@ -150,6 +151,19 @@ struct nn_multihead_attention {
     int channels;
     int head_count;
     int head_width;
+};
+
+struct nn_decoder_block {
+    nn_module base;
+
+    nn_layer_norm* attention_norm;
+    nn_multihead_attention* attention;
+    nn_layer_norm* mlp_norm;
+    nn_linear* mlp_input;
+    nn_linear* mlp_output;
+    nn_dropout* mlp_dropout;
+
+    int channels;
 };
 
 
@@ -393,6 +407,23 @@ void nn_multihead_attention_destroy(nn_multihead_attention* attention);
 
 ag_tensor* nn_multihead_attention_forward(
     const nn_multihead_attention* attention,
+    const ag_tensor* input
+);
+
+/* Pre-norm causal-attention and 4C GELU MLP residual block. */
+nn_decoder_block* nn_decoder_block_create(
+    const char* name,
+    int channels,
+    int head_count,
+    float dropout_probability,
+    float layer_norm_epsilon,
+    nn_rng* rng
+);
+
+void nn_decoder_block_destroy(nn_decoder_block* block);
+
+ag_tensor* nn_decoder_block_forward(
+    const nn_decoder_block* block,
     const ag_tensor* input
 );
 
