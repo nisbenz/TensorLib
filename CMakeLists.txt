@@ -28,6 +28,7 @@ set(TENSORLIB_SOURCES
     src/nn/module.c
     src/nn/linear.c
     src/nn/embedding.c
+    src/nn/positional_embedding.c
     src/nn/layer_norm.c
     src/nn/dropout.c
     src/nn/mlp.c
@@ -76,6 +77,7 @@ set(TENSORLIB_TESTS
     nn_init
     nn_linear
     nn_embedding
+    nn_positional_embedding
     nn_layer_norm
     nn_dropout
     nn_loss

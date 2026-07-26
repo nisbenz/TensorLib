@@ -14,6 +14,7 @@ typedef struct nn_activation nn_activation;
 typedef struct nn_module nn_module;
 typedef struct nn_linear nn_linear;
 typedef struct nn_embedding nn_embedding;
+typedef struct nn_positional_embedding nn_positional_embedding;
 typedef struct nn_layer_norm nn_layer_norm;
 typedef struct nn_dropout nn_dropout;
 typedef struct nn_mlp nn_mlp;
@@ -105,6 +106,15 @@ struct nn_embedding {
     nn_parameter* weight;
 
     int vocabulary_size;
+    int embedding_width;
+};
+
+struct nn_positional_embedding {
+    nn_module base;
+
+    nn_embedding* table;
+
+    int context_length;
     int embedding_width;
 };
 
@@ -295,6 +305,26 @@ void nn_embedding_destroy(nn_embedding* layer);
 ag_tensor* nn_embedding_forward(
     const nn_embedding* layer,
     const ag_tensor* indices
+);
+
+/*
+ * Add learned [T,C] position vectors to token embeddings [B,T,C].
+ * Position IDs are generated internally and the table is bounded by the
+ * configured context length.
+ */
+nn_positional_embedding* nn_positional_embedding_create(
+    const char* name,
+    int context_length,
+    int embedding_width,
+    nn_init_kind weight_init,
+    nn_rng* rng
+);
+
+void nn_positional_embedding_destroy(nn_positional_embedding* layer);
+
+ag_tensor* nn_positional_embedding_forward(
+    const nn_positional_embedding* layer,
+    const ag_tensor* token_embeddings
 );
 
 /*
