@@ -14,13 +14,6 @@ typedef struct {
     int capacity;
 } node_list;
 
-static int tensor_index(const tensor_list* list, const ag_tensor* value) {
-    for (int i = 0; i < list->count; ++i) {
-        if (list->values[i] == value) return i;
-    }
-    return -1;
-}
-
 static int append_tensor(tensor_list* list, ag_tensor* value) {
     if (list->count == list->capacity) {
         int capacity = list->capacity == 0 ? 16 : list->capacity * 2;
@@ -48,7 +41,8 @@ static int append_node(node_list* list, ag_node* node) {
 }
 
 static int collect_graph(ag_tensor* value, tensor_list* tensors, node_list* nodes) {
-    if (value == NULL || tensor_index(tensors, value) >= 0) return value == NULL;
+    if (value == NULL || value->graph_index >= 0) return value == NULL;
+    value->graph_index = tensors->count;
     if (append_tensor(tensors, value) != 0) return 1;
     if (value->creator == NULL) return 0;
     for (int i = 0; i < value->creator->input_count; ++i) {
@@ -123,12 +117,6 @@ static int accumulate_pass_gradient(tensor** destination,
     return 0;
 }
 
-static void free_tensor_array(tensor** values, int count) {
-    if (values == NULL) return;
-    for (int i = 0; i < count; ++i) t_free(values[i]);
-    free(values);
-}
-
 static int merge_persistent_gradients(const tensor_list* tensors, tensor** pass_gradients) {
     tensor** merged = (tensor**)calloc((size_t)tensors->count, sizeof(*merged));
     if (merged == NULL) return 1;
@@ -140,7 +128,8 @@ static int merge_persistent_gradients(const tensor_list* tensors, tensor** pass_
                   ? t_clone(pass_gradients[i])
                   : t_add(value->grad, pass_gradients[i]);
         if (merged[i] == NULL) {
-            free_tensor_array(merged, tensors->count);
+            for (int j = 0; j < tensors->count; ++j) t_free(merged[j]);
+            free(merged);
             return 1;
         }
     }
@@ -165,24 +154,28 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
     node_list nodes = {0};
     tensor** pass_gradients = NULL;
     int status = 1;
+
     if (collect_graph(output, &tensors, &nodes) != 0) goto cleanup;
     if (!graph_versions_match(&nodes)) goto cleanup;
 
     pass_gradients = (tensor**)calloc((size_t)tensors.count, sizeof(*pass_gradients));
     if (pass_gradients == NULL) goto cleanup;
-    int output_index = tensor_index(&tensors, output);
-    pass_gradients[output_index] = t_clone((tensor*)output_gradient);
-    if (pass_gradients[output_index] == NULL) goto cleanup;
+
+    {
+        int output_index = output->graph_index;
+        pass_gradients[output_index] = t_clone((tensor*)output_gradient);
+        if (pass_gradients[output_index] == NULL) goto cleanup;
+    }
 
     for (int node_index = nodes.count - 1; node_index >= 0; --node_index) {
         ag_node* node = nodes.values[node_index];
-        int gradient_index = tensor_index(&tensors, node->output);
+        int gradient_index = node->output->graph_index;
         if (gradient_index < 0 || pass_gradients[gradient_index] == NULL) goto cleanup;
-        tensor** contributions = (tensor**)calloc((size_t)node->input_count,
-                                                   sizeof(*contributions));
-        if (contributions == NULL) goto cleanup;
+
+        tensor* contributions[2] = {NULL, NULL};
+
         if (node->backward(node, pass_gradients[gradient_index], contributions) != 0) {
-            free_tensor_array(contributions, node->input_count);
+            t_free(contributions[0]); t_free(contributions[1]);
             goto cleanup;
         }
 
@@ -193,23 +186,26 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
                 contributions[input_index] = NULL;
                 continue;
             }
-            int destination = tensor_index(&tensors, input);
+            int destination = input->graph_index;
             if (destination < 0 || contributions[input_index] == NULL ||
                 accumulate_pass_gradient(&pass_gradients[destination],
                                          contributions[input_index], input->value) != 0) {
                 contributions[input_index] = NULL;
-                free_tensor_array(contributions, node->input_count);
+                t_free(contributions[0]); t_free(contributions[1]);
                 goto cleanup;
             }
             contributions[input_index] = NULL;
         }
-        free(contributions);
     }
 
     status = merge_persistent_gradients(&tensors, pass_gradients);
 
 cleanup:
-    free_tensor_array(pass_gradients, tensors.count);
+    if (pass_gradients != NULL) {
+        for (int i = 0; i < tensors.count; ++i) t_free(pass_gradients[i]);
+        free(pass_gradients);
+    }
+    for (int i = 0; i < tensors.count; ++i) tensors.values[i]->graph_index = -1;
     free(nodes.values);
     free(tensors.values);
     return status;
@@ -235,8 +231,12 @@ void ag_zero_grad_all(ag_tensor* root) {
     tensor_list tensors = {0};
     node_list nodes = {0};
     if (collect_graph(root, &tensors, &nodes) == 0) {
-        for (int i = 0; i < tensors.count; ++i) ag_zero_grad(tensors.values[i]);
+        for (int i = 0; i < tensors.count; ++i) {
+            ag_zero_grad(tensors.values[i]);
+            tensors.values[i]->graph_index = -1;
+        }
     }
+    for (int i = 0; i < tensors.count; ++i) tensors.values[i]->graph_index = -1;
     free(nodes.values);
     free(tensors.values);
 }
