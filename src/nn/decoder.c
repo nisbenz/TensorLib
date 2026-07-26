@@ -111,8 +111,7 @@ nn_decoder* nn_decoder_create(const char* name,
     }
 
     for (int index = 0; index < 2; ++index) {
-        char suffix[16];
-        snprintf(suffix, sizeof(suffix), "blocks.%d", index);
+        const char* suffix = index == 0 ? "blocks.0" : "blocks.1";
         child_name = decoder_child_name(name, suffix);
         if (child_name == NULL) goto fail;
         decoder->blocks[index] = nn_decoder_block_create(
