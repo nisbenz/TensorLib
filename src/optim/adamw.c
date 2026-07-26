@@ -208,11 +208,16 @@ static int gradient_scale(const nn_adamw* optimizer, double* result)
     return 0;
 }
 
-static int proposed_updates_valid(const nn_adamw* optimizer,
-                                  double grad_scale)
+int nn_adamw_step(nn_adamw* optimizer)
 {
-    const nn_adamw_config* config = &optimizer->config;
+    const nn_adamw_config* config;
+    double grad_scale;
 
+    if (!topology_valid(optimizer) ||
+        gradient_scale(optimizer, &grad_scale) != 0) {
+        return -1;
+    }
+    config = &optimizer->config;
     for (size_t i = 0; i < optimizer->parameter_count; ++i) {
         nn_parameter* parameter = optimizer->parameters[i];
         tensor* value;
@@ -227,8 +232,8 @@ static int proposed_updates_valid(const nn_adamw* optimizer,
         step = optimizer->steps[i] + 1;
         correction1 = 1.0 - pow((double)config->beta1, (double)step);
         correction2 = 1.0 - pow((double)config->beta2, (double)step);
-        if (!(correction1 > 0.0) || !(correction2 > 0.0)) return 0;
-
+        if (!(correction1 > 0.0) || !(correction2 > 0.0)) return -1;
+        optimizer->steps[i] = step;
         for (int element = 0; element < tensor_numel(value); ++element) {
             int value_index = tensor_flat_index(value, element);
             int grad_index = tensor_flat_index(gradient, element);
@@ -254,66 +259,13 @@ static int proposed_updates_valid(const nn_adamw* optimizer,
                     (normalized + config->weight_decay * current);
             if (!isfinite(current) || !isfinite(first) || !isfinite(second) ||
                 !isfinite(updated)) {
-                return 0;
+                return -1;
             }
-        }
-    }
-    return 1;
-}
-
-int nn_adamw_step(nn_adamw* optimizer)
-{
-    const nn_adamw_config* config;
-    double grad_scale;
-
-    if (!topology_valid(optimizer) ||
-        gradient_scale(optimizer, &grad_scale) != 0 ||
-        !proposed_updates_valid(optimizer, grad_scale)) {
-        return -1;
-    }
-    config = &optimizer->config;
-    for (size_t i = 0; i < optimizer->parameter_count; ++i) {
-        nn_parameter* parameter = optimizer->parameters[i];
-        tensor* value;
-        tensor* gradient;
-        uint64_t step;
-        double correction1;
-        double correction2;
-
-        if (!parameter->trainable || parameter->value->grad == NULL) continue;
-        value = parameter->value->value;
-        gradient = parameter->value->grad;
-        step = ++optimizer->steps[i];
-        correction1 = 1.0 - pow((double)config->beta1, (double)step);
-        correction2 = 1.0 - pow((double)config->beta2, (double)step);
-        for (int element = 0; element < tensor_numel(value); ++element) {
-            int value_index = tensor_flat_index(value, element);
-            int grad_index = tensor_flat_index(gradient, element);
-            int first_index =
-                tensor_flat_index(optimizer->first_moments[i], element);
-            int second_index =
-                tensor_flat_index(optimizer->second_moments[i], element);
-            double current = value->storage->data[value_index];
-            double grad = gradient->storage->data[grad_index] * grad_scale;
-            double first =
-                config->beta1 *
-                    optimizer->first_moments[i]->storage->data[first_index] +
-                (1.0 - config->beta1) * grad;
-            double second =
-                config->beta2 *
-                    optimizer->second_moments[i]->storage->data[second_index] +
-                (1.0 - config->beta2) * grad * grad;
-            double normalized =
-                (first / correction1) /
-                (sqrt(second / correction2) + config->epsilon);
-
             optimizer->first_moments[i]->storage->data[first_index] =
                 (float)first;
             optimizer->second_moments[i]->storage->data[second_index] =
                 (float)second;
-            value->storage->data[value_index] =
-                (float)(current - config->learning_rate *
-                    (normalized + config->weight_decay * current));
+            value->storage->data[value_index] = (float)updated;
         }
         tensor_mark_modified(optimizer->first_moments[i]);
         tensor_mark_modified(optimizer->second_moments[i]);
