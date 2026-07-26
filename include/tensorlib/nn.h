@@ -372,4 +372,22 @@ int nn_adamw_step(nn_adamw* optimizer);
 void nn_adamw_zero_grad(nn_adamw* optimizer);
 void nn_adamw_destroy(nn_adamw* optimizer);
 
+/*
+ * Versioned checkpoint I/O. AdamW and RNG sections are optional, but loading
+ * requires matching non-null destinations for every section present.
+ * Loading is transactional: validation failures leave all live state intact.
+ */
+int nn_checkpoint_save(
+    const char* path,
+    const nn_module* module,
+    const nn_adamw* optimizer,
+    const nn_rng* rng
+);
+int nn_checkpoint_load(
+    const char* path,
+    nn_module* module,
+    nn_adamw* optimizer,
+    nn_rng* rng
+);
+
 #endif /* TENSORLIB_NN_H */

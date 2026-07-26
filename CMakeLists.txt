@@ -36,6 +36,7 @@ set(TENSORLIB_SOURCES
     src/optim/sgd.c
     src/optim/optim_common.c
     src/optim/adamw.c
+    src/serialization/checkpoint.c
     include/tensorlib/tensor_matmul.h
 )
 
@@ -81,6 +82,7 @@ set(TENSORLIB_TESTS
     nn_causal_mask
     nn_sgd
     nn_adamw
+    nn_checkpoint
     nn_mlp
 )
 
