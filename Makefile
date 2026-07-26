@@ -1,11 +1,11 @@
 CC = gcc
 CFLAGS = -O3 -march=native -mtune=native -Wall -Wextra -g -std=c11
-SRC = src/tensor/tensor_core.c src/tensor/tensor_alloc.c src/tensor/tensor_view.c src/tensor/tensor_ops.c src/tensor/tensor_reduc.c src/tensor/tensor_matmul.c src/autograd/autograd_core.c src/autograd/autograd_ops.c src/autograd/autograd_view.c src/autograd/autograd_reduc.c src/autograd/autograd_matmul.c src/autograd/autograd_backward.c src/init/rng.c src/nn/parameter.c src/nn/module.c src/nn/linear.c src/nn/mlp.c src/losses/classification.c src/optim/sgd.c
+SRC = src/tensor/tensor_core.c src/tensor/tensor_alloc.c src/tensor/tensor_view.c src/tensor/tensor_ops.c src/tensor/tensor_gather.c src/tensor/tensor_reduc.c src/tensor/tensor_matmul.c src/autograd/autograd_core.c src/autograd/autograd_ops.c src/autograd/autograd_view.c src/autograd/autograd_gather.c src/autograd/autograd_reduc.c src/autograd/autograd_matmul.c src/autograd/autograd_backward.c src/init/rng.c src/nn/parameter.c src/nn/module.c src/nn/linear.c src/nn/embedding.c src/nn/layer_norm.c src/nn/dropout.c src/nn/mlp.c src/losses/classification.c src/nn/causal_mask.c src/optim/sgd.c src/optim/optim_common.c src/optim/adamw.c src/serialization/checkpoint.c
 HEADERS = include/tensorlib/tensor.h include/tensorlib/tensor_matmul.h include/tensorlib/autograd.h include/tensorlib/nn.h tests/fixtures/test_common.h
 INCLUDES = -Iinclude/tensorlib -Itests/fixtures
 
 BIN = bin
-TESTS = $(BIN)/test_tensor_core $(BIN)/test_tensor_alloc $(BIN)/test_tensor_view $(BIN)/test_tensor_ops $(BIN)/test_tensor_reduc $(BIN)/test_tensor_matmul $(BIN)/test_autograd_core $(BIN)/test_autograd_ops $(BIN)/test_autograd_view $(BIN)/test_autograd_reduc $(BIN)/test_autograd_matmul $(BIN)/test_autograd_backward $(BIN)/test_autograd_integration $(BIN)/test_autograd_public_contract $(BIN)/test_nn_rng $(BIN)/test_nn_parameter $(BIN)/test_nn_module $(BIN)/test_nn_init $(BIN)/test_nn_linear $(BIN)/test_nn_loss $(BIN)/test_nn_sgd $(BIN)/test_nn_mlp
+TESTS = $(BIN)/test_tensor_core $(BIN)/test_tensor_alloc $(BIN)/test_tensor_view $(BIN)/test_tensor_ops $(BIN)/test_tensor_reduc $(BIN)/test_tensor_matmul $(BIN)/test_autograd_core $(BIN)/test_autograd_ops $(BIN)/test_autograd_view $(BIN)/test_autograd_gather $(BIN)/test_autograd_reduc $(BIN)/test_autograd_matmul $(BIN)/test_autograd_backward $(BIN)/test_autograd_integration $(BIN)/test_autograd_public_contract $(BIN)/test_nn_rng $(BIN)/test_nn_parameter $(BIN)/test_nn_module $(BIN)/test_nn_init $(BIN)/test_nn_linear $(BIN)/test_nn_embedding $(BIN)/test_nn_layer_norm $(BIN)/test_nn_dropout $(BIN)/test_nn_loss $(BIN)/test_nn_causal_mask $(BIN)/test_nn_sgd $(BIN)/test_nn_adamw $(BIN)/test_nn_checkpoint $(BIN)/test_nn_mlp
 
 all: test
 
@@ -45,6 +45,9 @@ $(BIN)/test_autograd_ops: tests/unit/autograd/test_autograd_ops.c $(SRC) $(HEADE
 $(BIN)/test_autograd_view: tests/unit/autograd/test_autograd_view.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_view.c $(SRC) -lm
 
+$(BIN)/test_autograd_gather: tests/unit/autograd/test_autograd_gather.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_gather.c $(SRC) -lm
+
 $(BIN)/test_autograd_reduc: tests/unit/autograd/test_autograd_reduc.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_reduc.c $(SRC) -lm
 
@@ -75,11 +78,29 @@ $(BIN)/test_nn_init: tests/unit/nn/test_nn_init.c $(SRC) $(HEADERS) | $(BIN)
 $(BIN)/test_nn_linear: tests/unit/nn/test_nn_linear.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_linear.c $(SRC) -lm
 
+$(BIN)/test_nn_embedding: tests/unit/nn/test_nn_embedding.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_embedding.c $(SRC) -lm
+
+$(BIN)/test_nn_layer_norm: tests/unit/nn/test_nn_layer_norm.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_layer_norm.c $(SRC) -lm
+
+$(BIN)/test_nn_dropout: tests/unit/nn/test_nn_dropout.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_dropout.c $(SRC) -lm
+
 $(BIN)/test_nn_loss: tests/unit/nn/test_nn_loss.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_loss.c $(SRC) -lm
 
+$(BIN)/test_nn_causal_mask: tests/unit/nn/test_nn_causal_mask.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_causal_mask.c $(SRC) -lm
+
 $(BIN)/test_nn_sgd: tests/unit/optim/test_nn_sgd.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/optim/test_nn_sgd.c $(SRC) -lm
+
+$(BIN)/test_nn_adamw: tests/unit/optim/test_nn_adamw.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/optim/test_nn_adamw.c $(SRC) -lm
+
+$(BIN)/test_nn_checkpoint: tests/unit/nn/test_nn_checkpoint.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_checkpoint.c $(SRC) -lm
 
 $(BIN)/test_nn_mlp: tests/unit/nn/test_nn_mlp.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_mlp.c $(SRC) -lm
