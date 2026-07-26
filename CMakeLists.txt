@@ -32,6 +32,7 @@ set(TENSORLIB_SOURCES
     src/nn/dropout.c
     src/nn/mlp.c
     src/losses/classification.c
+    src/nn/causal_mask.c
     src/optim/sgd.c
     include/tensorlib/tensor_matmul.h
 )
@@ -75,6 +76,7 @@ set(TENSORLIB_TESTS
     nn_layer_norm
     nn_dropout
     nn_loss
+    nn_causal_mask
     nn_sgd
     nn_mlp
 )

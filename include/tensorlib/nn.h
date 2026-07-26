@@ -173,6 +173,11 @@ ag_tensor* nn_cross_entropy(
     const ag_tensor* logits,
     const tensor* targets
 );
+/*
+ * Add a square lower-triangular causal mask to attention scores. The final two
+ * dimensions must be equal; entries above the diagonal become -INFINITY.
+ */
+ag_tensor* nn_apply_causal_mask(const ag_tensor* scores);
 
 
 /*
