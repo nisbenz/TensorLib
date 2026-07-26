@@ -13,6 +13,7 @@ typedef struct nn_parameter nn_parameter;
 typedef struct nn_activation nn_activation;
 typedef struct nn_module nn_module;
 typedef struct nn_linear nn_linear;
+typedef struct nn_embedding nn_embedding;
 typedef struct nn_mlp nn_mlp;
 typedef struct nn_mlp_config nn_mlp_config;
 typedef struct nn_sgd nn_sgd;
@@ -91,6 +92,15 @@ struct nn_linear {
     int in_features;
     int out_features;
     int use_bias;
+};
+
+struct nn_embedding {
+    nn_module base;
+
+    nn_parameter* weight;
+
+    int vocabulary_size;
+    int embedding_width;
 };
 
 
@@ -212,6 +222,25 @@ void nn_linear_destroy(nn_linear* layer);
 ag_tensor* nn_linear_forward(
     const nn_linear* layer,
     const ag_tensor* input
+);
+
+/*
+ * Embedding inputs are non-differentiable float tensors containing integral
+ * token IDs. The generic nn_module_forward API is supported.
+ */
+nn_embedding* nn_embedding_create(
+    const char* name,
+    int vocabulary_size,
+    int embedding_width,
+    nn_init_kind weight_init,
+    nn_rng* rng
+);
+
+void nn_embedding_destroy(nn_embedding* layer);
+
+ag_tensor* nn_embedding_forward(
+    const nn_embedding* layer,
+    const ag_tensor* indices
 );
 
 

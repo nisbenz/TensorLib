@@ -13,11 +13,13 @@ set(TENSORLIB_SOURCES
     src/tensor/tensor_ops.c
     src/tensor/tensor_alloc.c
     src/tensor/tensor_view.c
+    src/tensor/tensor_gather.c
     src/tensor/tensor_reduc.c
     src/tensor/tensor_matmul.c
     src/autograd/autograd_core.c
     src/autograd/autograd_ops.c
     src/autograd/autograd_view.c
+    src/autograd/autograd_gather.c
     src/autograd/autograd_reduc.c
     src/autograd/autograd_matmul.c
     src/autograd/autograd_backward.c
@@ -25,6 +27,7 @@ set(TENSORLIB_SOURCES
     src/nn/parameter.c
     src/nn/module.c
     src/nn/linear.c
+    src/nn/embedding.c
     src/nn/mlp.c
     src/losses/classification.c
     src/optim/sgd.c
@@ -55,6 +58,7 @@ set(TENSORLIB_TESTS
     autograd_core
     autograd_ops
     autograd_view
+    autograd_gather
     autograd_reduc
     autograd_matmul
     autograd_backward
@@ -65,6 +69,7 @@ set(TENSORLIB_TESTS
     nn_module
     nn_init
     nn_linear
+    nn_embedding
     nn_loss
     nn_sgd
     nn_mlp

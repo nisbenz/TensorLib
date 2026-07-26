@@ -45,7 +45,8 @@ typedef enum {
     AG_OP_RESHAPE,
     AG_OP_TRANSPOSE,
     AG_OP_SLICE,
-    AG_OP_EXPAND
+    AG_OP_EXPAND,
+    AG_OP_GATHER_ROWS
 } ag_op;
 
 
@@ -140,6 +141,11 @@ ag_tensor* ag_reshape(const ag_tensor* value, int new_ndim, const int* new_dims)
 ag_tensor* ag_transpose(const ag_tensor* value, int dim0, int dim1);
 ag_tensor* ag_slice(const ag_tensor* value, int dim, int start, int end);
 ag_tensor* ag_expand(const ag_tensor* value, int new_ndim, const int* new_dims);
+/*
+ * Gather rows using a non-differentiable index tensor. Backward scatter-adds
+ * into the table gradient, including when an index occurs more than once.
+ */
+ag_tensor* ag_gather_rows(const ag_tensor* table, const tensor* indices);
 ag_tensor* ag_sum(const ag_tensor* value, int dim, int keepdim);
 ag_tensor* ag_mean(const ag_tensor* value, int dim, int keepdim);
 ag_tensor* ag_max(const ag_tensor* value, int dim, int keepdim);

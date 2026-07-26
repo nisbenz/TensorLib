@@ -64,6 +64,12 @@ tensor* t_unsqueeze(tensor* a, int dim);
 /* Expand creates a zero-copy view; broadcast dimensions use zero strides. */
 tensor* t_expand(tensor* a, int new_ndim, const int* new_dims);
 tensor* t_slice(tensor* a, int dim, int start, int end);
+/*
+ * Select rows from a rank-2 table. Indices may have any rank and are stored as
+ * finite, integral float values. The result shape is indices.shape followed by
+ * the table's column count.
+ */
+tensor* t_gather_rows(tensor* table, tensor* indices);
 tensor* t_exp(tensor* t);
 tensor* t_log(tensor* t);
 tensor* t_relu(tensor* t);
