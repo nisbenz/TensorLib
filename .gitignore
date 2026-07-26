@@ -3,6 +3,7 @@ cmake-build-ucrt64-release/
 cmake-build-debug/
 cmake-build-openblas-haswell/
 build-sanitizers/
+buildd-asan/
 .idea/
 examples/*.exe
 run.exe
