@@ -1,8 +1,25 @@
-# TensorLib
+<div align="center">
+  <img src="logo.png" alt="TensorLib Logo" width="300"/>
+</div>
 
-A from-scratch deep learning tensor library written entirely in C — providing N-dimensional tensors with autograd, Transformer building blocks, loss functions, optimizers, checkpointing, and SIMD-accelerated matmul. **Zero external ML dependencies.**
+<h1 align="center">TensorLib</h1>
 
-> Inspired by [PyTorch](https://github.com/pytorch/pytorch), [ggml](https://github.com/ggerganov/llama.cpp/tree/master/ggml), and [OpenBLAS](https://github.com/OpenMathLib/OpenBLAS).
+<p align="center">
+  <em>A from-scratch deep learning tensor library written entirely in C</em>
+</p>
+
+<p align="center">
+  N-dimensional tensors with autograd, Transformer building blocks, loss functions, optimizers, checkpointing, and SIMD-accelerated matmul.
+  <br/>
+  <strong>Zero external ML dependencies.</strong>
+</p>
+
+<p align="center">
+  Inspired by
+  <a href="https://github.com/pytorch/pytorch">PyTorch</a>,
+  <a href="https://github.com/ggerganov/llama.cpp/tree/master/ggml">ggml</a>, and
+  <a href="https://github.com/OpenMathLib/OpenBLAS">OpenBLAS</a>.
+</p>
 
 ---
 
