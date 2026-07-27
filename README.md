@@ -1,6 +1,6 @@
 # TensorLib
 
-A from-scratch deep learning tensor library written entirely in C99 — providing N-dimensional tensors with autograd, Transformer building blocks, loss functions, optimizers, checkpointing, and SIMD-accelerated matmul. **Zero external ML dependencies.**
+A from-scratch deep learning tensor library written entirely in C — providing N-dimensional tensors with autograd, Transformer building blocks, loss functions, optimizers, checkpointing, and SIMD-accelerated matmul. **Zero external ML dependencies.**
 
 > Inspired by [PyTorch](https://github.com/pytorch/pytorch), [ggml](https://github.com/ggerganov/llama.cpp/tree/master/ggml), and [OpenBLAS](https://github.com/OpenMathLib/OpenBLAS).
 
