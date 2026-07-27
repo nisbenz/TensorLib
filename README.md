@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="logo.png" alt="TensorLib Logo" width="300"/>
+  <img src="logo.png" alt="TensorLib Logo" width="450"/>
 </div>
 
 <h1 align="center">TensorLib</h1>
