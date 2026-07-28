@@ -398,35 +398,36 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient);
 
 ```mermaid
 flowchart TD
-    A[ag_backward(loss)] --> B[Seed: create tensor of 1.0s matching loss shape]
-    B --> C[ag_backward_with_grad(loss, seed)]
+    A["ag_backward(loss)"] --> B["Seed: create tensor of 1.0s matching loss shape"]
+    B --> C["ag_backward_with_grad(loss, seed)"]
 
-    C --> D[collect_graph: DFS from loss through creator links]
-    D --> E[Assign graph_index to each tensor and append to tensors list]
-    D --> F[Append nodes in DFS post-order to nodes list]
+    C --> D["collect_graph: DFS from loss through creator links"]
+    D --> E["Assign graph_index to each tensor and append to tensors list"]
+    D --> F["Append nodes in DFS post-order to nodes list"]
 
-    E --> G{graph_versions_match?}
+    E --> G{"graph_versions_match?"}
     F --> G
 
-    G -->|No| H[Return 1 — stale graph rejected]
-    G -->|Yes| I[Allocate pass_gradients array]
+    G -->|No| H["Return 1 — stale graph rejected"]
+    G -->|Yes| I["Allocate pass_gradients array"]
 
-    I --> J[Seed: pass_gradients[loss.graph_index] = clone of output_gradient]
+    I --> J["Seed: pass_gradients[loss.graph_index] = clone of output_gradient"]
 
-    J --> K[Loop: for node_index = count-1 down to 0]
-    K --> L[node.backward(node, upstream_gradient, contributions)]
-    L --> M{For each input with requires_grad}
-    M -->|Yes| N[accumulate_pass_gradient: reduce to shape + add]
-    M -->|No| O[Free unused contribution]
+    J --> K["Loop: for node_index = count-1 down to 0"]
+    K --> L["node.backward(node, upstream_gradient, contributions)"]
+    L --> M{"For each input with requires_grad"}
+    M -->|Yes| N["accumulate_pass_gradient: reduce to shape + add"]
+    M -->|No| O["Free unused contribution"]
 
-    N --> P{More nodes?}
+    N --> P{"More nodes?"}
+    O --> P
     P -->|Yes| K
-    P -->|No| Q[merge_persistent_gradients]
+    P -->|No| Q["merge_persistent_gradients"]
 
-    Q --> R[For each tensor with grad: merge = existing + pass gradient]
-    R --> S[Store merged gradients on ag_tensor.grad]
-    S --> T[Cleanup: reset graph_index, free lists]
-    T --> U[Return 0 — success]
+    Q --> R["For each tensor with grad: merge = existing + pass gradient"]
+    R --> S["Store merged gradients on ag_tensor.grad"]
+    S --> T["Cleanup: reset graph_index, free lists"]
+    T --> U["Return 0 — success"]
 ```
 
 ### Graph collection: `collect_graph`
