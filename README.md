@@ -21,6 +21,10 @@
   <a href="https://github.com/OpenMathLib/OpenBLAS">OpenBLAS</a>.
 </p>
 
+<p align="center">
+  <img src="inference.gif" alt="TensorLib Inference Demo"/>
+</p>
+
 ---
 
 ## Key Features
