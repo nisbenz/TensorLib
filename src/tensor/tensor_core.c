@@ -102,7 +102,7 @@ void calc_strides(int ndim, const int* dims, int* strides) {
 }
 
 int get_flat_index_nd(tensor* t, int* coords) {
-    if (!tensor_has_valid_layout(t) || (t->ndim > 0 && coords == NULL)) return 0;
+    if (t == NULL || t->ndim < 0 || (t->ndim > 0 && coords == NULL)) return 0;
     int flat_idx = t->offset;
     for (int i = 0; i < t->ndim; i++) flat_idx += coords[i] * t->strides[i];
     return flat_idx;
@@ -129,8 +129,7 @@ int same_stride(tensor* a, tensor* b) {
 }
 
 void advance_coords(int* coords, const int* dims, int ndim) {
-    size_t unused;
-    if (coords == NULL || !tensor_checked_numel(ndim, dims, &unused) || ndim <= 0) return;
+    if (coords == NULL || dims == NULL || ndim <= 0) return;
     for (int i = ndim - 1; i >= 0; i--) {
         coords[i]++;
         if (coords[i] < dims[i]) break;
