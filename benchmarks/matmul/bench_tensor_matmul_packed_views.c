@@ -2,6 +2,11 @@
 #include <time.h>
 
 #include "../../include/tensorlib/tensor.h"
+#include "../../include/tensorlib/tensor_matmul.h"
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 enum {
     M = 256,
@@ -44,9 +49,17 @@ int main(void) {
         return 1;
     }
 
+#ifdef _OPENMP
+    double pack_start = omp_get_wtime();
+#else
     clock_t pack_start = clock();
+#endif
     tensor_matmul_packed_rhs* packed_b = t_pack_matmul_rhs(b);
+#ifdef _OPENMP
+    double pack_end = omp_get_wtime();
+#else
     clock_t pack_end = clock();
+#endif
     if (packed_b == NULL) {
         t_free(b);
         t_free(a);
@@ -70,7 +83,11 @@ int main(void) {
         t_free(output);
     }
 
+#ifdef _OPENMP
+    double start = omp_get_wtime();
+#else
     clock_t start = clock();
+#endif
     volatile float checksum = 0.0f;
     for (int repeat = 0; repeat < REPEATS; ++repeat) {
         tensor* output = t_matmul_packed_rhs(a, packed_b);
@@ -87,10 +104,14 @@ int main(void) {
         checksum += output->storage->data[tensor_numel(output) - 1];
         t_free(output);
     }
+#ifdef _OPENMP
+    double pack_seconds = pack_end - pack_start;
+    double seconds = omp_get_wtime() - start;
+#else
     clock_t end = clock();
-
     double pack_seconds = (double)(pack_end - pack_start) / CLOCKS_PER_SEC;
     double seconds = (double)(end - start) / CLOCKS_PER_SEC;
+#endif
     double operations = 2.0 * (double)M * (double)K * (double)N * REPEATS;
     double gflops = (seconds > 0.0) ? operations / seconds / 1.0e9 : 0.0;
     printf("packed transposed views: M=%d K=%d N=%d warmup=%d repeats=%d\n",

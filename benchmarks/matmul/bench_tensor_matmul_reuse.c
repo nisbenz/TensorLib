@@ -4,6 +4,10 @@
 #include "../../include/tensorlib/tensor.h"
 #include "../../include/tensorlib/tensor_matmul.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 enum {
     BATCHES = 8,
     M = 128,
@@ -55,16 +59,22 @@ int main(void) {
         run_matmul_reusing_output(a, b, output);
     }
 
+    #ifdef _OPENMP
+    double start = omp_get_wtime();
+#else
     clock_t start = clock();
+#endif
     volatile float checksum = 0.0f;
     for (int repeat = 0; repeat < REPEATS; ++repeat) {
         run_matmul_reusing_output(a, b, output);
         checksum += output->storage->data[0];
         checksum += output->storage->data[tensor_numel(output) - 1];
     }
-    clock_t end = clock();
-
-    double seconds = (double)(end - start) / (double)CLOCKS_PER_SEC;
+#ifdef _OPENMP
+    double seconds = omp_get_wtime() - start;
+#else
+    double seconds = (double)(clock() - start) / (double)CLOCKS_PER_SEC;
+#endif
     double operations = 2.0 * (double)BATCHES * (double)M * (double)K *
                         (double)N * (double)REPEATS;
     double gflops = (seconds > 0.0) ? operations / seconds / 1.0e9 : 0.0;
