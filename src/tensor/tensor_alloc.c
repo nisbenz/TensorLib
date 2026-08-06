@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include "../../include/tensorlib/tensor.h"
 
 void add_ref_count(Storage* a, tensor* b) {
@@ -122,6 +123,14 @@ tensor* t_clone(tensor* t) {
     if (a == NULL) return NULL;
 
     int total_elements = tensor_numel(t);
+
+    /* Contiguous clones are plain memory copies. */
+    if (is_contiguous(t)) {
+        memcpy(a->storage->data, t->storage->data + t->offset,
+               (size_t)total_elements * sizeof(float));
+        return a;
+    }
+
     int* coords = NULL;
     if (t->ndim > 0) {
         coords = (int*)calloc((size_t)t->ndim, sizeof(int));
