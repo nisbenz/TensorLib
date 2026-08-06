@@ -51,7 +51,7 @@ add_library(tensorlib STATIC ${TENSORLIB_SOURCES}
             include/tensorlib/autograd.h
             include/tensorlib/nn.h)
 target_include_directories(tensorlib PUBLIC include/tensorlib)
-target_link_libraries(tensorlib PUBLIC OpenMP::OpenMP)
+target_link_libraries(tensorlib PUBLIC OpenMP::OpenMP_C)
 
 if (WIN32)
     set(TENSORLIB_MATH_LIB)
@@ -143,10 +143,9 @@ endif()
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_openblas_matmul.c")
     find_path(OPENBLAS_INCLUDE_DIR NAMES cblas.h
-              HINTS C:/msys64/ucrt64/include
               PATH_SUFFIXES openblas)
     find_library(OPENBLAS_LIBRARY NAMES openblas
-                 HINTS C:/msys64/ucrt64/lib)
+                 )
 
     if (OPENBLAS_INCLUDE_DIR AND OPENBLAS_LIBRARY)
         add_executable(bench_openblas_matmul benchmarks/matmul/bench_openblas_matmul.c)
