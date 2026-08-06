@@ -539,6 +539,48 @@ static void pack_b_panels(const float* restrict b,
 }
 
 TENSORLIB_AVX2_TARGET
+static void matmul_2d_contiguous_row_block(const float* restrict a,
+                                           const float* restrict packed_b,
+                                           float* restrict output,
+                                           int row_block, int row_end,
+                                           int full_columns,
+                                           int inner, int columns) {
+    for (int column_block = 0; column_block < full_columns;
+         column_block += TENSORLIB_MATMUL_NC) {
+        int column_end = column_block + TENSORLIB_MATMUL_NC;
+        if (column_end > full_columns) column_end = full_columns;
+
+        for (int inner_block = 0; inner_block < inner;
+             inner_block += TENSORLIB_MATMUL_KC) {
+            int inner_end = inner_block + TENSORLIB_MATMUL_KC;
+            if (inner_end > inner) inner_end = inner;
+            int accumulate = (inner_block != 0);
+
+            for (int column_panel = column_block;
+                 column_panel < column_end;
+                 column_panel += TENSORLIB_MATMUL_NR) {
+                const float* packed_panel = packed_b +
+                    (size_t)(column_panel / TENSORLIB_MATMUL_NR) *
+                    (size_t)inner * TENSORLIB_MATMUL_NR;
+
+                for (int row = row_block; row < row_end;
+                     row += TENSORLIB_MATMUL_MR) {
+                    matmul_4x16_kernel(
+                        a + row * inner,
+                        packed_panel,
+                        output + row * columns + column_panel,
+                        inner,
+                        columns,
+                        inner_block,
+                        inner_end - inner_block,
+                        accumulate);
+                }
+            }
+        }
+    }
+}
+
+TENSORLIB_AVX2_TARGET
 void matmul_2d_avx2_contiguous(const float* restrict a,
                                const float* restrict b,
                                float* restrict output,
@@ -563,43 +605,30 @@ void matmul_2d_avx2_contiguous(const float* restrict a,
 
         pack_b_panels(b, packed_b, inner, columns, panel_count);
 
-        for (int row_block = 0; row_block < full_rows;
-             row_block += TENSORLIB_MATMUL_MC) {
-            int row_end = row_block + TENSORLIB_MATMUL_MC;
-            if (row_end > full_rows) row_end = full_rows;
+        int row_block_count = (full_rows + TENSORLIB_MATMUL_MC - 1) /
+                              TENSORLIB_MATMUL_MC;
+        long long flops = 2LL * rows * inner * columns;
+        int threads = tensorlib_parallel_threads(
+            flops, TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS, row_block_count);
 
-            for (int column_block = 0; column_block < full_columns;
-                 column_block += TENSORLIB_MATMUL_NC) {
-                int column_end = column_block + TENSORLIB_MATMUL_NC;
-                if (column_end > full_columns) column_end = full_columns;
-
-                for (int inner_block = 0; inner_block < inner;
-                     inner_block += TENSORLIB_MATMUL_KC) {
-                    int inner_end = inner_block + TENSORLIB_MATMUL_KC;
-                    if (inner_end > inner) inner_end = inner;
-                    int accumulate = (inner_block != 0);
-
-                    for (int column_panel = column_block;
-                         column_panel < column_end;
-                         column_panel += TENSORLIB_MATMUL_NR) {
-                        const float* packed_panel = packed_b +
-                            (size_t)(column_panel / TENSORLIB_MATMUL_NR) *
-                            (size_t)inner * TENSORLIB_MATMUL_NR;
-
-                        for (int row = row_block; row < row_end;
-                             row += TENSORLIB_MATMUL_MR) {
-                            matmul_4x16_kernel(
-                                a + row * inner,
-                                packed_panel,
-                                output + row * columns + column_panel,
-                                inner,
-                                columns,
-                                inner_block,
-                                inner_end - inner_block,
-                                accumulate);
-                        }
-                    }
-                }
+        if (threads > 1) {
+#pragma omp parallel for schedule(static) num_threads(threads)
+            for (int rb = 0; rb < row_block_count; ++rb) {
+                int row_block = rb * TENSORLIB_MATMUL_MC;
+                int row_end = row_block + TENSORLIB_MATMUL_MC;
+                if (row_end > full_rows) row_end = full_rows;
+                matmul_2d_contiguous_row_block(
+                    a, packed_b, output, row_block, row_end,
+                    full_columns, inner, columns);
+            }
+        } else {
+            for (int rb = 0; rb < row_block_count; ++rb) {
+                int row_block = rb * TENSORLIB_MATMUL_MC;
+                int row_end = row_block + TENSORLIB_MATMUL_MC;
+                if (row_end > full_rows) row_end = full_rows;
+                matmul_2d_contiguous_row_block(
+                    a, packed_b, output, row_block, row_end,
+                    full_columns, inner, columns);
             }
         }
 
