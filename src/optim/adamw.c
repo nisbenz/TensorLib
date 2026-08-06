@@ -234,6 +234,45 @@ int nn_adamw_step(nn_adamw* optimizer)
         correction2 = 1.0 - pow((double)config->beta2, (double)step);
         if (!(correction1 > 0.0) || !(correction2 > 0.0)) return -1;
         optimizer->steps[i] = step;
+        /* Fast path: when value/gradient/first/second-moment share a
+         * contiguous layout, the flat element index is the storage index,
+         * avoiding the per-element tensor_flat_index ndim decomposition.
+         * The buffer is also touched exactly once (single pass, streamed). */
+        if (is_contiguous(value) && is_contiguous(gradient) &&
+            is_contiguous(optimizer->first_moments[i]) &&
+            is_contiguous(optimizer->second_moments[i]) &&
+            value->offset == 0 && gradient->offset == 0 &&
+            optimizer->first_moments[i]->offset == 0 &&
+            optimizer->second_moments[i]->offset == 0) {
+            int count = tensor_numel(value);
+            float* value_data = value->storage->data;
+            float* grad_data = gradient->storage->data;
+            float* first_data = optimizer->first_moments[i]->storage->data;
+            float* second_data = optimizer->second_moments[i]->storage->data;
+            for (int element = 0; element < count; ++element) {
+                double current = value_data[element];
+                double grad = grad_data[element] * grad_scale;
+                double first =
+                    config->beta1 * first_data[element] +
+                    (1.0 - config->beta1) * grad;
+                double second =
+                    config->beta2 * second_data[element] +
+                    (1.0 - config->beta2) * grad * grad;
+                double normalized =
+                    (first / correction1) /
+                    (sqrt(second / correction2) + config->epsilon);
+                double updated =
+                    current - config->learning_rate *
+                        (normalized + config->weight_decay * current);
+                if (!isfinite(current) || !isfinite(first) || !isfinite(second) ||
+                    !isfinite(updated)) {
+                    return -1;
+                }
+                first_data[element] = (float)first;
+                second_data[element] = (float)second;
+                value_data[element] = (float)updated;
+            }
+        } else {
         for (int element = 0; element < tensor_numel(value); ++element) {
             int value_index = tensor_flat_index(value, element);
             int grad_index = tensor_flat_index(gradient, element);
@@ -266,6 +305,7 @@ int nn_adamw_step(nn_adamw* optimizer)
             optimizer->second_moments[i]->storage->data[second_index] =
                 (float)second;
             value->storage->data[value_index] = (float)updated;
+        }
         }
         tensor_mark_modified(optimizer->first_moments[i]);
         tensor_mark_modified(optimizer->second_moments[i]);
