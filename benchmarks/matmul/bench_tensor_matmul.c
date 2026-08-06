@@ -50,7 +50,11 @@ static int run_benchmark(const char* label, int batch, int m, int k, int n,
         t_free(output);
     }
 
+#ifdef _OPENMP
+    double start = omp_get_wtime();
+#else
     clock_t start = clock();
+#endif
     volatile float checksum = 0.0f;
     for (int r = 0; r < repeats; ++r) {
         tensor* output = t_matmul(a, b);
@@ -63,9 +67,13 @@ static int run_benchmark(const char* label, int batch, int m, int k, int n,
         checksum += output->storage->data[tensor_numel(output) - 1];
         t_free(output);
     }
+#ifdef _OPENMP
+    double end = omp_get_wtime();
+    double seconds = end - start;
+#else
     clock_t end = clock();
-
     double seconds = (double)(end - start) / (double)CLOCKS_PER_SEC;
+#endif
     double ops = 2.0 * (double)batch * (double)m * (double)k * (double)n * (double)repeats;
     double gflops = (seconds > 0.0) ? ops / seconds / 1.0e9 : 0.0;
 

@@ -12,3 +12,4 @@ run.exe
 .vscode/
 bin/
 build/
+*.chk

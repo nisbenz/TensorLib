@@ -56,6 +56,24 @@ static tensor* reduce_sum(tensor* a, int dim, int keepdim) {
         return NULL;
     }
 
+    /* Fast path: reduction over the trailing (contiguous) dimension of a
+     * contiguous tensor. Covers the common LayerNorm/softmax/loss cases and
+     * replaces the per-element coordinate index math with a streaming loop. */
+    if (dim == a->ndim - 1 && is_contiguous(a) && is_contiguous(out)) {
+        const float* in_data = a->storage->data + a->offset;
+        float* out_data = out->storage->data + out->offset;
+        int inner = a->dims[dim];
+        int rows = tensor_numel(out);
+
+        for (int row = 0; row < rows; ++row) {
+            const float* row_start = in_data + (size_t)row * (size_t)inner;
+            float sum = 0.0f;
+            for (int k = 0; k < inner; ++k) sum += row_start[k];
+            out_data[row] = sum;
+        }
+        return out;
+    }
+
     int* output_coords = NULL;
 
     if (output_ndim > 0) {
@@ -185,6 +203,35 @@ static tensor* reduce_max(tensor* a, int dim, int keepdim) {
 
     if (out == NULL) {
         return NULL;
+    }
+
+    /* Fast path: trailing-dim reduction of a contiguous tensor (see
+     * reduce_sum). Mirrors the NaN semantics of the generic path. */
+    if (dim == a->ndim - 1 && is_contiguous(a) && is_contiguous(out)) {
+        const float* in_data = a->storage->data + a->offset;
+        float* out_data = out->storage->data + out->offset;
+        int inner = a->dims[dim];
+        int rows = tensor_numel(out);
+
+        for (int row = 0; row < rows; ++row) {
+            const float* row_start = in_data + (size_t)row * (size_t)inner;
+            float maximum = 0.0f;
+            int found_value = 0;
+            for (int k = 0; k < inner; ++k) {
+                float value = row_start[k];
+                if (isnan(value)) {
+                    maximum = value;
+                    found_value = 1;
+                    break;
+                }
+                if (!found_value || value > maximum) {
+                    maximum = value;
+                    found_value = 1;
+                }
+            }
+            out_data[row] = maximum;
+        }
+        return out;
     }
 
     int* output_coords = NULL;

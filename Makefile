@@ -22,6 +22,19 @@ SRC = src/tensor/tensor_core.c src/tensor/tensor_alloc.c src/tensor/tensor_view.
 HEADERS = include/tensorlib/tensor.h include/tensorlib/tensor_matmul.h include/tensorlib/autograd.h include/tensorlib/nn.h tests/fixtures/test_common.h
 INCLUDES = -Iinclude/tensorlib -Itests/fixtures
 
+# OpenBLAS is optional. The OpenBLAS comparison benchmarks are only built when
+# OpenBLAS (header cblas.h + linkable libopenblas) is present, so targets like
+# benchmark-all still work on systems without it. To point at a custom install,
+# set OPENBLAS_INCLUDE and OPENBLAS_LIB on the make command line.
+HAVE_OPENBLAS := $(shell printf '#include <cblas.h>\nextern void openblas_set_num_threads(int);\nint main(void){openblas_set_num_threads(1); return 0;}\n' | $(CC) $(OPENBLAS_INCLUDE) -x c - $(OPENBLAS_LIB) -lopenblas -o /tmp/tensorlib_openblas_probe 2>/dev/null && echo yes; rm -f /tmp/tensorlib_openblas_probe)
+ifeq ($(strip $(HAVE_OPENBLAS)),yes)
+OPENBLAS_BINS = $(BIN)/bench_openblas_matmul $(BIN)/bench_openblas_matmul_reuse
+else
+OPENBLAS_BINS =
+endif
+HEADERS = include/tensorlib/tensor.h include/tensorlib/tensor_matmul.h include/tensorlib/autograd.h include/tensorlib/nn.h tests/fixtures/test_common.h
+INCLUDES = -Iinclude/tensorlib -Itests/fixtures
+
 BIN = bin
 TESTS = $(BIN)/test_tensor_core $(BIN)/test_tensor_alloc $(BIN)/test_tensor_view $(BIN)/test_tensor_ops $(BIN)/test_tensor_reduc $(BIN)/test_tensor_matmul $(BIN)/test_autograd_core $(BIN)/test_autograd_ops $(BIN)/test_autograd_view $(BIN)/test_autograd_gather $(BIN)/test_autograd_reduc $(BIN)/test_autograd_matmul $(BIN)/test_autograd_backward $(BIN)/test_autograd_integration $(BIN)/test_autograd_public_contract $(BIN)/test_nn_rng $(BIN)/test_nn_parameter $(BIN)/test_nn_module $(BIN)/test_nn_init $(BIN)/test_nn_linear $(BIN)/test_nn_embedding $(BIN)/test_nn_positional_embedding $(BIN)/test_nn_layer_norm $(BIN)/test_nn_dropout $(BIN)/test_nn_multihead_attention $(BIN)/test_nn_decoder_block $(BIN)/test_nn_decoder $(BIN)/test_nn_loss $(BIN)/test_nn_causal_mask $(BIN)/test_nn_sgd $(BIN)/test_nn_adamw $(BIN)/test_nn_checkpoint $(BIN)/test_nn_mlp
 
@@ -147,21 +160,6 @@ $(BIN)/mnist_mlp: examples/mnsit/mnist_mlp.c $(SRC) $(HEADERS) | $(BIN)
 $(BIN)/tiny_lm: examples/tiny_lm/tiny_lm.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ examples/tiny_lm/tiny_lm.c $(SRC) -lm
 
-# PGO: build with instrumentation
-$(BIN)/tiny_lm_pgo_gen: examples/tiny_lm/tiny_lm.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(PGO_CFLAGS) -Iinclude $(INCLUDES) -o $@ examples/tiny_lm/tiny_lm.c $(SRC) -lm
-
-# PGO: rebuild using collected profiles
-$(BIN)/tiny_lm_pgo_use: examples/tiny_lm/tiny_lm.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(PGO_USE_CFLAGS) -Iinclude $(INCLUDES) -o $@ examples/tiny_lm/tiny_lm.c $(SRC) -lm
-
-# Full PGO pipeline: generate profiles via training, then rebuild optimized
-pgo-tiny-lm: $(BIN)/tiny_lm_pgo_gen
-	@echo "=== PGO Step 1: instrumented binary built. Run training to collect profiles..."
-	./$(BIN)/tiny_lm_pgo_gen "$(CORPUS)" --steps 2000 --generate 0 --checkpoint tiny_lm_pgo.chk
-	@echo "=== PGO Step 2: profiles collected. Rebuilding with -fprofile-use..."
-	$(MAKE) $(BIN)/tiny_lm_pgo_use
-	@echo "=== PGO complete. Optimized binary at $(BIN)/tiny_lm_pgo_use"
 
 $(BIN)/bench_tensor_matmul: benchmarks/matmul/bench_tensor_matmul.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ benchmarks/matmul/bench_tensor_matmul.c $(SRC) -lm
@@ -172,14 +170,14 @@ $(BIN)/bench_tensor_matmul_reuse: benchmarks/matmul/bench_tensor_matmul_reuse.c 
 $(BIN)/bench_tensor_matmul_packed_views: benchmarks/matmul/bench_tensor_matmul_packed_views.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ benchmarks/matmul/bench_tensor_matmul_packed_views.c $(SRC) -lm
 
-OPENBLAS_INCLUDE = -IC:/msys64/ucrt64/include/openblas
-OPENBLAS_LIB = -LC:/msys64/ucrt64/lib -lopenblas
 
+ifeq ($(strip $(HAVE_OPENBLAS)),yes)
 $(BIN)/bench_openblas_matmul: benchmarks/matmul/bench_openblas_matmul.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) $(OPENBLAS_INCLUDE) -o $@ benchmarks/matmul/bench_openblas_matmul.c $(SRC) $(OPENBLAS_LIB) -lm
+	$(CC) $(CFLAGS) $(INCLUDES) $(OPENBLAS_INCLUDE) -o $@ benchmarks/matmul/bench_openblas_matmul.c $(SRC) $(OPENBLAS_LIB) -lopenblas -lm
 
 $(BIN)/bench_openblas_matmul_reuse: benchmarks/matmul/bench_openblas_matmul_reuse.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) $(OPENBLAS_INCLUDE) -o $@ benchmarks/matmul/bench_openblas_matmul_reuse.c $(SRC) $(OPENBLAS_LIB) -lm
+	$(CC) $(CFLAGS) $(INCLUDES) $(OPENBLAS_INCLUDE) -o $@ benchmarks/matmul/bench_openblas_matmul_reuse.c $(SRC) $(OPENBLAS_LIB) -lopenblas -lm
+endif
 
 test: $(TESTS)
 	@for t in $(TESTS); do ./$$t || exit 1; echo; done
@@ -193,6 +191,7 @@ benchmark-matmul-reuse: $(BIN)/bench_tensor_matmul_reuse
 benchmark-packed-views: $(BIN)/bench_tensor_matmul_packed_views
 	./$(BIN)/bench_tensor_matmul_packed_views
 
+ifeq ($(strip $(HAVE_OPENBLAS)),yes)
 benchmark-openblas: $(BIN)/bench_openblas_matmul
 	./$(BIN)/bench_openblas_matmul
 
@@ -212,6 +211,18 @@ benchmark-compare:
 	@echo ""
 
 benchmark-all: benchmark-matmul benchmark-matmul-reuse benchmark-packed-views benchmark-openblas benchmark-openblas-reuse
+else
+benchmark-openblas:
+	@echo "OpenBLAS not found: skipping OpenBLAS comparison benchmarks."
+
+benchmark-openblas-reuse:
+	@echo "OpenBLAS not found: skipping OpenBLAS comparison benchmarks."
+
+benchmark-compare:
+	@echo "OpenBLAS not found: cannot run comparison. Run 'make benchmark-matmul' instead."
+
+benchmark-all: benchmark-matmul benchmark-matmul-reuse benchmark-packed-views
+endif
 
 clean:
 	rm -rf $(BIN)
