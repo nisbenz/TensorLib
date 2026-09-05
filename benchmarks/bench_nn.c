@@ -74,6 +74,7 @@ cleanup:
 
 static int run_nn_case(const bench_options* options,
                        FILE* csv,
+                       const char* suite,
                        const char* name,
                        const char* shape,
                        const char* layout,
@@ -84,7 +85,7 @@ static int run_nn_case(const bench_options* options,
                        bench_measurement* result)
 {
     bench_case benchmark = {
-        "nn", name, shape, layout, metric, items, 1,
+        suite, name, shape, layout, metric, items, 1,
         nn_operation, context
     };
     return bench_execute_case(options, csv, &benchmark, threads, result);
@@ -194,7 +195,7 @@ static int run_component(const bench_options* options,
         return 1;
     }
     nn_module_set_training(context.module, 0);
-    int status = run_nn_case(options, csv, name, shape,
+    int status = run_nn_case(options, csv, "nn", name, shape,
                              "forward;graph-build", "tokens/s",
                              (double)(batch * time),
                              1, &context, &result);
@@ -240,7 +241,7 @@ static int run_mlp(const bench_options* options, FILE* csv, int batch, int train
         destroy_context(&context);
         return 1;
     }
-    int status = run_nn_case(options, csv,
+    int status = run_nn_case(options, csv, "nn",
         train ? "mnist_mlp_train_step" : "mnist_mlp_forward",
         "[B,784]->[B,10]", train ? "forward+loss+backward+sgd" :
         "forward;graph-build", "samples/s", (double)batch,
@@ -298,24 +299,27 @@ static int setup_decoder(nn_bench_context* context,
 
 static int run_decoder_case(const bench_options* options,
                             FILE* csv,
+                            const char* suite,
                             int batch,
                             int time,
                             int channels,
                             int layers,
                             int train,
-                            int threads)
+                            int threads,
+                            bench_measurement* measurement)
 {
     nn_bench_context context;
-    bench_measurement result;
+    bench_measurement local_result;
+    bench_measurement* result = measurement == NULL ? &local_result : measurement;
     if (setup_decoder(&context, batch, time, channels, layers, train) != 0) {
         destroy_context(&context);
         return 1;
     }
-    int status = run_nn_case(options, csv,
+    int status = run_nn_case(options, csv, suite,
         train ? "tiny_lm_train_step" : "tiny_lm_forward",
         "[B,128]->[B,128,256]",
         train ? "forward+loss+backward+adamw" : "forward;graph-build",
-        "tokens/s", (double)(batch * time), threads, &context, &result);
+        "tokens/s", (double)(batch * time), threads, &context, result);
     destroy_context(&context);
     return status == 1;
 }
@@ -327,10 +331,40 @@ static int run_decoder_cases(const bench_options* options, FILE* csv,
     int time = smoke ? 8 : 128;
     int channels = smoke ? 24 : 192;
     int layers = smoke ? 1 : 4;
-    int status = run_decoder_case(options, csv, batch, time, channels,
-                                  layers, 0, threads);
-    status |= run_decoder_case(options, csv, batch, time, channels,
-                               layers, 1, threads);
+    int status = run_decoder_case(options, csv, "nn", batch, time, channels,
+                                  layers, 0, threads, NULL);
+    status |= run_decoder_case(options, csv, "nn", batch, time, channels,
+                               layers, 1, threads, NULL);
+    return status;
+}
+
+int bench_run_decoder_scaling(const bench_options* options, FILE* csv)
+{
+    int smoke = strcmp(options->profile.profile, "smoke") == 0;
+    int batch = smoke ? 1 : 2;
+    int time = smoke ? 8 : 128;
+    int channels = smoke ? 24 : 192;
+    int layers = smoke ? 1 : 4;
+    int status = 0;
+
+    for (int train = 0; train <= 1; ++train) {
+        double baseline = 0.0;
+        printf(" tiny_lm_%s\n", train ? "train_step" : "forward");
+        for (int index = 0; index < options->thread_count; ++index) {
+            bench_measurement result;
+            int threads = options->threads[index];
+            int case_status = run_decoder_case(options, csv, "scaling",
+                batch, time, channels, layers, train, threads, &result);
+            if (case_status != 0) {
+                status |= case_status;
+                continue;
+            }
+            if (baseline == 0.0) baseline = result.median_seconds;
+            double speedup = baseline / result.median_seconds;
+            printf("    speedup=%6.2fx efficiency=%5.1f%%\n",
+                   speedup, speedup * 100.0 / (double)threads);
+        }
+    }
     return status;
 }
 

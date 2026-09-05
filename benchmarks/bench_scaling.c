@@ -111,6 +111,7 @@ int bench_run_scaling_suite(const bench_options* options, FILE* csv)
     int vector_dims[1] = {elements};
     int matrix_dims[2] = {size, size};
     int status = 0;
+    int bench_run_decoder_scaling(const bench_options*, FILE*);
 
     printf("Thread-scaling suite\n");
     status |= run_scaling_case(options, csv, SCALE_ADD, "add_large",
@@ -122,6 +123,7 @@ int bench_run_scaling_suite(const bench_options* options, FILE* csv)
     status |= run_scaling_case(options, csv, SCALE_MATMUL, "matmul_square",
         "[M,K]x[K,N]", "GFLOP/s", 2.0 * size * size * size / 1e9,
         2, matrix_dims, 2, matrix_dims);
+    status |= bench_run_decoder_scaling(options, csv);
     printf("\n");
     return status;
 }
