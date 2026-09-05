@@ -17,6 +17,7 @@ typedef enum {
     KERNEL_MAX,
     KERNEL_GATHER,
     KERNEL_MATMUL,
+    KERNEL_PACK,
     KERNEL_PACKED_MATMUL
 } kernel_kind;
 
@@ -87,6 +88,17 @@ static int kernel_make_transposed(kernel_context* context,
     return context->a == NULL;
 }
 
+static int kernel_make_transposed_pair(kernel_context* context,
+                                       int rows,
+                                       int columns)
+{
+    if (kernel_make_transposed(context, KERNEL_ADD, rows, columns) != 0) {
+        return 1;
+    }
+    context->b = t_transpose(context->a_owner, 0, 1);
+    return context->b == NULL;
+}
+
 static void kernel_destroy(kernel_context* context)
 {
     t_free_matmul_packed_rhs(context->packed);
@@ -109,6 +121,14 @@ static int kernel_operation(void* opaque, double* checksum)
 {
     kernel_context* context = (kernel_context*)opaque;
     tensor* output = NULL;
+
+    if (context->kind == KERNEL_PACK) {
+        tensor_matmul_packed_rhs* packed = t_pack_matmul_rhs(context->a);
+        if (packed == NULL) return 1;
+        *checksum += 1.0;
+        t_free_matmul_packed_rhs(packed);
+        return 0;
+    }
 
     switch (context->kind) {
         case KERNEL_ALLOC:
@@ -143,6 +163,8 @@ static int kernel_operation(void* opaque, double* checksum)
             break;
         case KERNEL_MATMUL:
             output = t_matmul(context->a, context->b);
+            break;
+        case KERNEL_PACK:
             break;
         case KERNEL_PACKED_MATMUL:
             output = t_matmul_packed_rhs(context->a, context->packed);
@@ -246,6 +268,19 @@ int bench_run_kernel_suite(const bench_options* options, FILE* csv)
     status |= run_case(options, csv, KERNEL_MUL, "multiply_contiguous", "[N]",
                        "contiguous", "GB/s", 12.0 * elements / 1e9,
                        1, vector_dims, 1, vector_dims, 0);
+    {
+        kernel_context context;
+        bench_case benchmark = {"kernels", "add_transposed", "[RxC]",
+            "non-contiguous", "GB/s",
+            12.0 * matrix_dims[0] * matrix_dims[1] / 1e9, 0, NULL, NULL};
+        if (kernel_make_transposed_pair(&context,
+                                        matrix_dims[0], matrix_dims[1]) != 0) {
+            status = 1;
+            kernel_destroy(&context);
+        } else {
+            status |= run_kernel(options, csv, &benchmark, &context, 1);
+        }
+    }
     status |= run_case(options, csv, KERNEL_ADD, "add_channel_broadcast",
                        "[BxTxC]+[C]", "broadcast", "GB/s",
                        8.0 * broadcast_dims[0] * broadcast_dims[1] *
@@ -271,6 +306,10 @@ int bench_run_kernel_suite(const bench_options* options, FILE* csv)
                        "contiguous", "GFLOP/s",
                        2.0 * square * square * square / 1e9,
                        2, square_a, 2, square_b, 0);
+    status |= run_case(options, csv, KERNEL_PACK, "matmul_pack_rhs", "[KxN]",
+                       "packing-only", "GB/s",
+                       4.0 * square * square / 1e9,
+                       2, square_b, -1, NULL, 0);
     status |= run_case(options, csv, KERNEL_PACKED_MATMUL, "matmul_square_packed",
                        "[MxK]x[KxN]", "packed-rhs", "GFLOP/s",
                        2.0 * square * square * square / 1e9,
