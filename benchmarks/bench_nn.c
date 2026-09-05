@@ -77,13 +77,14 @@ static int run_nn_case(const bench_options* options,
                        const char* name,
                        const char* shape,
                        const char* layout,
+                       const char* metric,
                        double items,
                        int threads,
                        nn_bench_context* context,
                        bench_measurement* result)
 {
     bench_case benchmark = {
-        "nn", name, shape, layout, "items/s", items, 1,
+        "nn", name, shape, layout, metric, items, 1,
         nn_operation, context
     };
     return bench_execute_case(options, csv, &benchmark, threads, result);
@@ -194,7 +195,8 @@ static int run_component(const bench_options* options,
     }
     nn_module_set_training(context.module, 0);
     int status = run_nn_case(options, csv, name, shape,
-                             "forward;graph-build", (double)(batch * time),
+                             "forward;graph-build", "tokens/s",
+                             (double)(batch * time),
                              1, &context, &result);
     destroy_context(&context);
     return status == 1;
@@ -241,13 +243,96 @@ static int run_mlp(const bench_options* options, FILE* csv, int batch, int train
     int status = run_nn_case(options, csv,
         train ? "mnist_mlp_train_step" : "mnist_mlp_forward",
         "[B,784]->[B,10]", train ? "forward+loss+backward+sgd" :
-        "forward;graph-build", (double)batch, 1, &context, &result);
+        "forward;graph-build", "samples/s", (double)batch,
+        1, &context, &result);
+    destroy_context(&context);
+    return status == 1;
+}
+
+static tensor* make_token_targets(int batch, int time, int classes)
+{
+    int dims[2] = {batch, time};
+    tensor* targets = t_alloc(2, dims);
+    if (targets == NULL) return NULL;
+    for (int index = 0; index < batch * time; ++index) {
+        targets->storage->data[index] = (float)(index % classes);
+    }
+    return targets;
+}
+
+static int setup_decoder(nn_bench_context* context,
+                         int batch,
+                         int time,
+                         int channels,
+                         int layers,
+                         int train)
+{
+    nn_decoder_config config = {
+        256, time, channels, 6, layers, train ? 0.1f : 0.0f, 1e-5f
+    };
+    int input_dims[2] = {batch, time};
+    nn_rng rng;
+    nn_decoder* model;
+
+    memset(context, 0, sizeof(*context));
+    nn_rng_seed(&rng, UINT64_C(0x71594C4D));
+    model = nn_decoder_create("bench_decoder", &config, &rng);
+    context->model = model;
+    context->module = model == NULL ? NULL : &model->base;
+    context->forward = decoder_forward;
+    context->input = make_input(2, input_dims, 1);
+    context->train = train;
+    if (train) {
+        nn_adamw_config optimizer_config = nn_adamw_default_config();
+        optimizer_config.max_grad_norm = 1.0f;
+        context->targets = make_token_targets(batch, time, 256);
+        context->adamw = model == NULL ? NULL :
+            nn_adamw_create(&model->base, &optimizer_config);
+    }
+    if (context->module != NULL && !train) {
+        nn_module_set_training(context->module, 0);
+    }
+    return context->module == NULL || context->input == NULL ||
+           (train && (context->targets == NULL || context->adamw == NULL));
+}
+
+static int run_decoder_case(const bench_options* options,
+                            FILE* csv,
+                            int batch,
+                            int time,
+                            int channels,
+                            int layers,
+                            int train,
+                            int threads)
+{
+    nn_bench_context context;
+    bench_measurement result;
+    if (setup_decoder(&context, batch, time, channels, layers, train) != 0) {
+        destroy_context(&context);
+        return 1;
+    }
+    int status = run_nn_case(options, csv,
+        train ? "tiny_lm_train_step" : "tiny_lm_forward",
+        "[B,128]->[B,128,256]",
+        train ? "forward+loss+backward+adamw" : "forward;graph-build",
+        "tokens/s", (double)(batch * time), threads, &context, &result);
     destroy_context(&context);
     return status == 1;
 }
 
 static int run_decoder_cases(const bench_options* options, FILE* csv,
-                             int batch, int threads);
+                             int batch, int threads)
+{
+    int smoke = strcmp(options->profile.profile, "smoke") == 0;
+    int time = smoke ? 8 : 128;
+    int channels = smoke ? 24 : 192;
+    int layers = smoke ? 1 : 4;
+    int status = run_decoder_case(options, csv, batch, time, channels,
+                                  layers, 0, threads);
+    status |= run_decoder_case(options, csv, batch, time, channels,
+                               layers, 1, threads);
+    return status;
+}
 
 int bench_run_nn_suite(const bench_options* options, FILE* csv)
 {
