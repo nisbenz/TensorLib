@@ -227,4 +227,17 @@ if (TENSORLIB_BUILD_BENCHMARKS)
         add_test(NAME test_benchmarks_smoke
                  COMMAND bench_tensorlib --smoke --threads 1)
     endif()
+
+    find_path(OPENBLAS_INCLUDE_DIR NAMES cblas.h PATH_SUFFIXES openblas)
+    find_library(OPENBLAS_LIBRARY NAMES openblas)
+    if (OPENBLAS_INCLUDE_DIR AND OPENBLAS_LIBRARY)
+        add_executable(bench_openblas
+            benchmarks/bench_openblas.c
+            benchmarks/bench_harness.c)
+        target_include_directories(bench_openblas PRIVATE ${OPENBLAS_INCLUDE_DIR})
+        target_link_libraries(bench_openblas PRIVATE
+                              ${OPENBLAS_LIBRARY} ${TENSORLIB_MATH_LIB})
+    else()
+        message(STATUS "OpenBLAS not found; matched baseline will not be built")
+    endif()
 endif()
