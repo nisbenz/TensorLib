@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "./../../include/tensorlib/nn.h"
+#include <tensorlib/nn.h>
 
 #define MNIST_ROWS 28
 #define MNIST_COLUMNS 28

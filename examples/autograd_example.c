@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "./../include/tensorlib/autograd.h"
+#include <tensorlib/autograd.h>
 
 typedef struct {
     const ag_tensor* value;

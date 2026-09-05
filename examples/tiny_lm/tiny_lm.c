@@ -7,7 +7,7 @@
 #include <string.h>
 #include <time.h>
 
-#include <nn.h>
+#include <tensorlib/nn.h>
 
 enum {
     TINY_LM_VOCABULARY = 256,

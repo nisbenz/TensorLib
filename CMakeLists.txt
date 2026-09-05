@@ -110,8 +110,12 @@ install(TARGETS tensorlib EXPORT TensorLibTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(DIRECTORY include/tensorlib DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-        FILES_MATCHING PATTERN "*.h")
+install(FILES
+        include/tensorlib/autograd.h
+        include/tensorlib/nn.h
+        include/tensorlib/tensor.h
+        include/tensorlib/tensor_matmul.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tensorlib)
 install(EXPORT TensorLibTargets
         FILE TensorLibTargets.cmake
         NAMESPACE TensorLib::
