@@ -48,104 +48,17 @@ tiny-lm: $(BIN)/tiny_lm
 $(BIN):
 	mkdir -p $(BIN)
 
-$(BIN)/test_tensor_core: tests/unit/tensor/test_tensor_core.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/tensor/test_tensor_core.c $(SRC) -lm
+$(BIN)/test_tensor_%: tests/unit/tensor/test_tensor_%.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ $< $(SRC) -lm
 
-$(BIN)/test_tensor_alloc: tests/unit/tensor/test_tensor_alloc.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/tensor/test_tensor_alloc.c $(SRC) -lm
+$(BIN)/test_autograd_%: tests/unit/autograd/test_autograd_%.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ $< $(SRC) -lm
 
-$(BIN)/test_tensor_view: tests/unit/tensor/test_tensor_view.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/tensor/test_tensor_view.c $(SRC) -lm
+$(BIN)/test_nn_%: tests/unit/nn/test_nn_%.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ $< $(SRC) -lm
 
-$(BIN)/test_tensor_ops: tests/unit/tensor/test_tensor_ops.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/tensor/test_tensor_ops.c $(SRC) -lm
-
-$(BIN)/test_tensor_reduc: tests/unit/tensor/test_tensor_reduc.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/tensor/test_tensor_reduc.c $(SRC) -lm
-
-$(BIN)/test_tensor_matmul: tests/unit/tensor/test_tensor_matmul.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/tensor/test_tensor_matmul.c $(SRC) -lm
-
-$(BIN)/test_autograd_core: tests/unit/autograd/test_autograd_core.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_core.c $(SRC) -lm
-
-$(BIN)/test_autograd_ops: tests/unit/autograd/test_autograd_ops.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_ops.c $(SRC) -lm
-
-$(BIN)/test_autograd_view: tests/unit/autograd/test_autograd_view.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_view.c $(SRC) -lm
-
-$(BIN)/test_autograd_gather: tests/unit/autograd/test_autograd_gather.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_gather.c $(SRC) -lm
-
-$(BIN)/test_autograd_reduc: tests/unit/autograd/test_autograd_reduc.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_reduc.c $(SRC) -lm
-
-$(BIN)/test_autograd_matmul: tests/unit/autograd/test_autograd_matmul.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_matmul.c $(SRC) -lm
-
-$(BIN)/test_autograd_backward: tests/unit/autograd/test_autograd_backward.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_backward.c $(SRC) -lm
-
-$(BIN)/test_autograd_integration: tests/unit/autograd/test_autograd_integration.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_integration.c $(SRC) -lm
-
-$(BIN)/test_autograd_public_contract: tests/unit/autograd/test_autograd_public_contract.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/autograd/test_autograd_public_contract.c $(SRC) -lm
-
-$(BIN)/test_nn_rng: tests/unit/nn/test_nn_rng.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_rng.c $(SRC) -lm
-
-$(BIN)/test_nn_parameter: tests/unit/nn/test_nn_parameter.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_parameter.c $(SRC) -lm
-
-$(BIN)/test_nn_module: tests/unit/nn/test_nn_module.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_module.c $(SRC) -lm
-
-$(BIN)/test_nn_init: tests/unit/nn/test_nn_init.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_init.c $(SRC) -lm
-
-$(BIN)/test_nn_linear: tests/unit/nn/test_nn_linear.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_linear.c $(SRC) -lm
-
-$(BIN)/test_nn_embedding: tests/unit/nn/test_nn_embedding.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_embedding.c $(SRC) -lm
-
-$(BIN)/test_nn_positional_embedding: tests/unit/nn/test_nn_positional_embedding.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_positional_embedding.c $(SRC) -lm
-
-$(BIN)/test_nn_layer_norm: tests/unit/nn/test_nn_layer_norm.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_layer_norm.c $(SRC) -lm
-
-$(BIN)/test_nn_dropout: tests/unit/nn/test_nn_dropout.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_dropout.c $(SRC) -lm
-
-$(BIN)/test_nn_multihead_attention: tests/unit/nn/test_nn_multihead_attention.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_multihead_attention.c $(SRC) -lm
-
-$(BIN)/test_nn_decoder_block: tests/unit/nn/test_nn_decoder_block.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_decoder_block.c $(SRC) -lm
-
-$(BIN)/test_nn_decoder: tests/unit/nn/test_nn_decoder.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_decoder.c $(SRC) -lm
-
-$(BIN)/test_nn_loss: tests/unit/nn/test_nn_loss.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_loss.c $(SRC) -lm
-
-$(BIN)/test_nn_causal_mask: tests/unit/nn/test_nn_causal_mask.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_causal_mask.c $(SRC) -lm
-
-$(BIN)/test_nn_sgd: tests/unit/optim/test_nn_sgd.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/optim/test_nn_sgd.c $(SRC) -lm
-
-$(BIN)/test_nn_adamw: tests/unit/optim/test_nn_adamw.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/optim/test_nn_adamw.c $(SRC) -lm
-
-$(BIN)/test_nn_checkpoint: tests/unit/nn/test_nn_checkpoint.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_checkpoint.c $(SRC) -lm
-
-$(BIN)/test_nn_mlp: tests/unit/nn/test_nn_mlp.c $(SRC) $(HEADERS) | $(BIN)
-	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ tests/unit/nn/test_nn_mlp.c $(SRC) -lm
+$(BIN)/test_nn_%: tests/unit/optim/test_nn_%.c $(SRC) $(HEADERS) | $(BIN)
+	$(CC) $(CFLAGS) -Iinclude $(INCLUDES) -o $@ $< $(SRC) -lm
 
 $(BIN)/autograd_example: examples/autograd_example.c $(SRC) $(HEADERS) | $(BIN)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ examples/autograd_example.c $(SRC) -lm
