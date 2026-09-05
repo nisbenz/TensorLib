@@ -7,9 +7,11 @@ on:
     branches: [ "main" ]
 
 jobs:
-  test:
+  linux:
+    name: Linux (${{ matrix.compiler }})
     runs-on: ubuntu-latest
     container: alpine:3.20
+    timeout-minutes: 10
     strategy:
       matrix:
         compiler: [gcc, clang]
@@ -21,10 +23,61 @@ jobs:
         run: apk add --no-cache build-base clang cmake openmp-dev
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=${{ matrix.compiler }}
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=${{ matrix.compiler }}
+          -DTENSORLIB_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build build --parallel 2
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  sanitizers:
+    name: Sanitizers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DTENSORLIB_ENABLE_OPENMP=OFF
+          -DTENSORLIB_ENABLE_SANITIZERS=ON
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: ctest --test-dir build --output-on-failure
+
+  portable:
+    name: ${{ matrix.os }} (serial)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DTENSORLIB_ENABLE_OPENMP=OFF
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
