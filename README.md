@@ -288,6 +288,9 @@ cmake --build build --config Release
 # Optional: install for use from another CMake project
 cmake --install build --prefix ./install
 
+# Portable serial build, useful when OpenMP is unavailable
+cmake -S . -B build-serial -DTENSORLIB_ENABLE_OPENMP=OFF
+
 # Makefile
 make          # build and run all tests
 make tiny-lm  # build TinyLM example
@@ -421,8 +424,9 @@ tensorlib/
 
 ## Build Requirements
 
-- **Compiler:** GCC or Clang with C99 and OpenMP support
-- **Flags:** `-O3 -march=native -mtune=native -flto -fopenmp -fno-math-errno -funroll-loops`
+- **Compiler:** GCC or Clang with C99 support; OpenMP is optional with CMake
+- **Optimization:** Release builds are portable by default; pass
+  `-DTENSORLIB_NATIVE_OPTIMIZATIONS=ON` to tune for the current CPU
 - **Validated with:** GCC and Clang on Linux; GCC via MSYS2 UCRT64 on Windows
 
 ---

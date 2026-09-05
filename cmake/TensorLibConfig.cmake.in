@@ -1,6 +1,6 @@
 @PACKAGE_INIT@
 
 include(CMakeFindDependencyMacro)
-find_dependency(OpenMP)
+@TENSORLIB_FIND_OPENMP@
 
 include("${CMAKE_CURRENT_LIST_DIR}/TensorLibTargets.cmake")

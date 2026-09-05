@@ -7,11 +7,19 @@ include(GNUInstallDirs)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+option(TENSORLIB_ENABLE_OPENMP "Enable OpenMP parallelism" ON)
+option(TENSORLIB_NATIVE_OPTIMIZATIONS "Tune release builds for this CPU" OFF)
+
 if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -march=native -mtune=native -flto -fno-math-errno -fno-signed-zeros -fno-trapping-math -freciprocal-math -funroll-loops -fopenmp")
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -fno-math-errno -fno-signed-zeros -fno-trapping-math -freciprocal-math -funroll-loops")
+    if (TENSORLIB_NATIVE_OPTIMIZATIONS)
+        string(APPEND CMAKE_C_FLAGS_RELEASE " -march=native -mtune=native")
+    endif()
 endif()
 
-find_package(OpenMP REQUIRED)
+if (TENSORLIB_ENABLE_OPENMP)
+    find_package(OpenMP REQUIRED)
+endif()
 
 set(TENSORLIB_SOURCES
     src/tensor/tensor_core.c
@@ -64,7 +72,13 @@ else()
     set(TENSORLIB_MATH_LIB m)
 endif()
 
-target_link_libraries(tensorlib PUBLIC OpenMP::OpenMP_C ${TENSORLIB_MATH_LIB})
+target_link_libraries(tensorlib PUBLIC ${TENSORLIB_MATH_LIB})
+if (TENSORLIB_ENABLE_OPENMP)
+    target_link_libraries(tensorlib PUBLIC OpenMP::OpenMP_C)
+    set(TENSORLIB_FIND_OPENMP "find_dependency(OpenMP)")
+else()
+    set(TENSORLIB_FIND_OPENMP "")
+endif()
 
 install(TARGETS tensorlib EXPORT TensorLibTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
