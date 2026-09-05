@@ -362,7 +362,9 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
         batch_parallel ? (int)batch_count : 1);
 
     if (threads > 1) {
+#ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(threads)
+#endif
         for (long long batch = 0; batch < (long long)batch_count; ++batch) {
             matmul_packed_rhs_batch(lhs, &lhs_info, rhs, output, batch_dims,
                                     batch_ndim, (size_t)batch);
@@ -612,7 +614,9 @@ void matmul_2d_avx2_contiguous(const float* restrict a,
             flops, TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS, row_block_count);
 
         if (threads > 1) {
+#ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(threads)
+#endif
             for (int rb = 0; rb < row_block_count; ++rb) {
                 int row_block = rb * TENSORLIB_MATMUL_MC;
                 int row_end = row_block + TENSORLIB_MATMUL_MC;
@@ -720,7 +724,7 @@ static void pack_lhs_block(const tensor* lhs, int lhs_base, int row_start,
     int inner_stride = lhs->strides[lhs->ndim - 1];
 
     for (int row = 0; row < row_count; ++row) {
-        float* packed_row = packed_lhs + (size_t)row * k_count;
+        float* packed_row = packed_lhs + (size_t)row * (size_t)k_count;
         int source_base = lhs_base + (row_start + row) * row_stride +
                           k_start * inner_stride;
         for (int k = 0; k < k_count; ++k) {
@@ -744,7 +748,7 @@ static void matmul_2d_packed_rhs_scalar_tails(const tensor* lhs, int lhs_base,
         for (int column = 0; column < columns; ++column) {
             if (row < full_rows && column < full_columns) continue;
             const float* rhs_panel = packed_rhs +
-                (size_t)(column / TENSORLIB_MATMUL_NR) * inner *
+                (size_t)(column / TENSORLIB_MATMUL_NR) * (size_t)inner *
                 TENSORLIB_MATMUL_NR;
             float sum = 0.0f;
             for (int k = 0; k < inner; ++k) {
@@ -794,14 +798,14 @@ static int matmul_2d_packed_rhs_avx2(const tensor* lhs, int lhs_base,
             for (int column = 0; column < full_columns;
                  column += TENSORLIB_MATMUL_NR) {
                 const float* rhs_panel = packed_rhs +
-                    (size_t)(column / TENSORLIB_MATMUL_NR) * inner *
+                    (size_t)(column / TENSORLIB_MATMUL_NR) * (size_t)inner *
                     TENSORLIB_MATMUL_NR +
                     (size_t)k_start * TENSORLIB_MATMUL_NR;
 
                 for (int row = row_block; row < row_end;
                      row += TENSORLIB_MATMUL_MR) {
                     matmul_4x16_packed_a_kernel(
-                        packed_lhs + (size_t)(row - row_block) * k_count,
+                        packed_lhs + (size_t)(row - row_block) * (size_t)k_count,
                         rhs_panel,
                         output->storage->data + output_base +
                             row * output_stride + column,
@@ -1101,7 +1105,9 @@ tensor* t_matmul(tensor* a, tensor* b) {
         batch_parallel ? (int)batch_count : 1);
 
     if (threads > 1) {
+#ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(threads)
+#endif
         for (long long batch_index = 0;
              batch_index < (long long)batch_count; ++batch_index) {
             matmul_batch(a, &a_info, b, &b_info, output, batch_dims,

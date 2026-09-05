@@ -300,6 +300,10 @@ make mnist    # build MNIST example
 Installed projects can link the exported `TensorLib::tensorlib` target after
 calling `find_package(TensorLib CONFIG REQUIRED)`.
 
+Tests and examples are enabled for top-level builds. Benchmarks are opt-in with
+`-DTENSORLIB_BUILD_BENCHMARKS=ON`; strict warnings and sanitizers are available
+through `TENSORLIB_WARNINGS_AS_ERRORS` and `TENSORLIB_ENABLE_SANITIZERS`.
+
 ### Train a Language Model
 
 ```sh

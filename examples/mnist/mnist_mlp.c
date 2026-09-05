@@ -292,7 +292,7 @@ fail:
         return -1;
     }
     *average_loss = (float)(weighted_loss / test_count);
-    *accuracy = (float)correct / test_count;
+    *accuracy = (float)correct / (float)test_count;
     return 0;
 }
 

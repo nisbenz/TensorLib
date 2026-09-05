@@ -9,6 +9,20 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 option(TENSORLIB_ENABLE_OPENMP "Enable OpenMP parallelism" ON)
 option(TENSORLIB_NATIVE_OPTIMIZATIONS "Tune release builds for this CPU" OFF)
+option(TENSORLIB_BUILD_TESTS "Build the test suite" ${PROJECT_IS_TOP_LEVEL})
+option(TENSORLIB_BUILD_EXAMPLES "Build examples" ${PROJECT_IS_TOP_LEVEL})
+option(TENSORLIB_BUILD_BENCHMARKS "Build benchmarks" OFF)
+option(TENSORLIB_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+option(TENSORLIB_ENABLE_SANITIZERS "Enable address and undefined sanitizers" OFF)
+
+if (TENSORLIB_ENABLE_SANITIZERS)
+    if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+        add_link_options(-fsanitize=address,undefined)
+    else()
+        message(FATAL_ERROR "Sanitizers require GCC or Clang")
+    endif()
+endif()
 
 if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -fno-math-errno -fno-signed-zeros -fno-trapping-math -freciprocal-math -funroll-loops")
@@ -65,6 +79,18 @@ target_include_directories(tensorlib PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/tensorlib>"
     "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
+if (MSVC)
+    target_compile_options(tensorlib PRIVATE /W4)
+    if (TENSORLIB_WARNINGS_AS_ERRORS)
+        target_compile_options(tensorlib PRIVATE /WX)
+    endif()
+elseif (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(tensorlib PRIVATE
+        -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    if (TENSORLIB_WARNINGS_AS_ERRORS)
+        target_compile_options(tensorlib PRIVATE -Werror)
+    endif()
+endif()
 
 if (WIN32)
     set(TENSORLIB_MATH_LIB)
@@ -104,6 +130,7 @@ install(FILES
         ${CMAKE_CURRENT_BINARY_DIR}/TensorLibConfigVersion.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TensorLib)
 
+if (TENSORLIB_BUILD_TESTS)
 enable_testing()
 
 set(TENSORLIB_TESTS
@@ -160,6 +187,9 @@ foreach(test_name IN LISTS TENSORLIB_TESTS)
     target_link_libraries(test_${test_name} PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
     add_test(NAME test_${test_name} COMMAND test_${test_name})
 endforeach()
+endif()
+
+if (TENSORLIB_BUILD_EXAMPLES)
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/autograd_example.c")
     add_executable(autograd_example examples/autograd_example.c)
     target_link_libraries(autograd_example PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
@@ -173,12 +203,23 @@ endif()
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/tiny_lm/tiny_lm.c")
     add_executable(tiny_lm examples/tiny_lm/tiny_lm.c)
     target_link_libraries(tiny_lm PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
-    add_test(NAME test_tiny_lm_help COMMAND tiny_lm --help)
+    if (TENSORLIB_BUILD_TESTS)
+        add_test(NAME test_tiny_lm_help COMMAND tiny_lm --help)
+    endif()
+endif()
 endif()
 
+if (TENSORLIB_BUILD_BENCHMARKS)
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_tensor_matmul.c")
     add_executable(bench_tensor_matmul benchmarks/matmul/bench_tensor_matmul.c)
     target_link_libraries(bench_tensor_matmul PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
+endif()
+
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_tensor_matmul_packed_views.c")
+    add_executable(bench_tensor_matmul_packed_views
+                   benchmarks/matmul/bench_tensor_matmul_packed_views.c)
+    target_link_libraries(bench_tensor_matmul_packed_views PRIVATE
+                          tensorlib ${TENSORLIB_MATH_LIB})
 endif()
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_tensor_matmul_reuse.c")
@@ -209,4 +250,5 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_openblas_matmul.
     else()
         message(WARNING "OpenBLAS not found; bench_openblas_matmul will not be built")
     endif()
+endif()
 endif()
