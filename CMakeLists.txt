@@ -214,45 +214,17 @@ endif()
 endif()
 
 if (TENSORLIB_BUILD_BENCHMARKS)
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_tensor_matmul.c")
-    add_executable(bench_tensor_matmul benchmarks/matmul/bench_tensor_matmul.c)
-    target_link_libraries(bench_tensor_matmul PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
-endif()
-
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_tensor_matmul_packed_views.c")
-    add_executable(bench_tensor_matmul_packed_views
-                   benchmarks/matmul/bench_tensor_matmul_packed_views.c)
-    target_link_libraries(bench_tensor_matmul_packed_views PRIVATE
-                          tensorlib ${TENSORLIB_MATH_LIB})
-endif()
-
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_tensor_matmul_reuse.c")
-    add_executable(bench_tensor_matmul_reuse benchmarks/matmul/bench_tensor_matmul_reuse.c)
-    target_link_libraries(bench_tensor_matmul_reuse PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
-endif()
-
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_openblas_matmul.c")
-    find_path(OPENBLAS_INCLUDE_DIR NAMES cblas.h
-              PATH_SUFFIXES openblas)
-    find_library(OPENBLAS_LIBRARY NAMES openblas
-                 )
-
-    if (OPENBLAS_INCLUDE_DIR AND OPENBLAS_LIBRARY)
-        add_executable(bench_openblas_matmul benchmarks/matmul/bench_openblas_matmul.c)
-        target_include_directories(bench_openblas_matmul PRIVATE ${OPENBLAS_INCLUDE_DIR})
-        target_link_libraries(bench_openblas_matmul PRIVATE
-                              tensorlib ${OPENBLAS_LIBRARY} ${TENSORLIB_MATH_LIB})
-
-        if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/matmul/bench_openblas_matmul_reuse.c")
-            add_executable(bench_openblas_matmul_reuse
-                           benchmarks/matmul/bench_openblas_matmul_reuse.c)
-            target_include_directories(bench_openblas_matmul_reuse
-                                       PRIVATE ${OPENBLAS_INCLUDE_DIR})
-            target_link_libraries(bench_openblas_matmul_reuse PRIVATE
-                                  tensorlib ${OPENBLAS_LIBRARY} ${TENSORLIB_MATH_LIB})
-        endif()
-    else()
-        message(WARNING "OpenBLAS not found; bench_openblas_matmul will not be built")
+    add_executable(bench_tensorlib
+        benchmarks/bench_tensorlib.c
+        benchmarks/bench_harness.c
+        benchmarks/bench_runner.c
+        benchmarks/bench_kernels.c
+        benchmarks/bench_autograd.c
+        benchmarks/bench_nn.c
+        benchmarks/bench_scaling.c)
+    target_link_libraries(bench_tensorlib PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
+    if (TENSORLIB_BUILD_TESTS)
+        add_test(NAME test_benchmarks_smoke
+                 COMMAND bench_tensorlib --smoke --threads 1)
     endif()
-endif()
 endif()
