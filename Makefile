@@ -3,6 +3,9 @@ BUILD_DIR ?= build
 BUILD_TYPE ?= Release
 JOBS ?= 2
 CMAKE_FLAGS ?=
+BENCHMARK_CSV ?= benchmark-results.csv
+BENCHMARK_THREADS ?=
+BENCHMARK_REFERENCE_THREADS ?= 1
 
 all: test
 
@@ -32,26 +35,40 @@ benchmarks:
 		-DTENSORLIB_BUILD_BENCHMARKS=ON -DTENSORLIB_NATIVE_OPTIMIZATIONS=ON $(CMAKE_FLAGS)
 	$(CMAKE) --build $(BUILD_DIR) --config $(BUILD_TYPE) --parallel $(JOBS)
 
-benchmark-matmul: benchmarks
-	$(BUILD_DIR)/bench_tensor_matmul
+benchmark-quick: benchmarks
+	python3 scripts/run_benchmarks.py --executable $(BUILD_DIR)/bench_tensorlib \
+		--profile quick --csv $(BENCHMARK_CSV) \
+		$(if $(BENCHMARK_THREADS),--threads $(BENCHMARK_THREADS),)
 
-benchmark-matmul-reuse: benchmarks
-	$(BUILD_DIR)/bench_tensor_matmul_reuse
+benchmark-full: benchmarks
+	python3 scripts/run_benchmarks.py --executable $(BUILD_DIR)/bench_tensorlib \
+		--profile full --csv $(BENCHMARK_CSV) \
+		$(if $(BENCHMARK_THREADS),--threads $(BENCHMARK_THREADS),)
 
-benchmark-packed-views: benchmarks
-	$(BUILD_DIR)/bench_tensor_matmul_packed_views
+benchmark-kernels: benchmarks
+	python3 scripts/run_benchmarks.py --executable $(BUILD_DIR)/bench_tensorlib \
+		--suite kernels --profile quick --csv $(BENCHMARK_CSV)
 
-benchmark-compare: benchmarks
-	@echo "===== TensorLib ====="
-	$(BUILD_DIR)/bench_tensor_matmul
-	@if test -x "$(BUILD_DIR)/bench_openblas_matmul"; then \
-		echo "===== OpenBLAS ====="; $(BUILD_DIR)/bench_openblas_matmul; \
+benchmark-scaling: benchmarks
+	python3 scripts/run_benchmarks.py --executable $(BUILD_DIR)/bench_tensorlib \
+		--suite scaling --profile quick --csv $(BENCHMARK_CSV)
+
+benchmark-compare: benchmark-quick
+	@if test -x "$(BUILD_DIR)/bench_openblas"; then \
+		$(BUILD_DIR)/bench_openblas --profile quick \
+			--threads $(BENCHMARK_REFERENCE_THREADS) \
+			--csv benchmark-results-openblas.csv; \
 	else echo "OpenBLAS not found; comparison skipped."; fi
+	@if python3 -c "import torch" >/dev/null 2>&1; then \
+		python3 benchmarks/bench_pytorch.py --profile quick \
+			--threads $(BENCHMARK_REFERENCE_THREADS) \
+			--csv benchmark-results-pytorch.csv; \
+	else echo "PyTorch not found; comparison skipped."; fi
 
 clean:
 	@test "$(BUILD_DIR)" != "." && test "$(BUILD_DIR)" != "/"
 	$(CMAKE) -E remove_directory "$(BUILD_DIR)"
 
 .PHONY: all configure build test example mnist tiny-lm benchmarks \
-	benchmark-matmul benchmark-matmul-reuse benchmark-packed-views \
+	benchmark-quick benchmark-full benchmark-kernels benchmark-scaling \
 	benchmark-compare clean
