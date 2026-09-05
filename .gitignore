@@ -19,3 +19,4 @@ build/
 *.gcno
 *.profraw
 benchmark-results*.csv
+__pycache__/
