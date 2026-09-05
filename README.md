@@ -285,11 +285,17 @@ See [decoder_implementation.md](docs/decoder_implementation.md) for multi-head a
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 
+# Optional: install for use from another CMake project
+cmake --install build --prefix ./install
+
 # Makefile
 make          # build and run all tests
 make tiny-lm  # build TinyLM example
 make mnist    # build MNIST example
 ```
+
+Installed projects can link the exported `TensorLib::tensorlib` target after
+calling `find_package(TensorLib CONFIG REQUIRED)`.
 
 ### Train a Language Model
 

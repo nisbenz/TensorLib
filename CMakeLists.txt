@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.26)
-project(tensorlib C)
+project(tensorlib VERSION 0.1.0 LANGUAGES C)
+
+include(CMakePackageConfigHelpers)
+include(GNUInstallDirs)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -50,14 +53,42 @@ add_library(tensorlib STATIC ${TENSORLIB_SOURCES}
             include/tensorlib/tensor.h
             include/tensorlib/autograd.h
             include/tensorlib/nn.h)
-target_include_directories(tensorlib PUBLIC include/tensorlib)
-target_link_libraries(tensorlib PUBLIC OpenMP::OpenMP_C)
+target_include_directories(tensorlib PUBLIC
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/tensorlib>"
+    "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 
 if (WIN32)
     set(TENSORLIB_MATH_LIB)
 else()
     set(TENSORLIB_MATH_LIB m)
 endif()
+
+target_link_libraries(tensorlib PUBLIC OpenMP::OpenMP_C ${TENSORLIB_MATH_LIB})
+
+install(TARGETS tensorlib EXPORT TensorLibTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY include/tensorlib DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.h")
+install(EXPORT TensorLibTargets
+        FILE TensorLibTargets.cmake
+        NAMESPACE TensorLib::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TensorLib)
+
+configure_package_config_file(
+    cmake/TensorLibConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/TensorLibConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TensorLib)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/TensorLibConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/TensorLibConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/TensorLibConfigVersion.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TensorLib)
 
 enable_testing()
 
