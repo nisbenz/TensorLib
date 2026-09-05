@@ -125,6 +125,10 @@ Comprehensive documentation is available for each component:
 | [**Autograd Engine**](docs/autograd_engine.md) | Computation graph, 23 differentiable ops, backward pass algorithm, gradient reduction |
 | [**Neural Network Modules**](docs/neural_network_modules.md) | Module system, all layers, loss functions, optimizers, checkpointing |
 | [**Decoder Implementation**](docs/decoder_implementation.md) | GPT-style decoder stack, multi-head attention, causal masking, training guide |
+| [**Performance**](docs/performance.md) | Reproducible benchmarks, reporting guidance, optimization roadmap |
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and change
+guidelines.
 
 ---
 
@@ -386,6 +390,7 @@ See [tensor_mechanics.md](docs/tensor_mechanics.md) for kernel implementation de
 ```
 tensorlib/
 ├── README.md                     # This file
+├── CONTRIBUTING.md               # Development and testing guide
 ├── CMakeLists.txt                # CMake build
 ├── Makefile                      # Convenience shortcuts for CMake
 │
@@ -421,7 +426,8 @@ tensorlib/
     ├── tensor_mechanics.md       #   Tensor layer reference
     ├── autograd_engine.md        #   Autograd engine reference
     ├── neural_network_modules.md #   NN modules reference
-    └── decoder_implementation.md #   Decoder implementation reference
+    ├── decoder_implementation.md #   Decoder implementation reference
+    └── performance.md            #   Reproducible benchmark guide
 ```
 
 ---
