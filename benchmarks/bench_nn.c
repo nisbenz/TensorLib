@@ -14,6 +14,7 @@ typedef struct {
     tensor* targets;
     nn_sgd* sgd;
     nn_adamw* adamw;
+    nn_rng rng;
     int train;
 } nn_bench_context;
 
@@ -150,15 +151,15 @@ static int run_component(const bench_options* options,
     int linear_dims[2] = {batch * time, channels};
     nn_bench_context context;
     bench_measurement result;
-    nn_rng rng;
     const char* name = NULL;
     const char* shape = "[BxTxC]";
 
     memset(&context, 0, sizeof(context));
-    nn_rng_seed(&rng, UINT64_C(0xB34C4));
+    nn_rng_seed(&context.rng, UINT64_C(0xB34C4));
     if (kind == COMPONENT_LINEAR) {
         nn_linear* model = nn_linear_create("bench_linear", channels,
-            channels * 3, 1, NN_INIT_XAVIER_UNIFORM, NN_INIT_ZERO, &rng);
+            channels * 3, 1, NN_INIT_XAVIER_UNIFORM, NN_INIT_ZERO,
+            &context.rng);
         context.model = model;
         context.module = model == NULL ? NULL : &model->base;
         context.forward = linear_forward;
@@ -175,7 +176,7 @@ static int run_component(const bench_options* options,
         name = "layer_norm";
     } else if (kind == COMPONENT_ATTENTION) {
         nn_multihead_attention* model = nn_multihead_attention_create(
-            "bench_attention", channels, 6, 0.0f, &rng);
+            "bench_attention", channels, 6, 0.0f, &context.rng);
         context.model = model;
         context.module = model == NULL ? NULL : &model->base;
         context.forward = attention_forward;
@@ -183,7 +184,7 @@ static int run_component(const bench_options* options,
         name = "causal_attention";
     } else {
         nn_decoder_block* model = nn_decoder_block_create(
-            "bench_block", channels, 6, 0.0f, 1e-5f, &rng);
+            "bench_block", channels, 6, 0.0f, 1e-5f, &context.rng);
         context.model = model;
         context.module = model == NULL ? NULL : &model->base;
         context.forward = block_forward;
@@ -214,12 +215,11 @@ static int setup_mlp(nn_bench_context* context, int batch, int train)
         NN_INIT_HE_NORMAL, NN_INIT_ZERO
     };
     int input_dims[2] = {batch, 784};
-    nn_rng rng;
     nn_mlp* model;
 
     memset(context, 0, sizeof(*context));
-    nn_rng_seed(&rng, UINT64_C(0x4D4E495354));
-    model = nn_mlp_create("bench_mlp", &config, &rng);
+    nn_rng_seed(&context->rng, UINT64_C(0x4D4E495354));
+    model = nn_mlp_create("bench_mlp", &config, &context->rng);
     context->model = model;
     context->module = model == NULL ? NULL : &model->base;
     context->forward = mlp_forward;
@@ -272,12 +272,11 @@ static int setup_decoder(nn_bench_context* context,
         256, time, channels, 6, layers, train ? 0.1f : 0.0f, 1e-5f
     };
     int input_dims[2] = {batch, time};
-    nn_rng rng;
     nn_decoder* model;
 
     memset(context, 0, sizeof(*context));
-    nn_rng_seed(&rng, UINT64_C(0x71594C4D));
-    model = nn_decoder_create("bench_decoder", &config, &rng);
+    nn_rng_seed(&context->rng, UINT64_C(0x71594C4D));
+    model = nn_decoder_create("bench_decoder", &config, &context->rng);
     context->model = model;
     context->module = model == NULL ? NULL : &model->base;
     context->forward = decoder_forward;
