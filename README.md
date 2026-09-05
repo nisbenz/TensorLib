@@ -387,7 +387,7 @@ See [tensor_mechanics.md](docs/tensor_mechanics.md) for kernel implementation de
 tensorlib/
 ├── README.md                     # This file
 ├── CMakeLists.txt                # CMake build
-├── Makefile                      # GNU Make build (GCC, supports PGO)
+├── Makefile                      # Convenience shortcuts for CMake
 │
 ├── include/tensorlib/            # Public API headers
 │   ├── tensor.h                  #   Core tensor structs and operations
