@@ -68,12 +68,9 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   portable:
-    name: ${{ matrix.os }} (serial)
-    runs-on: ${{ matrix.os }}
+    name: macOS (serial)
+    runs-on: macos-latest
     timeout-minutes: 15
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -89,3 +86,35 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+  windows:
+    name: Windows (MinGW)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DTENSORLIB_ENABLE_OPENMP=OFF
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
