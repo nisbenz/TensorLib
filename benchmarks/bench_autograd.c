@@ -69,7 +69,7 @@ static int run_autograd_case(const bench_options* options,
     autograd_context context;
     bench_measurement result;
     bench_case benchmark = {
-        "autograd", name, "[rows,width]", "channel-broadcast",
+        "autograd", name, "[rowsxwidth]", "channel-broadcast",
         "Melem/s", (double)rows * width / 1.0e6, 0,
         autograd_operation, &context
     };

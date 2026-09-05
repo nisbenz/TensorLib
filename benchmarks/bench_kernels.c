@@ -225,7 +225,7 @@ int bench_run_kernel_suite(const bench_options* options, FILE* csv)
                        1, vector_dims, -1, NULL, 0);
     {
         kernel_context context;
-        bench_case benchmark = {"kernels", "transpose_view", "[R,C]",
+        bench_case benchmark = {"kernels", "transpose_view", "[RxC]",
             "zero-copy", "ms/call", 0.0, 0, NULL, NULL};
         if (kernel_init(&context, KERNEL_TRANSPOSE, 2, matrix_dims,
                         -1, NULL) != 0) status = 1;
@@ -233,7 +233,7 @@ int bench_run_kernel_suite(const bench_options* options, FILE* csv)
     }
     {
         kernel_context context;
-        bench_case benchmark = {"kernels", "contiguous_copy", "[R,C]",
+        bench_case benchmark = {"kernels", "contiguous_copy", "[RxC]",
             "transposed", "GB/s",
             8.0 * matrix_dims[0] * matrix_dims[1] / 1e9, 0, NULL, NULL};
         if (kernel_make_transposed(&context, KERNEL_CONTIGUOUS,
@@ -247,40 +247,40 @@ int bench_run_kernel_suite(const bench_options* options, FILE* csv)
                        "contiguous", "GB/s", 12.0 * elements / 1e9,
                        1, vector_dims, 1, vector_dims, 0);
     status |= run_case(options, csv, KERNEL_ADD, "add_channel_broadcast",
-                       "[B,T,C]+[C]", "broadcast", "GB/s",
+                       "[BxTxC]+[C]", "broadcast", "GB/s",
                        8.0 * broadcast_dims[0] * broadcast_dims[1] *
                        broadcast_dims[2] / 1e9,
                        3, broadcast_dims, 1, channel_dims, 0);
     status |= run_case(options, csv, KERNEL_GELU, "gelu", "[N]",
                        "contiguous", "GB/s", 8.0 * elements / 1e9,
                        1, vector_dims, -1, NULL, 0);
-    status |= run_case(options, csv, KERNEL_SUM, "sum_trailing", "[R,C]",
+    status |= run_case(options, csv, KERNEL_SUM, "sum_trailing", "[RxC]",
                        "contiguous;serial", "GB/s",
                        4.0 * matrix_dims[0] * matrix_dims[1] / 1e9,
                        2, matrix_dims, -1, NULL, 1);
-    status |= run_case(options, csv, KERNEL_MAX, "max_non_trailing", "[R,C]",
+    status |= run_case(options, csv, KERNEL_MAX, "max_non_trailing", "[RxC]",
                        "contiguous;serial", "GB/s",
                        4.0 * matrix_dims[0] * matrix_dims[1] / 1e9,
                        2, matrix_dims, -1, NULL, 0);
     status |= run_case(options, csv, KERNEL_GATHER, "embedding_gather",
-                       "[V,C]@[B,T]", "row-gather;serial", "GB/s",
+                       "[VxC]@[BxT]", "row-gather;serial", "GB/s",
                        4.0 * gather_indices[0] * gather_indices[1] *
                        gather_table[1] / 1e9,
                        2, gather_table, 2, gather_indices, 0);
-    status |= run_case(options, csv, KERNEL_MATMUL, "matmul_square", "[M,K]x[K,N]",
+    status |= run_case(options, csv, KERNEL_MATMUL, "matmul_square", "[MxK]x[KxN]",
                        "contiguous", "GFLOP/s",
                        2.0 * square * square * square / 1e9,
                        2, square_a, 2, square_b, 0);
     status |= run_case(options, csv, KERNEL_PACKED_MATMUL, "matmul_square_packed",
-                       "[M,K]x[K,N]", "packed-rhs", "GFLOP/s",
+                       "[MxK]x[KxN]", "packed-rhs", "GFLOP/s",
                        2.0 * square * square * square / 1e9,
                        2, square_a, 2, square_b, 0);
     status |= run_case(options, csv, KERNEL_MATMUL, "matmul_qkv",
-                       "[BT,C]x[C,3C]", "contiguous", "GFLOP/s",
+                       "[BTxC]x[Cx3C]", "contiguous", "GFLOP/s",
                        2.0 * qkv_a[0] * qkv_a[1] * qkv_b[1] / 1e9,
                        2, qkv_a, 2, qkv_b, 0);
     status |= run_case(options, csv, KERNEL_MATMUL, "matmul_attention",
-                       "[BH,T,D]x[BH,D,T]", "batched", "GFLOP/s",
+                       "[BHxTxD]x[BHxDxT]", "batched", "GFLOP/s",
                        2.0 * attention_a[0] * attention_a[1] * attention_a[2] *
                        attention_b[2] / 1e9,
                        3, attention_a, 3, attention_b, 0);

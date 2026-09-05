@@ -18,3 +18,4 @@ build/
 *.gcda
 *.gcno
 *.profraw
+benchmark-results*.csv

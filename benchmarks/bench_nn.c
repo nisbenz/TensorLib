@@ -152,7 +152,7 @@ static int run_component(const bench_options* options,
     bench_measurement result;
     nn_rng rng;
     const char* name = NULL;
-    const char* shape = "[B,T,C]";
+    const char* shape = "[BxTxC]";
 
     memset(&context, 0, sizeof(context));
     nn_rng_seed(&rng, UINT64_C(0xB34C4));
@@ -164,7 +164,7 @@ static int run_component(const bench_options* options,
         context.forward = linear_forward;
         context.input = make_input(2, linear_dims, 0);
         name = "linear_qkv";
-        shape = "[BT,C]->[BT,3C]";
+        shape = "[BTxC]->[BTx3C]";
     } else if (kind == COMPONENT_LAYER_NORM) {
         nn_layer_norm* model = nn_layer_norm_create(
             "bench_norm", channels, 1e-5f, 1);
@@ -243,7 +243,7 @@ static int run_mlp(const bench_options* options, FILE* csv, int batch, int train
     }
     int status = run_nn_case(options, csv, "nn",
         train ? "mnist_mlp_train_step" : "mnist_mlp_forward",
-        "[B,784]->[B,10]", train ? "forward+loss+backward+sgd" :
+        "[Bx784]->[Bx10]", train ? "forward+loss+backward+sgd" :
         "forward;graph-build", "samples/s", (double)batch,
         1, &context, &result);
     destroy_context(&context);
@@ -317,7 +317,7 @@ static int run_decoder_case(const bench_options* options,
     }
     int status = run_nn_case(options, csv, suite,
         train ? "tiny_lm_train_step" : "tiny_lm_forward",
-        "[B,128]->[B,128,256]",
+        "[Bx128]->[Bx128x256]",
         train ? "forward+loss+backward+adamw" : "forward;graph-build",
         "tokens/s", (double)(batch * time), threads, &context, result);
     destroy_context(&context);

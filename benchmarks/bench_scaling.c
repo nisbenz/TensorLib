@@ -121,7 +121,7 @@ int bench_run_scaling_suite(const bench_options* options, FILE* csv)
         "[N]", "GB/s", 8.0 * elements / 1e9,
         1, vector_dims, -1, NULL);
     status |= run_scaling_case(options, csv, SCALE_MATMUL, "matmul_square",
-        "[M,K]x[K,N]", "GFLOP/s", 2.0 * size * size * size / 1e9,
+        "[MxK]x[KxN]", "GFLOP/s", 2.0 * size * size * size / 1e9,
         2, matrix_dims, 2, matrix_dims);
     status |= bench_run_decoder_scaling(options, csv);
     printf("\n");
