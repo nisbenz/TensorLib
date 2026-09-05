@@ -11,6 +11,7 @@ The default workflow builds the library, examples, and test suite:
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
+python3 scripts/check_markdown_links.py
 ```
 
 Before opening a pull request, also run a strict build:
