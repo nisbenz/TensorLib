@@ -1,52 +1,97 @@
 # Performance and benchmarking
 
-TensorLib includes focused matrix-multiplication benchmarks for measuring its
-blocked scalar path, runtime-dispatched AVX2/FMA kernel, packed right-hand-side
-reuse, and OpenMP scaling. OpenBLAS is an optional comparison dependency.
+TensorLib's benchmark suite measures public tensor operations, autograd, neural
+network modules, end-to-end training work, and CPU thread scaling. Matmul is
+still covered, but it is one part of the report rather than a proxy for the
+whole library.
 
-## Reproducible build
+## Build and run
 
-Use a separate native-tuned build so normal binaries remain portable:
-
-```sh
-cmake -S . -B build-bench -DCMAKE_BUILD_TYPE=Release \
-  -DTENSORLIB_BUILD_TESTS=OFF \
-  -DTENSORLIB_BUILD_EXAMPLES=OFF \
-  -DTENSORLIB_BUILD_BENCHMARKS=ON \
-  -DTENSORLIB_NATIVE_OPTIMIZATIONS=ON
-cmake --build build-bench --parallel
-```
-
-The Makefile provides the equivalent convenience commands:
+Use a separate native-tuned release build:
 
 ```sh
-make benchmark-matmul
-make benchmark-matmul-reuse
-make benchmark-packed-views
-make benchmark-compare
+make benchmark-quick BUILD_DIR=build-bench
 ```
 
-OpenBLAS comparison targets are created only when CMake finds both its headers
-and library. TensorLib's own benchmarks remain available without it.
+This writes `benchmark-results.csv`. Other useful targets are:
 
-## Reporting results
+```sh
+make benchmark-full BUILD_DIR=build-bench
+make benchmark-kernels BUILD_DIR=build-bench
+make benchmark-scaling BUILD_DIR=build-bench
+make benchmark-compare BUILD_DIR=build-bench
+```
 
-Always report enough context to reproduce a result:
+Set an explicit scaling ladder or output path when needed:
 
-- CPU model and operating system
-- compiler name and version
-- CMake options and build type
-- `OMP_NUM_THREADS` and OpenBLAS thread count
-- tensor shapes, warm-up count, and measured repetitions
-- median throughput from multiple process runs
+```sh
+make benchmark-scaling BUILD_DIR=build-bench \
+  BENCHMARK_THREADS=1,2,4,8 BENCHMARK_CSV=results-i5.csv
+```
 
-Avoid comparing a multithreaded run with a single-threaded baseline. For a fair
-single-thread comparison, set both `OMP_NUM_THREADS=1` and
-`OPENBLAS_NUM_THREADS=1`.
+The underlying executable also supports direct use:
 
-## Optimization roadmap
+```sh
+build-bench/bench_tensorlib --profile quick --suite all \
+  --threads 1,2,4,8 --csv raw-results.csv
+```
 
-Potential future work includes ARM NEON and AVX-512 kernels, fused element-wise
-and normalization operations, attention-specific kernels, and quantized data
-types. Each optimization should preserve the scalar fallback, add numerical
-tests, and include before/after results produced with the process above.
+The quick profile uses five adaptively batched samples of at least 20 ms. The
+full profile uses fifteen samples of at least 100 ms after a longer warm-up.
+`--smoke` exists for correctness and portability checks; its timings are not
+performance results.
+
+## What is measured
+
+- **Kernels:** allocation, views and copies, contiguous and broadcast
+  elementwise work, GELU, reductions, gather, and realistic matmul shapes.
+- **Autograd:** graph construction and a composed forward/backward lifecycle.
+- **Neural networks:** Linear, LayerNorm, causal attention, a decoder block,
+  MNIST MLP forward/training, and TinyLM forward/training.
+- **Scaling:** large add, GELU, matmul, and TinyLM workloads across the requested
+  OpenMP thread ladder, with speedup and parallel efficiency.
+
+Forward-only neural measurements include dynamic graph construction. TensorLib
+does not currently expose a no-grad inference mode, so calling these results
+"inference-only" would be misleading. Output allocation is likewise included
+because most public tensor APIs allocate their result.
+
+Reductions and gather are currently serial. Their kernel rows explicitly say
+`serial`; they are not repeated at different thread counts. Streaming kernels
+report effective GB/s, matmuls report GFLOP/s, and model workloads report
+samples/s or tokens/s.
+
+## Optional comparisons
+
+If CMake finds OpenBLAS, it builds `bench_openblas` with the same square, QKV,
+and batched-attention matmul shapes. The comparison uses wall-clock time and
+the same allocation boundary as the TensorLib public API.
+
+If PyTorch is installed, `make benchmark-compare` also runs the eager float32
+CPU reference in `benchmarks/bench_pytorch.py`. It matches the MLP and
+TinyLM-style forward/training workloads without making PyTorch a TensorLib
+build dependency. Reference results use `BENCHMARK_REFERENCE_THREADS`, which
+defaults to one for fair single-core comparison.
+
+## Reading results
+
+Use the median as the primary number and p95 as a noise indicator. Scaling
+speedup is `one_thread_time / N_thread_time`; parallel efficiency is that
+speedup divided by `N`. Memory-bound operations often stop scaling before
+matmul does, while hybrid CPUs can show non-uniform steps as efficiency and
+performance cores enter the run.
+
+Do not compare results unless the CPU, compiler, build options, shapes, profile,
+and thread count match. The standard-library runner records the OS, CPU model,
+logical processor count, and compiler in every CSV row.
+
+For publishable numbers:
+
+- Close other CPU-heavy programs and connect laptops to power.
+- Use a fixed performance governor where the operating system permits it.
+- Pin processes or cores consistently when comparing hybrid CPUs.
+- Run the full profile in several fresh processes and compare medians.
+- Set both TensorLib and reference libraries to the same thread count.
+
+Benchmark CI only executes `--smoke`; fixed performance thresholds are avoided
+until stable results from comparable dedicated hosts are available.
