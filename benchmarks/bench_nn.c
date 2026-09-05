@@ -321,7 +321,7 @@ static int run_decoder_case(const bench_options* options,
         train ? "forward+loss+backward+adamw" : "forward;graph-build",
         "tokens/s", (double)(batch * time), threads, &context, result);
     destroy_context(&context);
-    return status == 1;
+    return status;
 }
 
 static int run_decoder_cases(const bench_options* options, FILE* csv,
@@ -331,11 +331,11 @@ static int run_decoder_cases(const bench_options* options, FILE* csv,
     int time = smoke ? 8 : 128;
     int channels = smoke ? 24 : 192;
     int layers = smoke ? 1 : 4;
-    int status = run_decoder_case(options, csv, "nn", batch, time, channels,
-                                  layers, 0, threads, NULL);
-    status |= run_decoder_case(options, csv, "nn", batch, time, channels,
-                               layers, 1, threads, NULL);
-    return status;
+    int forward_status = run_decoder_case(options, csv, "nn", batch, time,
+                                          channels, layers, 0, threads, NULL);
+    int train_status = run_decoder_case(options, csv, "nn", batch, time,
+                                        channels, layers, 1, threads, NULL);
+    return forward_status == 1 || train_status == 1;
 }
 
 int bench_run_decoder_scaling(const bench_options* options, FILE* csv)
@@ -355,8 +355,11 @@ int bench_run_decoder_scaling(const bench_options* options, FILE* csv)
             int threads = options->threads[index];
             int case_status = run_decoder_case(options, csv, "scaling",
                 batch, time, channels, layers, train, threads, &result);
-            if (case_status != 0) {
-                status |= case_status;
+            if (case_status == 1) {
+                status = 1;
+                continue;
+            }
+            if (case_status == 2) {
                 continue;
             }
             if (baseline == 0.0) baseline = result.median_seconds;
