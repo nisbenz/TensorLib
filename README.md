@@ -5,6 +5,12 @@
 <h1 align="center">TensorLib</h1>
 
 <p align="center">
+  <a href="https://github.com/nisbenz/tensorlib/actions/workflows/ci.yml"><img src="https://github.com/nisbenz/tensorlib/actions/workflows/ci.yml/badge.svg" alt="CI status"/></a>
+  <img src="https://img.shields.io/badge/C-C99-00599C?logo=c" alt="C99"/>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT license"/></a>
+</p>
+
+<p align="center">
   <em>A from-scratch deep learning tensor library written entirely in C</em>
 </p>
 
@@ -108,21 +114,6 @@ graph TB
     S1 --> S2
     S1 --> S3
 ```
-
-### Layer Summary
-
-| Layer | Files | Lines | Purpose |
-|-------|-------|-------|---------|
-| **Tensor Core** | 7 `.c` + 2 `.h` | ~1,880 | N-dim tensors, broadcasting, views, matmul |
-| **Autograd Engine** | 7 `.c` + 2 `.h` | ~1,122 | Reverse-mode AD, 23 ops, graph traversal |
-| **NN Modules** | 14 `.c` + 1 `.h` | ~1,837 | Layers, attention, decoder, module system |
-| **Losses** | 1 `.c` | ~131 | Cross-entropy, softmax |
-| **Optimizers** | 3 `.c` | ~480 | SGD, AdamW, grad clipping |
-| **RNG** | 1 `.c` | ~43 | Splitmix64, uniform, normal |
-| **Serialization** | 1 `.c` | ~617 | Checkpoint save/load |
-| **Total** | 34 files | ~6,110 | |
-
----
 
 ## Documentation
 
@@ -320,11 +311,11 @@ make mnist    # build MNIST example
 
 ## Testing
 
-33 unit test executables covering every component:
+33 unit test executables cover every component, with an additional TinyLM CLI smoke test:
 
 ```sh
-# Run all tests via CMake
-cmake --build build --config Release --target test
+# Run all tests after building
+ctest --test-dir build --output-on-failure
 
 # Or via Makefile
 make test
@@ -377,23 +368,11 @@ graph TB
 
 See [tensor_mechanics.md](docs/tensor_mechanics.md) for kernel implementation details.
 
-### Optimization Roadmap
-
-See [optimizations.md](optimizations.md) for the full optimization roadmap covering:
-- SIMD vectorization (AVX-512, ARM NEON)
-- Kernel fusion (element-wise ops, softmax, LayerNorm)
-- OpenMP parallelism
-- FlashAttention
-- INT8 quantization
-
----
-
 ## Project Structure
 
 ```
 tensorlib/
 ├── README.md                     # This file
-├── optimizations.md              # SIMD/parallelism optimization roadmap
 ├── CMakeLists.txt                # CMake build
 ├── Makefile                      # GNU Make build (GCC, supports PGO)
 │
@@ -420,7 +399,7 @@ tensorlib/
 ├── examples/                     # Example programs
 │   ├── autograd_example.c        #   Computation graph demo
 │   ├── tiny_lm/                  #   Byte-level decoder LM (~1.9M params)
-│   └── mnsit/                    #   MNIST MLP classifier
+│   └── mnist/                    #   MNIST MLP classifier
 │
 ├── benchmarks/                   # Performance benchmarks
 │   └── matmul/                   #   Matmul vs OpenBLAS
@@ -436,9 +415,9 @@ tensorlib/
 
 ## Build Requirements
 
-- **Compiler:** GCC or Clang with C99 + OpenMP support
-- **Flags:** `-O3 -march=native -mtune=native -flto -fopenmp -fno-math-errno -funroll-loops -fprefetch-loop-arrays`
-- **Tested on:** GCC via MSYS2 UCRT64 on Windows
+- **Compiler:** GCC or Clang with C99 and OpenMP support
+- **Flags:** `-O3 -march=native -mtune=native -flto -fopenmp -fno-math-errno -funroll-loops`
+- **Validated with:** GCC and Clang on Linux; GCC via MSYS2 UCRT64 on Windows
 
 ---
 

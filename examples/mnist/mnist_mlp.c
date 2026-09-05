@@ -335,11 +335,11 @@ static int parse_positive_int(const char* text, int* result)
 int main(int argc, char** argv)
 {
     const char* image_path = argc > 1
-        ? argv[1] : "examples/mnsit/t10k-images.idx3-ubyte";
+        ? argv[1] : "examples/mnist/t10k-images.idx3-ubyte";
     const char* label_path = argc > 2
-        ? argv[2] : "examples/mnsit/t10k-labels.idx1-ubyte";
+        ? argv[2] : "examples/mnist/t10k-labels.idx1-ubyte";
     const char* weights_path = argc > 5
-        ? argv[5] : "examples/mnsit/mnist_mlp.weights";
+        ? argv[5] : "examples/mnist/mnist_mlp.weights";
     int epochs = 10;
     int batch_size = 64;
     int train_count;

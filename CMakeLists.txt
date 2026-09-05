@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -march=native -mtune=native -flto -fno-math-errno -fno-signed-zeros -fno-trapping-math -freciprocal-math -funroll-loops -fprefetch-loop-arrays -fopenmp")
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -march=native -mtune=native -flto -fno-math-errno -fno-signed-zeros -fno-trapping-math -freciprocal-math -funroll-loops -fopenmp")
 endif()
 
 find_package(OpenMP REQUIRED)
@@ -120,8 +120,8 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/autograd_example.c")
     target_link_libraries(autograd_example PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
 endif()
 
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/mnsit/mnist_mlp.c")
-    add_executable(mnist_mlp examples/mnsit/mnist_mlp.c)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/mnist/mnist_mlp.c")
+    add_executable(mnist_mlp examples/mnist/mnist_mlp.c)
     target_link_libraries(mnist_mlp PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
 endif()
 

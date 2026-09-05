@@ -4,6 +4,7 @@ cmake-build-debug/
 cmake-build-openblas-haswell/
 build-sanitizers/
 buildd-asan/
+.cache/
 .idea/
 examples/*.exe
 run.exe
@@ -13,3 +14,7 @@ run.exe
 bin/
 build/
 *.chk
+*.weights
+*.gcda
+*.gcno
+*.profraw
