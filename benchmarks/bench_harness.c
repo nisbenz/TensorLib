@@ -76,14 +76,16 @@ int bench_measure(bench_operation operation,
     double* samples;
     double checksum = 0.0;
     double elapsed = 0.0;
+    double warmup_elapsed = 0.0;
     int iterations = 1;
 
     if (operation == NULL || profile == NULL || result == NULL ||
         profile->sample_count <= 0) return 1;
-    while (elapsed < profile->warmup_seconds) {
+    while (warmup_elapsed < profile->warmup_seconds) {
         if (run_iterations(operation, context, 1, &checksum, &elapsed) != 0) {
             return 1;
         }
+        warmup_elapsed += elapsed;
     }
     if (run_iterations(operation, context, 1, &checksum, &elapsed) != 0) {
         return 1;
