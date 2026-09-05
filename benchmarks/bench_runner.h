@@ -14,6 +14,23 @@ typedef struct {
     int thread_count;
 } bench_options;
 
+typedef struct {
+    const char* suite;
+    const char* name;
+    const char* shape;
+    const char* layout;
+    const char* metric;
+    double units_per_call;
+    int parallel;
+    bench_operation operation;
+    void* context;
+} bench_case;
+
 int bench_run_suites(const bench_options* options, FILE* csv);
+int bench_execute_case(const bench_options* options,
+                       FILE* csv,
+                       const bench_case* benchmark,
+                       int requested_threads,
+                       bench_measurement* result);
 
 #endif
