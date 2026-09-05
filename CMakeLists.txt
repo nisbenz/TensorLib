@@ -224,6 +224,11 @@ if (TENSORLIB_BUILD_BENCHMARKS)
         benchmarks/bench_scaling.c)
     target_link_libraries(bench_tensorlib PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
     if (TENSORLIB_BUILD_TESTS)
+        add_executable(test_bench_harness
+            tests/unit/benchmark/test_bench_harness.c
+            benchmarks/bench_harness.c)
+        target_include_directories(test_bench_harness PRIVATE benchmarks)
+        add_test(NAME test_bench_harness COMMAND test_bench_harness)
         add_test(NAME test_benchmarks_smoke
                  COMMAND bench_tensorlib --smoke --threads 1)
     endif()
