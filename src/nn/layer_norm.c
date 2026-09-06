@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "nn_internal.h"
+#include "../../include/tensorlib/autograd_internal.h"
 
 static char* layer_norm_parameter_name(const char* module_name,
                                        const char* suffix)
@@ -108,30 +109,9 @@ void nn_layer_norm_destroy(nn_layer_norm* layer)
     free(layer);
 }
 
-static ag_tensor* scalar(float value)
-{
-    tensor* raw = t_alloc(0, NULL);
-
-    if (raw == NULL) return NULL;
-    raw->storage->data[0] = value;
-    return ag_from_owned_tensor(raw, 0);
-}
-
 ag_tensor* nn_layer_norm_forward(const nn_layer_norm* layer,
                                  const ag_tensor* input)
 {
-    ag_tensor* mean = NULL;
-    ag_tensor* centered = NULL;
-    ag_tensor* squared = NULL;
-    ag_tensor* variance = NULL;
-    ag_tensor* epsilon = NULL;
-    ag_tensor* stabilized = NULL;
-    ag_tensor* deviation = NULL;
-    ag_tensor* normalized = NULL;
-    ag_tensor* scaled = NULL;
-    ag_tensor* result = NULL;
-    int axis;
-
     if (layer == NULL || input == NULL ||
         !tensor_has_valid_metadata(input->value) ||
         input->value->ndim < 1 ||
@@ -139,45 +119,13 @@ ag_tensor* nn_layer_norm_forward(const nn_layer_norm* layer,
             layer->normalized_width) {
         return NULL;
     }
-    axis = input->value->ndim - 1;
-    mean = ag_mean(input, axis, 1);
-    if (mean == NULL) goto cleanup;
-    centered = ag_sub(input, mean);
-    if (centered == NULL) goto cleanup;
-    squared = ag_mul(centered, centered);
-    if (squared == NULL) goto cleanup;
-    variance = ag_mean(squared, axis, 1);
-    if (variance == NULL) goto cleanup;
-    epsilon = scalar(layer->epsilon);
-    if (epsilon == NULL) goto cleanup;
-    stabilized = ag_add(variance, epsilon);
-    if (stabilized == NULL) goto cleanup;
-    deviation = ag_sqrt(stabilized);
-    if (deviation == NULL) goto cleanup;
-    normalized = ag_div(centered, deviation);
-    if (normalized == NULL) goto cleanup;
-    if (!layer->affine) {
-        result = normalized;
-        normalized = NULL;
-        goto cleanup;
-    }
     if (layer->weight == NULL || layer->bias == NULL ||
         layer->weight->value == NULL || layer->bias->value == NULL) {
-        goto cleanup;
+        return layer->affine ? NULL : ag_layer_norm(input, NULL, NULL,
+                                                    layer->epsilon);
     }
-    scaled = ag_mul(normalized, layer->weight->value);
-    if (scaled == NULL) goto cleanup;
-    result = ag_add(scaled, layer->bias->value);
-
-cleanup:
-    ag_tensor_release(scaled);
-    ag_tensor_release(normalized);
-    ag_tensor_release(deviation);
-    ag_tensor_release(stabilized);
-    ag_tensor_release(epsilon);
-    ag_tensor_release(variance);
-    ag_tensor_release(squared);
-    ag_tensor_release(centered);
-    ag_tensor_release(mean);
-    return result;
+    return layer->affine
+         ? ag_layer_norm(input, layer->weight->value,
+                         layer->bias->value, layer->epsilon)
+         : ag_layer_norm(input, NULL, NULL, layer->epsilon);
 }

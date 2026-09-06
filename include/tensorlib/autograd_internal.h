@@ -19,4 +19,9 @@ ag_tensor* ag_matmul_packed_rhs(
     const tensor_matmul_packed_rhs* packed_rhs
 );
 
+ag_tensor* ag_layer_norm(const ag_tensor* input,
+                         const ag_tensor* weight,
+                         const ag_tensor* bias,
+                         float epsilon);
+
 #endif

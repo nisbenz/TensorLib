@@ -49,6 +49,7 @@ set(TENSORLIB_SOURCES
     src/autograd/autograd_gather.c
     src/autograd/autograd_reduc.c
     src/autograd/autograd_matmul.c
+    src/autograd/autograd_layer_norm.c
     src/autograd/autograd_backward.c
     src/init/rng.c
     src/nn/parameter.c

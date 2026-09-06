@@ -48,7 +48,8 @@ typedef enum {
     AG_OP_EXPAND,
     AG_OP_GATHER_ROWS,
     AG_OP_MUL_SCALAR,
-    AG_OP_DIV_SCALAR
+    AG_OP_DIV_SCALAR,
+    AG_OP_LAYER_NORM
 } ag_op;
 
 
