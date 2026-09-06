@@ -189,11 +189,21 @@ static int gradient_scale(const nn_adamw* optimizer, double* result)
             optimizer->steps[i] == UINT64_MAX) {
             return -1;
         }
-        for (int element = 0; element < tensor_numel(gradient); ++element) {
-            double grad = gradient->storage->data[
-                tensor_flat_index(gradient, element)];
-            if (!isfinite(grad)) return -1;
-            squared_norm += grad * grad;
+        int count = tensor_numel(gradient);
+        if (is_contiguous(gradient) && gradient->offset == 0) {
+            const float* data = gradient->storage->data;
+            for (int element = 0; element < count; ++element) {
+                double grad = data[element];
+                if (!isfinite(grad)) return -1;
+                squared_norm += grad * grad;
+            }
+        } else {
+            for (int element = 0; element < count; ++element) {
+                double grad = gradient->storage->data[
+                    tensor_flat_index(gradient, element)];
+                if (!isfinite(grad)) return -1;
+                squared_norm += grad * grad;
+            }
         }
     }
     if (!isfinite(squared_norm)) return -1;
