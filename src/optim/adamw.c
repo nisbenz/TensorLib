@@ -1,8 +1,12 @@
 #include <math.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 
 #include "../../include/tensorlib/nn.h"
+#include "../tensor/parallel.h"
+
+#define TENSORLIB_ADAMW_MIN_PARALLEL_ELEMENTS (1 << 16)
 
 static int tensor_flat_index(const tensor* value, int flat)
 {
@@ -222,27 +226,102 @@ int nn_adamw_step(nn_adamw* optimizer)
 {
     const nn_adamw_config* config;
     double grad_scale;
+    uint64_t* next_steps = NULL;
+    double* correction1s = NULL;
+    double* correction2s = NULL;
+    long long work = 0;
+    int parameter_count;
+    int eligible_count = 0;
+    int threads;
+    int update_failed = 0;
 
     if (!topology_valid(optimizer) ||
         gradient_scale(optimizer, &grad_scale) != 0) {
         return -1;
     }
     config = &optimizer->config;
-    for (size_t i = 0; i < optimizer->parameter_count; ++i) {
+    if (optimizer->parameter_count > (size_t)INT_MAX) return -1;
+    parameter_count = (int)optimizer->parameter_count;
+    /* First determine the amount of independent work without allocating
+     * parallel-only bookkeeping for the normal small serial path. */
+    for (int i = 0; i < parameter_count; ++i) {
+        nn_parameter* parameter = optimizer->parameters[i];
+        tensor* value;
+
+        if (!parameter->trainable || parameter->value->grad == NULL) continue;
+        value = parameter->value->value;
+        ++eligible_count;
+        int count = tensor_numel(value);
+        work = work > LLONG_MAX - count ? LLONG_MAX : work + count;
+    }
+    threads = tensorlib_parallel_threads(work,
+                                         TENSORLIB_ADAMW_MIN_PARALLEL_ELEMENTS,
+                                         eligible_count);
+    if (threads > 1) {
+        next_steps = (uint64_t*)calloc((size_t)parameter_count,
+                                       sizeof(*next_steps));
+        correction1s = (double*)calloc((size_t)parameter_count,
+                                       sizeof(*correction1s));
+        correction2s = (double*)calloc((size_t)parameter_count,
+                                       sizeof(*correction2s));
+        if (next_steps == NULL || correction1s == NULL || correction2s == NULL) {
+            free(correction2s); free(correction1s); free(next_steps);
+            return -1;
+        }
+        /* Validate every value and precompute all step-dependent factors before
+         * any parameter or optimizer state is modified. */
+        for (int i = 0; i < parameter_count; ++i) {
+            nn_parameter* parameter = optimizer->parameters[i];
+            tensor* value;
+            uint64_t step;
+            if (!parameter->trainable || parameter->value->grad == NULL) continue;
+            value = parameter->value->value;
+            step = optimizer->steps[i] + 1;
+            correction1s[i] = 1.0 - pow((double)config->beta1, (double)step);
+            correction2s[i] = 1.0 - pow((double)config->beta2, (double)step);
+            if (!(correction1s[i] > 0.0) || !(correction2s[i] > 0.0) ||
+                optimizer->steps[i] == UINT64_MAX) {
+                free(correction2s); free(correction1s); free(next_steps);
+                return -1;
+            }
+            next_steps[i] = step;
+            int count = tensor_numel(value);
+            for (int element = 0; element < count; ++element) {
+                int value_index = tensor_flat_index(value, element);
+                int first_index = tensor_flat_index(optimizer->first_moments[i], element);
+                int second_index = tensor_flat_index(optimizer->second_moments[i], element);
+                if (!isfinite(value->storage->data[value_index]) ||
+                    !isfinite(optimizer->first_moments[i]->storage->data[first_index]) ||
+                    !isfinite(optimizer->second_moments[i]->storage->data[second_index])) {
+                    free(correction2s); free(correction1s); free(next_steps);
+                    return -1;
+                }
+            }
+        }
+    }
+#ifdef _OPENMP
+#pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
+#endif
+    for (int i = 0; i < parameter_count; ++i) {
         nn_parameter* parameter = optimizer->parameters[i];
         tensor* value;
         tensor* gradient;
-        uint64_t step;
         double correction1;
         double correction2;
 
         if (!parameter->trainable || parameter->value->grad == NULL) continue;
         value = parameter->value->value;
         gradient = parameter->value->grad;
-        step = optimizer->steps[i] + 1;
-        correction1 = 1.0 - pow((double)config->beta1, (double)step);
-        correction2 = 1.0 - pow((double)config->beta2, (double)step);
-        if (!(correction1 > 0.0) || !(correction2 > 0.0)) return -1;
+        uint64_t step = optimizer->steps[i] + 1;
+        correction1 = threads > 1 ? correction1s[i]
+                                   : 1.0 - pow((double)config->beta1, (double)step);
+        correction2 = threads > 1 ? correction2s[i]
+                                   : 1.0 - pow((double)config->beta2, (double)step);
+        if (!(correction1 > 0.0) || !(correction2 > 0.0) ||
+            optimizer->steps[i] == UINT64_MAX) {
+            update_failed = 1;
+            continue;
+        }
         optimizer->steps[i] = step;
         /* Fast path: when value/gradient/first/second-moment share a
          * contiguous layout, the flat element index is the storage index,
@@ -276,7 +355,11 @@ int nn_adamw_step(nn_adamw* optimizer)
                         (normalized + config->weight_decay * current);
                 if (!isfinite(current) || !isfinite(first) || !isfinite(second) ||
                     !isfinite(updated)) {
-                    return -1;
+#ifdef _OPENMP
+#pragma omp atomic write
+#endif
+                    update_failed = 1;
+                    continue;
                 }
                 first_data[element] = (float)first;
                 second_data[element] = (float)second;
@@ -308,7 +391,11 @@ int nn_adamw_step(nn_adamw* optimizer)
                     (normalized + config->weight_decay * current);
             if (!isfinite(current) || !isfinite(first) || !isfinite(second) ||
                 !isfinite(updated)) {
-                return -1;
+#ifdef _OPENMP
+#pragma omp atomic write
+#endif
+                update_failed = 1;
+                continue;
             }
             optimizer->first_moments[i]->storage->data[first_index] =
                 (float)first;
@@ -317,10 +404,21 @@ int nn_adamw_step(nn_adamw* optimizer)
             value->storage->data[value_index] = (float)updated;
         }
         }
+    }
+    if (update_failed) {
+        free(correction2s); free(correction1s); free(next_steps);
+        return -1;
+    }
+    for (int i = 0; i < parameter_count; ++i) {
+        nn_parameter* parameter = optimizer->parameters[i];
+        if (!parameter->trainable || parameter->value->grad == NULL) continue;
         tensor_mark_modified(optimizer->first_moments[i]);
         tensor_mark_modified(optimizer->second_moments[i]);
-        tensor_mark_modified(value);
+        tensor_mark_modified(parameter->value->value);
     }
+    free(correction2s);
+    free(correction1s);
+    free(next_steps);
     return 0;
 }
 
