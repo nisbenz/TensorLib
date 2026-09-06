@@ -12,6 +12,12 @@ static int counted_operation(void* opaque, double* checksum)
     return 0;
 }
 
+static void reset_counter(void* opaque)
+{
+    int* calls = (int*)opaque;
+    *calls = 0;
+}
+
 int main(void)
 {
     bench_profile quick = bench_profile_named("quick");
@@ -27,11 +33,12 @@ int main(void)
         return 1;
     }
     if (bench_now_seconds() <= 0.0 ||
-        bench_measure(counted_operation, &calls, &smoke, &result) != 0) {
+        bench_measure_with_reset(counted_operation, &calls, &smoke,
+                                 reset_counter, &result) != 0) {
         fprintf(stderr, "smoke measurement failed\n");
         return 1;
     }
-    if (calls != 2 || result.iterations_per_sample != 1 ||
+    if (calls != 1 || result.iterations_per_sample != 1 ||
         result.checksum != 1.0 || !isfinite(result.median_seconds) ||
         result.median_seconds < 0.0 || result.p95_seconds < 0.0) {
         fprintf(stderr, "smoke measurement produced invalid statistics\n");

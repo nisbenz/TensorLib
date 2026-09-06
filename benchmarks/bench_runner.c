@@ -90,8 +90,8 @@ int bench_execute_case(const bench_options* options,
     }
 #endif
     int measured_threads = actual_threads(requested_threads);
-    if (bench_measure(benchmark->operation, benchmark->context,
-                      &options->profile, result) != 0 ||
+    if (bench_measure_with_reset(benchmark->operation, benchmark->context,
+                                 &options->profile, benchmark->reset, result) != 0 ||
         !isfinite(result->checksum)) {
         fprintf(stderr, "Benchmark failed: %s/%s\n",
                 benchmark->suite, benchmark->name);

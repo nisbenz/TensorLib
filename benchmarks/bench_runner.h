@@ -24,6 +24,7 @@ typedef struct {
     int parallel;
     bench_operation operation;
     void* context;
+    bench_measure_reset reset;
 } bench_case;
 
 int bench_run_suites(const bench_options* options, FILE* csv);
