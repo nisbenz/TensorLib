@@ -620,6 +620,31 @@ TEST(test_direct_rhs_gradient_is_deterministic_across_threads) {
 #endif
 }
 
+TEST(test_direct_rhs_gradient_contracts_projected_batch) {
+    int lhs_dims[4] = {1, 2, 3, 4};
+    int rhs_dims[4] = {3, 1, 4, 5};
+    int gradient_dims[4] = {3, 2, 3, 5};
+    tensor* lhs = t_alloc(4, lhs_dims);
+    tensor* rhs = t_alloc(4, rhs_dims);
+    tensor* gradient = t_alloc(4, gradient_dims);
+    for (int i = 0; i < tensor_numel(lhs); ++i) {
+        lhs->storage->data[i] = 0.1f * (float)((i % 7) - 3);
+    }
+    for (int i = 0; i < tensor_numel(gradient); ++i) {
+        gradient->storage->data[i] = 0.05f * (float)((i % 11) - 5);
+    }
+    tensor* lhs_transpose = t_transpose(lhs, 2, 3);
+    tensor* batched = t_matmul(lhs_transpose, gradient);
+    tensor* reduced = t_sum(batched, 1);
+    tensor* expected = t_unsqueeze(reduced, 1);
+    tensor* actual = tensor_matmul_backward_rhs_fast(lhs, gradient, rhs);
+    ASSERT_NOT_NULL(actual); ASSERT_NOT_NULL(expected);
+    assert_same_tensor(actual, expected);
+    t_free(actual); t_free(expected); t_free(reduced); t_free(batched);
+    t_free(lhs_transpose);
+    t_free(gradient); t_free(rhs); t_free(lhs);
+}
+
 int main(void) {
     printf("== tensor_matmul.c ==\n");
     RUN_TEST(test_t_matmul_2d);
@@ -641,5 +666,6 @@ int main(void) {
     RUN_TEST(test_t_matmul_allows_aliasing_and_returns_independent_storage);
     RUN_TEST(test_direct_rhs_gradient_handles_broadcast_strides_and_vectors);
     RUN_TEST(test_direct_rhs_gradient_is_deterministic_across_threads);
+    RUN_TEST(test_direct_rhs_gradient_contracts_projected_batch);
     TEST_SUITE_SUMMARY();
 }

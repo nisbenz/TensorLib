@@ -6,5 +6,8 @@
 tensor* tensor_matmul_backward_rhs(const tensor* lhs,
                                    const tensor* output_gradient,
                                    const tensor* rhs);
+tensor* tensor_matmul_backward_rhs_fast(const tensor* lhs,
+                                        const tensor* output_gradient,
+                                        const tensor* rhs);
 
 #endif

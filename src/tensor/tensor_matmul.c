@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #if defined(_WIN32)
 #include <malloc.h>
 #endif
@@ -964,6 +965,68 @@ static tensor* try_contiguous_linear_rhs_gradient(
     return result;
 }
 
+static tensor* try_contiguous_projected_rhs_gradient(
+    const tensor* lhs, const tensor* output_gradient, const tensor* rhs)
+{
+    if (lhs->ndim != 4 || rhs->ndim != 4 || output_gradient->ndim != 4 ||
+        lhs->dims[0] != 1 || rhs->dims[1] != 1 ||
+        output_gradient->dims[0] != rhs->dims[0] ||
+        output_gradient->dims[1] != lhs->dims[1] ||
+        output_gradient->dims[2] != lhs->dims[2] ||
+        rhs->dims[2] != lhs->dims[3] ||
+        output_gradient->dims[3] != rhs->dims[3] ||
+        !is_contiguous((tensor*)lhs) ||
+        !is_contiguous((tensor*)output_gradient)) return NULL;
+
+    int inner = lhs->dims[3];
+    int columns = rhs->dims[3];
+    int rows = tensor_numel((tensor*)lhs) / inner;
+    int lhs_dims[2] = {rows, inner};
+    int gradient_dims[2] = {rows, columns};
+    tensor* result = t_alloc(rhs->ndim, rhs->dims);
+    tensor* lhs_matrix = t_reshape((tensor*)lhs, 2, lhs_dims);
+    tensor* lhs_transpose = lhs_matrix == NULL ? NULL :
+        t_transpose(lhs_matrix, 0, 1);
+    if (result == NULL || lhs_transpose == NULL) goto fail;
+
+    size_t matrix_bytes = (size_t)inner * (size_t)columns * sizeof(float);
+    for (int projection = 0; projection < rhs->dims[0]; ++projection) {
+        tensor* gradient_slice = t_slice((tensor*)output_gradient, 0,
+                                          projection, projection + 1);
+        tensor* gradient_matrix = gradient_slice == NULL ? NULL :
+            t_reshape(gradient_slice, 2, gradient_dims);
+        tensor* matrix = gradient_matrix == NULL ? NULL :
+            t_matmul(lhs_transpose, gradient_matrix);
+        if (matrix == NULL) {
+            t_free(matrix); t_free(gradient_matrix); t_free(gradient_slice);
+            goto fail;
+        }
+        memcpy(result->storage->data + (size_t)projection * (size_t)inner *
+                   (size_t)columns,
+               matrix->storage->data + matrix->offset, matrix_bytes);
+        t_free(matrix); t_free(gradient_matrix); t_free(gradient_slice);
+    }
+    t_free(lhs_transpose); t_free(lhs_matrix);
+    return result;
+
+fail:
+    t_free(lhs_transpose); t_free(lhs_matrix); t_free(result);
+    return NULL;
+}
+
+tensor* tensor_matmul_backward_rhs_fast(const tensor* lhs,
+                                        const tensor* output_gradient,
+                                        const tensor* rhs)
+{
+    if (!tensor_has_valid_metadata(lhs) ||
+        !tensor_has_valid_metadata(output_gradient) ||
+        !tensor_has_valid_metadata(rhs)) return NULL;
+    tensor* result = try_contiguous_linear_rhs_gradient(lhs, output_gradient,
+                                                         rhs);
+    return result != NULL ? result :
+        try_contiguous_projected_rhs_gradient(lhs, output_gradient, rhs);
+}
+
 tensor* tensor_matmul_backward_rhs(const tensor* lhs,
                                    const tensor* output_gradient,
                                    const tensor* rhs)
@@ -973,8 +1036,8 @@ tensor* tensor_matmul_backward_rhs(const tensor* lhs,
         !tensor_has_valid_metadata(rhs) || lhs->ndim == 0 || rhs->ndim == 0) {
         return NULL;
     }
-    tensor* linear_result =
-        try_contiguous_linear_rhs_gradient(lhs, output_gradient, rhs);
+    tensor* linear_result = tensor_matmul_backward_rhs_fast(
+        lhs, output_gradient, rhs);
     if (linear_result != NULL) return linear_result;
     matmul_operand_info lhs_info = {
         lhs->ndim == 1, lhs->ndim > 1 ? lhs->ndim - 2 : 0,
