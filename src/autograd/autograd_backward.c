@@ -102,12 +102,16 @@ static int graph_versions_match(const node_list* nodes) {
     return 1;
 }
 
-static tensor* reduce_to_shape(tensor* contribution, const tensor* target) {
+static tensor* reduce_to_shape(tensor* contribution, const tensor* target,
+                               int* coords, int coord_capacity) {
     if (!tensor_has_valid_metadata(contribution) || !tensor_has_valid_metadata(target) ||
         contribution->ndim < target->ndim) {
         t_free(contribution);
         return NULL;
     }
+
+    if (contribution->ndim == target->ndim &&
+        same_shape(contribution, (tensor*)target)) return contribution;
 
     for (int target_axis = 0; target_axis < target->ndim; ++target_axis) {
         int contribution_axis = contribution->ndim - target->ndim + target_axis;
@@ -117,14 +121,8 @@ static tensor* reduce_to_shape(tensor* contribution, const tensor* target) {
             return NULL;
         }
     }
-    if (contribution->ndim == target->ndim &&
-        same_shape(contribution, (tensor*)target)) return contribution;
-
     tensor* reduced = t_alloc(target->ndim, target->dims);
-    int* coords = contribution->ndim > 0
-                ? (int*)calloc((size_t)contribution->ndim, sizeof(*coords)) : NULL;
-    if (reduced == NULL || (contribution->ndim > 0 && coords == NULL)) {
-        free(coords);
+    if (reduced == NULL) {
         t_free(reduced);
         t_free(contribution);
         return NULL;
@@ -132,6 +130,33 @@ static tensor* reduce_to_shape(tensor* contribution, const tensor* target) {
     for (int index = 0; index < tensor_numel(reduced); ++index) {
         reduced->storage->data[reduced->offset + index] = 0.0f;
     }
+
+    int suffix_matches = is_contiguous(contribution);
+    for (int axis = 0; axis < target->ndim && suffix_matches; ++axis) {
+        int contribution_axis = contribution->ndim - target->ndim + axis;
+        suffix_matches = target->dims[axis] == contribution->dims[contribution_axis];
+    }
+    int reduced_count = tensor_numel(reduced);
+    if (suffix_matches && reduced_count > 0) {
+        int outer_count = tensor_numel(contribution) / reduced_count;
+        const float* source = contribution->storage->data + contribution->offset;
+        float* destination = reduced->storage->data + reduced->offset;
+        for (int outer = 0; outer < outer_count; ++outer) {
+            for (int index = 0; index < reduced_count; ++index) {
+                destination[index] += source[outer * reduced_count + index];
+            }
+        }
+        t_free(contribution);
+        return reduced;
+    }
+
+    if (contribution->ndim > coord_capacity ||
+        (contribution->ndim > 0 && coords == NULL)) {
+        t_free(reduced);
+        t_free(contribution);
+        return NULL;
+    }
+    memset(coords, 0, (size_t)contribution->ndim * sizeof(*coords));
 
     int contribution_count = tensor_numel(contribution);
     for (int index = 0; index < contribution_count; ++index) {
@@ -146,12 +171,12 @@ static tensor* reduce_to_shape(tensor* contribution, const tensor* target) {
             contribution->storage->data[get_flat_index_nd(contribution, coords)];
         advance_coords(coords, contribution->dims, contribution->ndim);
     }
-    free(coords);
     t_free(contribution);
     return reduced;
 }
 
-static int add_in_place(tensor* destination, const tensor* source)
+static int add_in_place(tensor* destination, const tensor* source,
+                        int* coords, int coord_capacity)
 {
     if (!tensor_has_valid_metadata(destination) ||
         !tensor_has_valid_metadata(source) ||
@@ -167,9 +192,9 @@ static int add_in_place(tensor* destination, const tensor* source)
         return 0;
     }
 
-    int* coords = destination->ndim > 0
-                ? (int*)calloc((size_t)destination->ndim, sizeof(*coords)) : NULL;
-    if (destination->ndim > 0 && coords == NULL) return 1;
+    if (destination->ndim > coord_capacity ||
+        (destination->ndim > 0 && coords == NULL)) return 1;
+    memset(coords, 0, (size_t)destination->ndim * sizeof(*coords));
     for (int index = 0; index < count; ++index) {
         int destination_index = get_flat_index_nd(destination, coords);
         int source_index = get_flat_index_nd((tensor*)source, coords);
@@ -177,15 +202,17 @@ static int add_in_place(tensor* destination, const tensor* source)
             source->storage->data[source_index];
         advance_coords(coords, destination->dims, destination->ndim);
     }
-    free(coords);
     return 0;
 }
 
 static int accumulate_pass_gradient(tensor** destination,
                                     tensor* contribution,
-                                    const tensor* target) {
+                                    const tensor* target,
+                                    int* coords,
+                                    int coord_capacity) {
     double started = backward_stats_enabled ? backward_now() : 0.0;
-    tensor* reduced = reduce_to_shape(contribution, target);
+    tensor* reduced = reduce_to_shape(contribution, target, coords,
+                                      coord_capacity);
     if (backward_stats_enabled) {
         backward_stats.reduction_seconds += backward_elapsed(started);
         started = backward_now();
@@ -198,7 +225,7 @@ static int accumulate_pass_gradient(tensor** destination,
         }
         return 0;
     }
-    if (add_in_place(*destination, reduced) == 0) {
+    if (add_in_place(*destination, reduced, coords, coord_capacity) == 0) {
         t_free(reduced);
         if (backward_stats_enabled) {
             backward_stats.accumulation_seconds += backward_elapsed(started);
@@ -268,7 +295,9 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
     node_list nodes = {0};
     tensor** pass_gradients = NULL;
     tensor** contributions = NULL;
+    int* reduction_coords = NULL;
     int contribution_capacity = 0;
+    int reduction_coord_capacity = 0;
     int status = 1;
     double started = backward_stats_enabled ? backward_now() : 0.0;
 
@@ -276,6 +305,16 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
     if (!graph_versions_match(&nodes)) goto cleanup;
     if (backward_stats_enabled) {
         backward_stats.traversal_seconds += backward_elapsed(started);
+    }
+
+    for (int index = 0; index < tensors.count; ++index) {
+        int ndim = tensors.values[index]->value->ndim;
+        if (ndim > reduction_coord_capacity) reduction_coord_capacity = ndim;
+    }
+    if (reduction_coord_capacity > 0) {
+        reduction_coords = (int*)calloc((size_t)reduction_coord_capacity,
+                                        sizeof(*reduction_coords));
+        if (reduction_coords == NULL) goto cleanup;
     }
 
     for (int node_index = 0; node_index < nodes.count; ++node_index) {
@@ -333,7 +372,9 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
             int destination = input->graph_index;
             if (destination < 0 || contributions[input_index] == NULL ||
                 accumulate_pass_gradient(&pass_gradients[destination],
-                                         contributions[input_index], input->value) != 0) {
+                                         contributions[input_index], input->value,
+                                         reduction_coords,
+                                         reduction_coord_capacity) != 0) {
                 contributions[input_index] = NULL;
                 free_contributions(contributions, node->input_count);
                 goto cleanup;
@@ -349,6 +390,7 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
     }
 
 cleanup:
+    free(reduction_coords);
     free_contributions(contributions, contribution_capacity);
     free(contributions);
     if (pass_gradients != NULL) {
