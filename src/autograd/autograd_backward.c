@@ -124,9 +124,15 @@ static int merge_persistent_gradients(const tensor_list* tensors, tensor** pass_
     for (int i = 0; i < tensors->count; ++i) {
         ag_tensor* value = tensors->values[i];
         if (!value->requires_grad || pass_gradients[i] == NULL) continue;
-        merged[i] = value->grad == NULL
-                  ? t_clone(pass_gradients[i])
-                  : t_add(value->grad, pass_gradients[i]);
+        if (value->grad == NULL && is_contiguous(pass_gradients[i]) &&
+            pass_gradients[i]->offset == 0) {
+            merged[i] = pass_gradients[i];
+            pass_gradients[i] = NULL;
+        } else {
+            merged[i] = value->grad == NULL
+                      ? t_clone(pass_gradients[i])
+                      : t_add(value->grad, pass_gradients[i]);
+        }
         if (merged[i] == NULL) {
             for (int j = 0; j < tensors->count; ++j) t_free(merged[j]);
             free(merged);
