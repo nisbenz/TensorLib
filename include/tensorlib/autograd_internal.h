@@ -18,6 +18,12 @@ ag_tensor* ag_matmul_packed_rhs(
     const ag_tensor* b,
     const tensor_matmul_packed_rhs* packed_rhs
 );
+ag_tensor* ag_matmul_packed_rhs_with_backward_pack(
+    const ag_tensor* a,
+    const ag_tensor* b,
+    const tensor_matmul_packed_rhs* packed_rhs,
+    const tensor_matmul_packed_rhs* backward_rhs
+);
 
 ag_tensor* ag_layer_norm(const ag_tensor* input,
                          const ag_tensor* weight,
