@@ -132,6 +132,7 @@ static int suite_selected(const char* requested, const char* suite)
 int bench_run_kernel_suite(const bench_options* options, FILE* csv);
 int bench_run_autograd_suite(const bench_options* options, FILE* csv);
 int bench_run_nn_suite(const bench_options* options, FILE* csv);
+int bench_run_backward_matrix_suite(const bench_options* options, FILE* csv);
 int bench_run_scaling_suite(const bench_options* options, FILE* csv);
 
 int bench_run_suites(const bench_options* options, FILE* csv)
@@ -147,6 +148,7 @@ int bench_run_suites(const bench_options* options, FILE* csv)
     }
     if (suite_selected(options->suite, "nn")) {
         status |= bench_run_nn_suite(options, csv);
+        status |= bench_run_backward_matrix_suite(options, csv);
     }
     if (suite_selected(options->suite, "scaling")) {
         status |= bench_run_scaling_suite(options, csv);

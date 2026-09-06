@@ -223,6 +223,7 @@ if (TENSORLIB_BUILD_BENCHMARKS)
         benchmarks/bench_runner.c
         benchmarks/bench_kernels.c
         benchmarks/bench_autograd.c
+        benchmarks/bench_backward.c
         benchmarks/bench_nn.c
         benchmarks/bench_scaling.c)
     target_link_libraries(bench_tensorlib PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
