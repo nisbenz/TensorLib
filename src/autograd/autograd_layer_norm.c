@@ -65,6 +65,12 @@ static int backward_layer_norm(const ag_node* node,
         bias_gradient = t_alloc(1, &width);
         if (bias_gradient == NULL) goto fail;
     }
+    if (weight_gradient != NULL) {
+        for (int k = 0; k < width; ++k) weight_gradient->storage->data[k] = 0.0f;
+    }
+    if (bias_gradient != NULL) {
+        for (int k = 0; k < width; ++k) bias_gradient->storage->data[k] = 0.0f;
+    }
 
     for (int row = 0; row < context->rows; ++row) {
         int input_base = row_base(input, row, width);
@@ -94,8 +100,9 @@ static int backward_layer_norm(const ag_node* node,
                                   output_gradient->strides[output_gradient->ndim - 1]];
                 float scale = weight == NULL ? 1.0f : weight->storage->data[k];
                 input_gradient->storage->data[row * width + k] =
-                    context->inverse_stds[row] * scale *
-                    (upstream - sum / width_f - normalized * weighted_sum / width_f);
+                    context->inverse_stds[row] *
+                    (upstream * scale - sum / width_f -
+                     normalized * weighted_sum / width_f);
             }
         }
     }
