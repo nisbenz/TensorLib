@@ -2,6 +2,7 @@
 
 #include "../../fixtures/test_common.h"
 #include "../../../include/tensorlib/tensor.h"
+#include "../../../src/tensor/tensor_matmul_internal.h"
 
 static void fill_tensor(tensor* t, const float* values, int count) {
     for (int i = 0; i < count; ++i) t->storage->data[i] = values[i];
@@ -537,6 +538,51 @@ TEST(test_t_matmul_allows_aliasing_and_returns_independent_storage) {
     t_free(a);
 }
 
+TEST(test_direct_rhs_gradient_handles_broadcast_strides_and_vectors) {
+    int owner_dims[3] = {2, 3, 2};
+    int gradient_dims[3] = {2, 2, 5};
+    int rhs_dims[2] = {3, 5};
+    tensor* owner = t_alloc(3, owner_dims);
+    tensor* lhs = t_transpose(owner, 1, 2);
+    tensor* gradient = t_alloc(3, gradient_dims);
+    tensor* rhs = t_alloc(2, rhs_dims);
+    for (int index = 0; index < tensor_numel(owner); ++index) {
+        owner->storage->data[index] = 0.1f * (float)(index + 1);
+    }
+    for (int index = 0; index < tensor_numel(gradient); ++index) {
+        gradient->storage->data[index] = 0.01f * (float)(index - 7);
+    }
+    tensor* lhs_transpose = t_transpose(lhs, 1, 2);
+    tensor* batched = t_matmul(lhs_transpose, gradient);
+    tensor* expected = t_sum(batched, 0);
+    tensor* actual = tensor_matmul_backward_rhs(lhs, gradient, rhs);
+    assert_same_tensor(actual, expected);
+    t_free(actual); t_free(expected); t_free(batched); t_free(lhs_transpose);
+    t_free(rhs); t_free(gradient); t_free(lhs); t_free(owner);
+
+    int vector_dims[1] = {3};
+    int matrix_dims[2] = {3, 2};
+    int output_dims[1] = {2};
+    float lhs_values[3] = {1, 2, 3};
+    float gradient_values[2] = {4, 5};
+    tensor* lhs_vector = t_alloc(1, vector_dims);
+    tensor* rhs_matrix = t_alloc(2, matrix_dims);
+    tensor* vector_gradient = t_alloc(1, output_dims);
+    fill_tensor(lhs_vector, lhs_values, 3);
+    fill_tensor(vector_gradient, gradient_values, 2);
+    actual = tensor_matmul_backward_rhs(lhs_vector, vector_gradient, rhs_matrix);
+    ASSERT_NOT_NULL(actual);
+    for (int inner = 0; inner < 3; ++inner) {
+        for (int column = 0; column < 2; ++column) {
+            ASSERT_EQ_FLOAT(actual->storage->data[inner * 2 + column],
+                            lhs_values[inner] * gradient_values[column]);
+        }
+    }
+    ASSERT_NULL(tensor_matmul_backward_rhs(lhs_vector, lhs_vector, rhs_matrix));
+    t_free(actual); t_free(vector_gradient); t_free(rhs_matrix);
+    t_free(lhs_vector);
+}
+
 int main(void) {
     printf("== tensor_matmul.c ==\n");
     RUN_TEST(test_t_matmul_2d);
@@ -556,5 +602,6 @@ int main(void) {
     RUN_TEST(test_t_matmul_rejects_invalid_shapes);
     RUN_TEST(test_t_matmul_validates_vector_inner_dimension);
     RUN_TEST(test_t_matmul_allows_aliasing_and_returns_independent_storage);
+    RUN_TEST(test_direct_rhs_gradient_handles_broadcast_strides_and_vectors);
     TEST_SUITE_SUMMARY();
 }

@@ -21,6 +21,7 @@
 
 #include "../../include/tensorlib/tensor_matmul.h"
 #include "parallel.h"
+#include "tensor_matmul_internal.h"
 
 enum {
     TENSORLIB_MATMUL_MC = 64,
@@ -923,6 +924,92 @@ int broadcast_batch_shape(const tensor* a,
     }
 
     return 1;
+}
+
+tensor* tensor_matmul_backward_rhs(const tensor* lhs,
+                                   const tensor* output_gradient,
+                                   const tensor* rhs)
+{
+    if (!tensor_has_valid_metadata(lhs) ||
+        !tensor_has_valid_metadata(output_gradient) ||
+        !tensor_has_valid_metadata(rhs) || lhs->ndim == 0 || rhs->ndim == 0) {
+        return NULL;
+    }
+    matmul_operand_info lhs_info = {
+        lhs->ndim == 1, lhs->ndim > 1 ? lhs->ndim - 2 : 0,
+        lhs->ndim == 1 ? 1 : lhs->dims[lhs->ndim - 2],
+        lhs->dims[lhs->ndim - 1], 0
+    };
+    matmul_operand_info rhs_info = {
+        rhs->ndim == 1, rhs->ndim > 1 ? rhs->ndim - 2 : 0, 0,
+        rhs->ndim == 1 ? rhs->dims[0] : rhs->dims[rhs->ndim - 2],
+        rhs->ndim == 1 ? 1 : rhs->dims[rhs->ndim - 1]
+    };
+    if (lhs_info.inner != rhs_info.inner) return NULL;
+    int batch_ndim = lhs_info.batch_rank > rhs_info.batch_rank
+                   ? lhs_info.batch_rank : rhs_info.batch_rank;
+    if (batch_ndim > TENSORLIB_MATMUL_MAX_NDIM) return NULL;
+    int batch_dims[TENSORLIB_MATMUL_MAX_NDIM];
+    if (!broadcast_batch_shape(lhs, &lhs_info, rhs, &rhs_info,
+                               batch_ndim, batch_dims)) return NULL;
+    int expected_ndim = batch_ndim + 2 - lhs_info.is_vector - rhs_info.is_vector;
+    if (output_gradient->ndim != expected_ndim) return NULL;
+    for (int axis = 0; axis < batch_ndim; ++axis) {
+        if (output_gradient->dims[axis] != batch_dims[axis]) return NULL;
+    }
+    int output_axis = batch_ndim;
+    if (!lhs_info.is_vector &&
+        output_gradient->dims[output_axis++] != lhs_info.rows) return NULL;
+    if (!rhs_info.is_vector &&
+        output_gradient->dims[output_axis] != rhs_info.columns) return NULL;
+
+    tensor* result = t_alloc(rhs->ndim, rhs->dims);
+    if (result == NULL) return NULL;
+    for (int index = 0; index < tensor_numel(result); ++index) {
+        result->storage->data[index] = 0.0f;
+    }
+    size_t batch_count;
+    if (!tensor_checked_numel(batch_ndim, batch_dims, &batch_count)) {
+        t_free(result);
+        return NULL;
+    }
+    int coords[TENSORLIB_MATMUL_MAX_NDIM];
+    for (size_t batch = 0; batch < batch_count; ++batch) {
+        batch_index_to_coords(batch, batch_dims, batch_ndim, coords);
+        int lhs_base = operand_batch_offset(lhs, &lhs_info, coords, batch_ndim);
+        int result_base = operand_batch_offset(result, &rhs_info,
+                                               coords, batch_ndim);
+        int gradient_base = output_batch_offset(output_gradient, coords,
+                                                batch_ndim);
+        for (int inner = 0; inner < lhs_info.inner; ++inner) {
+            for (int column = 0; column < rhs_info.columns; ++column) {
+                float sum = 0.0f;
+                for (int row = 0; row < lhs_info.rows; ++row) {
+                    int lhs_index = lhs_info.is_vector
+                        ? lhs->offset + inner * lhs->strides[0]
+                        : lhs_base + row * lhs->strides[lhs->ndim - 2] +
+                          inner * lhs->strides[lhs->ndim - 1];
+                    int gradient_index = gradient_base;
+                    if (!lhs_info.is_vector) {
+                        gradient_index += row * output_gradient->strides[batch_ndim];
+                    }
+                    if (!rhs_info.is_vector) {
+                        int column_axis = batch_ndim + !lhs_info.is_vector;
+                        gradient_index += column *
+                                          output_gradient->strides[column_axis];
+                    }
+                    sum += lhs->storage->data[lhs_index] *
+                           output_gradient->storage->data[gradient_index];
+                }
+                int result_index = rhs_info.is_vector
+                    ? result_base + inner * result->strides[0]
+                    : result_base + inner * result->strides[result->ndim - 2] +
+                      column * result->strides[result->ndim - 1];
+                result->storage->data[result_index] += sum;
+            }
+        }
+    }
+    return result;
 }
 
 void matmul_2d_strided(const tensor* a,
