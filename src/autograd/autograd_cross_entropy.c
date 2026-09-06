@@ -2,6 +2,9 @@
 #include <stdlib.h>
 
 #include "../../include/tensorlib/autograd_internal.h"
+#include "../tensor/parallel.h"
+
+#define TENSORLIB_CROSS_ENTROPY_MIN_PARALLEL_ELEMENTS (1 << 16)
 
 typedef struct {
     int rows;
@@ -60,6 +63,12 @@ static int backward_cross_entropy(const ag_node* node,
     if (gradient == NULL) return 1;
     upstream = output_gradient->storage->data[output_gradient->offset] /
                (float)context->rows;
+    int threads = tensorlib_parallel_threads(
+        (long long)context->rows * context->classes,
+        TENSORLIB_CROSS_ENTROPY_MIN_PARALLEL_ELEMENTS, context->rows);
+#ifdef _OPENMP
+#pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
+#endif
     for (int row = 0; row < context->rows; ++row) {
         int base = row_base(input, row, context->classes);
         float maximum = -INFINITY;

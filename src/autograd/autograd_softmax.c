@@ -2,6 +2,9 @@
 #include <stdlib.h>
 
 #include "../../include/tensorlib/autograd_internal.h"
+#include "../tensor/parallel.h"
+
+#define TENSORLIB_SOFTMAX_MIN_PARALLEL_ELEMENTS (1 << 16)
 
 typedef struct {
     int rows;
@@ -44,6 +47,12 @@ static int backward_softmax(const ag_node* node,
     gradient = t_alloc(output->ndim, output->dims);
     if (gradient == NULL) return 1;
 
+    int threads = tensorlib_parallel_threads(
+        (long long)context->rows * context->width,
+        TENSORLIB_SOFTMAX_MIN_PARALLEL_ELEMENTS, context->rows);
+#ifdef _OPENMP
+#pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
+#endif
     for (int row = 0; row < context->rows; ++row) {
         int width = allowed_width(context, row);
         int output_base = row_base(output, row, context->width);
