@@ -102,6 +102,12 @@ struct nn_linear {
     int in_features;
     int out_features;
     int use_bias;
+
+    /* Runtime-only packed view of weight^T, refreshed by storage version. */
+    tensor_matmul_packed_rhs* packed_weight;
+    uint64_t packed_weight_version;
+    tensor_matmul_packed_rhs* packed_backward_weight;
+    uint64_t packed_backward_weight_version;
 };
 
 struct nn_embedding {

@@ -2,6 +2,9 @@
 #include <stdlib.h>
 
 #include "./../../include/tensorlib/autograd_internal.h"
+#include "../tensor/parallel.h"
+
+#define TENSORLIB_GELU_MIN_PARALLEL_ELEMENTS (1 << 16)
 
 static void free_gradients(tensor** gradients, int count) {
     for (int i = 0; i < count; ++i) {
@@ -17,7 +20,8 @@ static int backward_add(const ag_node* node,
         !tensor_has_valid_metadata(output_gradient) || input_gradients == NULL) return 1;
     for (int i = 0; i < 2; ++i) {
         if (node->inputs[i]->requires_grad) {
-            input_gradients[i] = t_clone((tensor*)output_gradient);
+            input_gradients[i] = ag_sum_to_shape(
+                output_gradient, node->inputs[i]->value, 1.0f);
             if (input_gradients[i] == NULL) {
                 free_gradients(input_gradients, 2);
                 return 1;
@@ -33,11 +37,13 @@ static int backward_sub(const ag_node* node,
     if (node == NULL || node->input_count != 2 ||
         !tensor_has_valid_metadata(output_gradient) || input_gradients == NULL) return 1;
     if (node->inputs[0]->requires_grad) {
-        input_gradients[0] = t_clone((tensor*)output_gradient);
+        input_gradients[0] = ag_sum_to_shape(
+            output_gradient, node->inputs[0]->value, 1.0f);
         if (input_gradients[0] == NULL) return 1;
     }
     if (node->inputs[1]->requires_grad) {
-        input_gradients[1] = t_neg((tensor*)output_gradient);
+        input_gradients[1] = ag_sum_to_shape(
+            output_gradient, node->inputs[1]->value, -1.0f);
         if (input_gradients[1] == NULL) {
             free_gradients(input_gradients, 2);
             return 1;
@@ -406,8 +412,44 @@ static int backward_gelu(const ag_node* node,
     if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
         !tensor_has_valid_metadata(output_gradient)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
-    input_gradients[0] = apply_unary_derivative(node, output_gradient,
-                                                derivative_gelu);
+    tensor* input = node->inputs[0]->value;
+    tensor* result = t_alloc(input->ndim, input->dims);
+    if (result == NULL) return 1;
+    int count = tensor_numel(input);
+    int threads = tensorlib_parallel_threads(
+        count, TENSORLIB_GELU_MIN_PARALLEL_ELEMENTS, 0);
+#ifndef _OPENMP
+    (void)threads;
+#endif
+    if (is_contiguous(input) && is_contiguous((tensor*)output_gradient)) {
+        const float* input_data = input->storage->data + input->offset;
+        const float* upstream_data = output_gradient->storage->data +
+                                      output_gradient->offset;
+#ifdef _OPENMP
+#pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
+#endif
+        for (int index = 0; index < count; ++index) {
+            result->storage->data[index] = upstream_data[index] *
+                                           derivative_gelu(input_data[index], 0.0f);
+        }
+    } else {
+        int* coords = input->ndim > 0
+                    ? (int*)calloc((size_t)input->ndim, sizeof(*coords)) : NULL;
+        if (input->ndim > 0 && coords == NULL) {
+            t_free(result);
+            return 1;
+        }
+        for (int index = 0; index < count; ++index) {
+            int input_index = get_flat_index_nd(input, coords);
+            int upstream_index = get_flat_index_nd((tensor*)output_gradient, coords);
+            result->storage->data[index] =
+                output_gradient->storage->data[upstream_index] *
+                derivative_gelu(input->storage->data[input_index], 0.0f);
+            advance_coords(coords, input->dims, input->ndim);
+        }
+        free(coords);
+    }
+    input_gradients[0] = result;
     return input_gradients[0] == NULL;
 }
 

@@ -68,10 +68,11 @@ static int run_iterations(bench_operation operation,
     return 0;
 }
 
-int bench_measure(bench_operation operation,
-                  void* context,
-                  const bench_profile* profile,
-                  bench_measurement* result)
+int bench_measure_with_reset(bench_operation operation,
+                             void* context,
+                             const bench_profile* profile,
+                             bench_measure_reset reset,
+                             bench_measurement* result)
 {
     double* samples;
     double checksum = 0.0;
@@ -96,6 +97,7 @@ int bench_measure(bench_operation operation,
         if (iterations > 1000000) iterations = 1000000;
     }
 
+    if (reset != NULL) reset(context);
     samples = (double*)malloc((size_t)profile->sample_count * sizeof(*samples));
     if (samples == NULL) return 1;
     checksum = 0.0;
@@ -115,4 +117,12 @@ int bench_measure(bench_operation operation,
     result->iterations_per_sample = iterations;
     free(samples);
     return 0;
+}
+
+int bench_measure(bench_operation operation,
+                  void* context,
+                  const bench_profile* profile,
+                  bench_measurement* result)
+{
+    return bench_measure_with_reset(operation, context, profile, NULL, result);
 }

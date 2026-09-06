@@ -1,6 +1,82 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../../include/tensorlib/tensor.h"
+#include "tensor_alloc_internal.h"
+
+static int stats_enabled;
+static volatile unsigned long long stats_allocations;
+static volatile unsigned long long stats_frees;
+static volatile size_t stats_allocated_bytes;
+static volatile size_t stats_live_bytes;
+static volatile size_t stats_peak_live_bytes;
+
+static void record_storage_alloc(size_t bytes)
+{
+    if (!stats_enabled) return;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    ++stats_allocations;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    stats_allocated_bytes += bytes;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    stats_live_bytes += bytes;
+#ifdef _OPENMP
+#pragma omp critical(tensor_alloc_stats_peak)
+#endif
+    if (stats_live_bytes > stats_peak_live_bytes) {
+        stats_peak_live_bytes = stats_live_bytes;
+    }
+}
+
+static void record_storage_free(size_t bytes)
+{
+    if (!stats_enabled) return;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    ++stats_frees;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    stats_live_bytes -= bytes;
+}
+
+void tensor_alloc_stats_enable(int enabled)
+{
+    stats_enabled = enabled != 0;
+}
+
+void tensor_alloc_stats_reset(void)
+{
+    stats_allocations = 0;
+    stats_frees = 0;
+    stats_allocated_bytes = 0;
+    stats_live_bytes = 0;
+    stats_peak_live_bytes = 0;
+}
+
+void tensor_alloc_stats_reset_counters(void)
+{
+    stats_allocations = 0;
+    stats_frees = 0;
+    stats_allocated_bytes = 0;
+    stats_peak_live_bytes = stats_live_bytes;
+}
+
+void tensor_alloc_stats_read(tensor_alloc_stats* result)
+{
+    if (result == NULL) return;
+    result->allocations = stats_allocations;
+    result->frees = stats_frees;
+    result->allocated_bytes = stats_allocated_bytes;
+    result->live_bytes = stats_live_bytes;
+    result->peak_live_bytes = stats_peak_live_bytes;
+}
 
 void add_ref_count(Storage* a, tensor* b) {
     if (a != NULL && b != NULL) {
@@ -23,6 +99,7 @@ Storage* s_alloc(int ndim, const int* dims) {
         free(s);
         return NULL;
     }
+    record_storage_alloc(count * sizeof(float));
     return s;
 }
 
@@ -64,6 +141,7 @@ void t_free(tensor* t) {
         if (t->storage->ref_count > 1) {
             t->storage->ref_count--;
         } else {
+            record_storage_free((size_t)t->storage->size * sizeof(float));
             free(t->storage->data);
             free(t->storage);
         }
@@ -95,6 +173,7 @@ int init_t(tensor* c, tensor* ref) {
         c->storage = NULL;
         return 1;
     }
+    record_storage_alloc((size_t)total_elements * sizeof(float));
 
     if (ref->ndim > 0) {
         int* strides = (int*)malloc((size_t)ref->ndim * sizeof(int));
@@ -131,19 +210,44 @@ tensor* t_clone(tensor* t) {
         return a;
     }
 
-    int* coords = NULL;
-    if (t->ndim > 0) {
-        coords = (int*)calloc((size_t)t->ndim, sizeof(int));
-        if (coords == NULL) {
-            t_free(a);
-            return NULL;
+    if (t->ndim == 2 && t->strides[0] == 1 &&
+        t->strides[1] >= t->dims[0]) {
+        const int tile = 32;
+        for (int row_block = 0; row_block < t->dims[0]; row_block += tile) {
+            int row_end = row_block + tile;
+            if (row_end > t->dims[0]) row_end = t->dims[0];
+            for (int column_block = 0; column_block < t->dims[1];
+                 column_block += tile) {
+                int column_end = column_block + tile;
+                if (column_end > t->dims[1]) column_end = t->dims[1];
+                for (int row = row_block; row < row_end; ++row) {
+                    for (int column = column_block; column < column_end; ++column) {
+                        a->storage->data[row * t->dims[1] + column] =
+                            t->storage->data[t->offset + row * t->strides[0] +
+                                             column * t->strides[1]];
+                    }
+                }
+            }
         }
+        return a;
+    }
+
+    int* coords = (int*)calloc((size_t)t->ndim, sizeof(int));
+    int src_idx = t->offset;
+    if (t->ndim > 0 && coords == NULL) {
+        t_free(a);
+        return NULL;
     }
 
     for (int i = 0; i < total_elements; i++) {
-        int src_idx = get_flat_index_nd(t, coords);
         a->storage->data[i] = t->storage->data[src_idx];
-        advance_coords(coords, t->dims, t->ndim);
+        for (int axis = t->ndim - 1; axis >= 0; --axis) {
+            coords[axis]++;
+            src_idx += t->strides[axis];
+            if (coords[axis] < t->dims[axis]) break;
+            coords[axis] = 0;
+            src_idx -= t->dims[axis] * t->strides[axis];
+        }
     }
     free(coords);
     return a;

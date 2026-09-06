@@ -156,6 +156,48 @@ static void test_vector_batch_and_no_bias(void)
     nn_linear_destroy(layer);
 }
 
+static void test_weight_update_refreshes_packed_state(void)
+{
+    int input_dims[] = {2, 3};
+    float values[] = {1, 2, 3, 4, 5, 6};
+    nn_linear* layer = nn_linear_create(
+        "cached", 3, 2, 0, NN_INIT_ZERO, NN_INIT_ZERO, NULL);
+    ag_tensor* input = make_ag(2, input_dims, values, 0);
+    ag_tensor* first;
+    ag_tensor* second;
+
+    CHECK(layer != NULL && input != NULL);
+    if (layer == NULL || input == NULL) {
+        ag_tensor_release(input);
+        nn_linear_destroy(layer);
+        return;
+    }
+    for (int i = 0; i < 6; ++i) {
+        layer->weight->value->value->storage->data[i] = 1.0f;
+    }
+    tensor_mark_modified(layer->weight->value->value);
+    first = nn_linear_forward(layer, input);
+    CHECK(first != NULL);
+    if (first != NULL) {
+        CHECK(first->value->storage->data[0] == 6.0f);
+        CHECK(first->value->storage->data[1] == 6.0f);
+    }
+    for (int i = 0; i < 6; ++i) {
+        layer->weight->value->value->storage->data[i] = 2.0f;
+    }
+    tensor_mark_modified(layer->weight->value->value);
+    second = nn_linear_forward(layer, input);
+    CHECK(second != NULL);
+    if (second != NULL) {
+        CHECK(second->value->storage->data[0] == 12.0f);
+        CHECK(second->value->storage->data[1] == 12.0f);
+    }
+    ag_tensor_release(second);
+    ag_tensor_release(first);
+    ag_tensor_release(input);
+    nn_linear_destroy(layer);
+}
+
 static void test_invalid(void)
 {
     int bad_dims[] = {2, 4};
@@ -186,6 +228,7 @@ int main(void)
     test_constructor();
     test_forward_and_backward();
     test_vector_batch_and_no_bias();
+    test_weight_update_refreshes_packed_state();
     test_invalid();
     if (failures != 0) {
         fprintf(stderr, "%d Linear contract checks failed\n", failures);

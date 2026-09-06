@@ -1,8 +1,11 @@
 #include "bench_runner.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include <tensorlib/nn.h>
+#include <tensorlib/autograd_internal.h>
+#include "../src/tensor/tensor_alloc_internal.h"
 
 typedef ag_tensor* (*model_forward)(const void* model, const ag_tensor* input);
 
@@ -16,7 +19,24 @@ typedef struct {
     nn_adamw* adamw;
     nn_rng rng;
     int train;
+    int component_backward;
+    double* phase_samples[6];
+    int phase_sample_count;
+    int phase_sample_capacity;
+    tensor_alloc_stats allocation_stats;
+    ag_backward_stats backward_stats;
+    size_t allocation_baseline_bytes;
 } nn_bench_context;
+
+enum {
+    PHASE_ZERO_GRAD,
+    PHASE_FORWARD,
+    PHASE_LOSS,
+    PHASE_BACKWARD,
+    PHASE_ADAMW,
+    PHASE_GRAPH_RELEASE,
+    PHASE_COUNT
+};
 
 static ag_tensor* make_input(int ndim, const int* dims, int token_ids)
 {
@@ -44,33 +64,190 @@ static tensor* make_targets(int count, int classes)
 static int nn_operation(void* opaque, double* checksum)
 {
     nn_bench_context* context = (nn_bench_context*)opaque;
-    ag_tensor* output = context->forward(context->model, context->input);
+    ag_tensor* output;
     ag_tensor* loss = NULL;
     int status = 1;
+    double started;
+    double phase_times[PHASE_COUNT] = {0};
 
+    if (context->train) {
+        started = bench_now_seconds();
+        if (context->sgd != NULL) {
+            nn_sgd_zero_grad(context->sgd);
+        } else if (context->adamw != NULL) {
+            nn_adamw_zero_grad(context->adamw);
+        }
+        phase_times[PHASE_ZERO_GRAD] = bench_now_seconds() - started;
+    }
+    if (context->component_backward) nn_module_zero_grad(context->module);
+
+    started = bench_now_seconds();
+    output = context->forward(context->model, context->input);
+    if (context->train) {
+        phase_times[PHASE_FORWARD] = bench_now_seconds() - started;
+    }
     if (output == NULL) goto cleanup;
     if (context->train) {
+        started = bench_now_seconds();
         loss = nn_cross_entropy(output, context->targets);
-        if (loss == NULL || ag_backward(loss) != 0) goto cleanup;
+        phase_times[PHASE_LOSS] = bench_now_seconds() - started;
+        if (loss == NULL) goto cleanup;
+        started = bench_now_seconds();
+        if (ag_backward(loss) != 0) goto cleanup;
+        phase_times[PHASE_BACKWARD] = bench_now_seconds() - started;
+        started = bench_now_seconds();
         if (context->sgd != NULL) {
             if (nn_sgd_step(context->sgd) != 0) goto cleanup;
-            nn_sgd_zero_grad(context->sgd);
         } else {
             if (context->adamw == NULL || nn_adamw_step(context->adamw) != 0) {
                 goto cleanup;
             }
-            nn_adamw_zero_grad(context->adamw);
         }
+        phase_times[PHASE_ADAMW] = bench_now_seconds() - started;
         *checksum += loss->value->storage->data[loss->value->offset];
+    } else if (context->component_backward) {
+        tensor* seed = t_alloc(output->value->ndim, output->value->dims);
+        if (seed == NULL) goto cleanup;
+        for (int index = 0; index < tensor_numel(seed); ++index) {
+            seed->storage->data[index] = 1.0f;
+        }
+        if (ag_backward_with_grad(output, seed) != 0) {
+            t_free(seed);
+            goto cleanup;
+        }
+        t_free(seed);
+        *checksum += output->value->storage->data[output->value->offset];
     } else {
         *checksum += output->value->storage->data[output->value->offset];
     }
     status = 0;
 
 cleanup:
+    if (context->train) started = bench_now_seconds();
     ag_tensor_release(loss);
     ag_tensor_release(output);
+    if (context->component_backward) nn_module_zero_grad(context->module);
+    if (context->train) {
+        phase_times[PHASE_GRAPH_RELEASE] = bench_now_seconds() - started;
+        if (context->phase_sample_count < context->phase_sample_capacity) {
+            for (int phase = 0; phase < PHASE_COUNT; ++phase) {
+                context->phase_samples[phase][context->phase_sample_count] =
+                    phase_times[phase];
+            }
+            ++context->phase_sample_count;
+        }
+    }
     return status;
+}
+
+static void reset_phase_samples(void* opaque)
+{
+    nn_bench_context* context = (nn_bench_context*)opaque;
+    context->phase_sample_count = 0;
+    tensor_alloc_stats_reset_counters();
+}
+
+static void report_allocation_stats(const bench_options* options,
+                                    FILE* csv,
+                                    int requested_threads,
+                                    int measured_threads,
+                                    const nn_bench_context* context)
+{
+    double calls = context->phase_sample_count > 0
+                 ? (double)context->phase_sample_count : 1.0;
+    const tensor_alloc_stats* stats = &context->allocation_stats;
+    bench_record_scalar(options, csv, "nn_phase", "tiny_lm_allocations",
+                        "[Bx128]->[Bx128x256]", "isolated-phase",
+                        "alloc/call", requested_threads, measured_threads,
+                        (double)stats->allocations / calls);
+    bench_record_scalar(options, csv, "nn_phase", "tiny_lm_allocated_bytes",
+                        "[Bx128]->[Bx128x256]", "isolated-phase",
+                        "bytes/call", requested_threads, measured_threads,
+                        (double)stats->allocated_bytes / calls);
+    bench_record_scalar(options, csv, "nn_phase", "tiny_lm_peak_live_bytes",
+                        "[Bx128]->[Bx128x256]", "isolated-phase",
+                        "bytes", requested_threads, measured_threads,
+                        (double)(stats->peak_live_bytes >=
+                                 context->allocation_baseline_bytes
+                             ? stats->peak_live_bytes -
+                               context->allocation_baseline_bytes : 0));
+}
+
+static void report_backward_stats(const bench_options* options,
+                                  FILE* csv,
+                                  int requested_threads,
+                                  int measured_threads,
+                                  const nn_bench_context* context)
+{
+    static const char* names[AG_BACKWARD_OP_COUNT] = {
+        "add", "sub", "mul", "div", "neg", "exp", "log", "pow",
+        "sqrt", "relu", "sigmoid", "tanh", "gelu", "matmul", "sum",
+        "mean", "max", "reshape", "transpose", "slice", "expand",
+        "gather_rows", "mul_scalar", "div_scalar", "layer_norm",
+        "softmax", "log_softmax", "cross_entropy"
+    };
+    const ag_backward_stats* stats = &context->backward_stats;
+    for (int operation = 0; operation < AG_BACKWARD_OP_COUNT; ++operation) {
+        if (stats->operation_calls[operation] == 0) continue;
+        char name[64];
+        snprintf(name, sizeof(name), "backward_op_%s", names[operation]);
+        bench_record_scalar(options, csv, "nn_backward", name,
+            "[Bx128]->[Bx128x256]", "profiled-single-call", "ms/call",
+            requested_threads, measured_threads,
+            stats->operation_seconds[operation] * 1000.0);
+    }
+    static const char* engine_names[] = {
+        "backward_graph_traversal", "backward_shape_reduction",
+        "backward_gradient_accumulation", "backward_persistent_merge"
+    };
+    const double engine_values[] = {
+        stats->traversal_seconds, stats->reduction_seconds,
+        stats->accumulation_seconds, stats->merge_seconds
+    };
+    for (int index = 0; index < 4; ++index) {
+        bench_record_scalar(options, csv, "nn_backward", engine_names[index],
+            "[Bx128]->[Bx128x256]", "profiled-single-call", "ms/call",
+            requested_threads, measured_threads,
+            engine_values[index] * 1000.0);
+    }
+}
+
+static int compare_double(const void* left, const void* right)
+{
+    double a = *(const double*)left;
+    double b = *(const double*)right;
+    return (a > b) - (a < b);
+}
+
+static void report_training_phases(const bench_options* options,
+                                   FILE* csv,
+                                   int requested_threads,
+                                   int measured_threads,
+                                   nn_bench_context* context)
+{
+    static const char* names[PHASE_COUNT] = {
+        "tiny_lm_zero_grad", "tiny_lm_forward_phase", "tiny_lm_loss",
+        "tiny_lm_backward", "tiny_lm_adamw", "tiny_lm_graph_release"
+    };
+    if (context->phase_sample_count <= 0) return;
+    for (int phase = 0; phase < PHASE_COUNT; ++phase) {
+        bench_case benchmark = {
+            "nn_phase", names[phase], "[Bx128]->[Bx128x256]",
+            "isolated-phase", "ms/call", 0.0, 0, NULL, NULL
+        };
+        bench_measurement result;
+        qsort(context->phase_samples[phase],
+              (size_t)context->phase_sample_count, sizeof(double), compare_double);
+        result.median_seconds =
+            context->phase_samples[phase][context->phase_sample_count / 2];
+        result.p95_seconds = context->phase_samples[phase][
+            (95 * context->phase_sample_count - 1) / 100];
+        result.checksum = result.median_seconds;
+        result.iterations_per_sample = 1;
+        benchmark.context = context;
+        bench_record_measurement(options, csv, &benchmark,
+                                 requested_threads, measured_threads, &result);
+    }
 }
 
 static int run_nn_case(const bench_options* options,
@@ -89,17 +266,34 @@ static int run_nn_case(const bench_options* options,
         suite, name, shape, layout, metric, items, 1,
         nn_operation, context
     };
+    benchmark.reset = context->train ? reset_phase_samples : NULL;
     return bench_execute_case(options, csv, &benchmark, threads, result);
 }
 
 static void destroy_context(nn_bench_context* context)
 {
+    for (int phase = 0; phase < PHASE_COUNT; ++phase) {
+        free(context->phase_samples[phase]);
+    }
     nn_sgd_destroy(context->sgd);
     nn_adamw_destroy(context->adamw);
     t_free(context->targets);
     ag_tensor_release(context->input);
     if (context->module != NULL) context->module->destroy(context->module);
     memset(context, 0, sizeof(*context));
+}
+
+static int allocate_phase_samples(nn_bench_context* context, int sample_count)
+{
+    int capacity = sample_count * 4;
+    if (capacity < 64) capacity = 64;
+    context->phase_sample_capacity = capacity;
+    for (int phase = 0; phase < PHASE_COUNT; ++phase) {
+        context->phase_samples[phase] =
+            (double*)calloc((size_t)capacity, sizeof(double));
+        if (context->phase_samples[phase] == NULL) return 1;
+    }
+    return 0;
 }
 
 static ag_tensor* linear_forward(const void* model, const ag_tensor* input)
@@ -143,6 +337,7 @@ typedef enum {
 static int run_component(const bench_options* options,
                          FILE* csv,
                          component_kind kind,
+                         int backward,
                          int batch,
                          int time,
                          int channels)
@@ -153,6 +348,7 @@ static int run_component(const bench_options* options,
     bench_measurement result;
     const char* name = NULL;
     const char* shape = "[BxTxC]";
+    char backward_name[64];
 
     memset(&context, 0, sizeof(context));
     nn_rng_seed(&context.rng, UINT64_C(0xB34C4));
@@ -195,9 +391,16 @@ static int run_component(const bench_options* options,
         destroy_context(&context);
         return 1;
     }
+    context.component_backward = backward;
+    if (backward) context.input->requires_grad = 1;
     nn_module_set_training(context.module, 0);
+    if (backward) {
+        snprintf(backward_name, sizeof(backward_name), "%s_backward", name);
+        name = backward_name;
+    }
     int status = run_nn_case(options, csv, "nn", name, shape,
-                             "forward;graph-build", "tokens/s",
+                             backward ? "forward+backward" : "forward;graph-build",
+                             "tokens/s",
                              (double)(batch * time),
                              1, &context, &result);
     destroy_context(&context);
@@ -310,31 +513,71 @@ static int run_decoder_case(const bench_options* options,
     nn_bench_context context;
     bench_measurement local_result;
     bench_measurement* result = measurement == NULL ? &local_result : measurement;
+    if (train) {
+        tensor_alloc_stats_enable(1);
+        tensor_alloc_stats_reset();
+    }
     if (setup_decoder(&context, batch, time, channels, layers, train) != 0) {
+        if (train) tensor_alloc_stats_enable(0);
         destroy_context(&context);
         return 1;
+    }
+    if (train && allocate_phase_samples(&context, options->profile.sample_count) != 0) {
+        destroy_context(&context);
+        return 1;
+    }
+    if (train) {
+        tensor_alloc_stats_read(&context.allocation_stats);
+        context.allocation_baseline_bytes =
+            context.allocation_stats.live_bytes;
+        tensor_alloc_stats_reset_counters();
     }
     int status = run_nn_case(options, csv, suite,
         train ? "tiny_lm_train_step" : "tiny_lm_forward",
         "[Bx128]->[Bx128x256]",
         train ? "forward+loss+backward+adamw" : "forward;graph-build",
         "tokens/s", (double)(batch * time), threads, &context, result);
+    if (status == 0 && train && strcmp(suite, "nn") == 0) {
+        int measured_threads = bench_configure_threads(threads);
+        tensor_alloc_stats_read(&context.allocation_stats);
+        report_training_phases(options, csv, threads, measured_threads, &context);
+        report_allocation_stats(options, csv, threads, measured_threads, &context);
+        ag_backward_stats_reset();
+        ag_backward_stats_enable(1);
+        double checksum = 0.0;
+        int profile_status = nn_operation(&context, &checksum);
+        ag_backward_stats_enable(0);
+        ag_backward_stats_read(&context.backward_stats);
+        if (profile_status != 0) status = 1;
+        if (status == 0) {
+            report_backward_stats(options, csv, threads, measured_threads,
+                                  &context);
+        }
+    }
     destroy_context(&context);
+    if (train) {
+        tensor_alloc_stats_read(&context.allocation_stats);
+        if (context.allocation_stats.live_bytes != 0) status = 1;
+        tensor_alloc_stats_enable(0);
+    }
     return status;
 }
 
-static int run_decoder_cases(const bench_options* options, FILE* csv,
-                             int batch, int threads)
+static int run_decoder_cases(const bench_options* options, FILE* csv, int batch)
 {
     int smoke = strcmp(options->profile.profile, "smoke") == 0;
     int time = smoke ? 8 : 128;
     int channels = smoke ? 24 : 192;
     int layers = smoke ? 1 : 4;
     int forward_status = run_decoder_case(options, csv, "nn", batch, time,
-                                          channels, layers, 0, threads, NULL);
-    int train_status = run_decoder_case(options, csv, "nn", batch, time,
-                                        channels, layers, 1, threads, NULL);
-    return forward_status == 1 || train_status == 1;
+        channels, layers, 0, options->threads[0], NULL);
+    int status = forward_status == 1;
+    for (int index = 0; index < options->thread_count; ++index) {
+        int train_status = run_decoder_case(options, csv, "nn", batch, time,
+            channels, layers, 1, options->threads[index], NULL);
+        if (train_status == 1) status = 1;
+    }
+    return status;
 }
 
 int bench_run_decoder_scaling(const bench_options* options, FILE* csv)
@@ -380,17 +623,25 @@ int bench_run_nn_suite(const bench_options* options, FILE* csv)
     int status = 0;
 
     printf("Neural-network suite (eager float32)\n");
-    status |= run_component(options, csv, COMPONENT_LINEAR,
+    status |= run_component(options, csv, COMPONENT_LINEAR, 0,
                             batch, time, channels);
-    status |= run_component(options, csv, COMPONENT_LAYER_NORM,
+    status |= run_component(options, csv, COMPONENT_LINEAR, 1,
                             batch, time, channels);
-    status |= run_component(options, csv, COMPONENT_ATTENTION,
+    status |= run_component(options, csv, COMPONENT_LAYER_NORM, 0,
                             batch, time, channels);
-    status |= run_component(options, csv, COMPONENT_BLOCK,
+    status |= run_component(options, csv, COMPONENT_LAYER_NORM, 1,
+                            batch, time, channels);
+    status |= run_component(options, csv, COMPONENT_ATTENTION, 0,
+                            batch, time, channels);
+    status |= run_component(options, csv, COMPONENT_ATTENTION, 1,
+                            batch, time, channels);
+    status |= run_component(options, csv, COMPONENT_BLOCK, 0,
+                            batch, time, channels);
+    status |= run_component(options, csv, COMPONENT_BLOCK, 1,
                             batch, time, channels);
     status |= run_mlp(options, csv, smoke ? 2 : 64, 0);
     status |= run_mlp(options, csv, smoke ? 2 : 64, 1);
-    status |= run_decoder_cases(options, csv, batch, 1);
+    status |= run_decoder_cases(options, csv, batch);
     printf("\n");
     return status;
 }

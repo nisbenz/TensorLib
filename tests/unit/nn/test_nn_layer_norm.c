@@ -97,10 +97,55 @@ static void test_non_affine_and_invalid(void)
     nn_layer_norm_destroy(NULL);
 }
 
+static void test_rank_three_constant_rows(void)
+{
+    int dims[] = {2, 2, 4};
+    nn_layer_norm* layer = nn_layer_norm_create("rank3", 4, 1e-5f, 1);
+    tensor* raw = t_alloc(3, dims);
+    ag_tensor* input;
+    ag_tensor* output;
+    ag_tensor* reduced;
+    ag_tensor* loss;
+
+    CHECK(layer != NULL && raw != NULL);
+    if (layer == NULL || raw == NULL) {
+        t_free(raw);
+        nn_layer_norm_destroy(layer);
+        return;
+    }
+    for (int i = 0; i < tensor_numel(raw); ++i) {
+        raw->storage->data[i] = i < 4 ? 3.0f : (float)(i - 3);
+    }
+    input = ag_from_owned_tensor(raw, 1);
+    output = nn_layer_norm_forward(layer, input);
+    CHECK(output != NULL);
+    if (output != NULL) {
+        for (int i = 0; i < 4; ++i) CHECK(fabsf(output->value->storage->data[i]) < 1e-6f);
+        for (int i = 4; i < tensor_numel(output->value); ++i) {
+            CHECK(isfinite(output->value->storage->data[i]));
+        }
+        reduced = ag_sum(output, 0, 0);
+        loss = reduced == NULL ? NULL : ag_sum(reduced, 0, 0);
+        ag_tensor_release(reduced);
+        reduced = loss;
+        loss = reduced == NULL ? NULL : ag_sum(reduced, 0, 0);
+        ag_tensor_release(reduced);
+        CHECK(loss != NULL && ag_backward(loss) == 0);
+        if (input->grad != NULL) {
+            for (int i = 0; i < 4; ++i) CHECK(fabsf(input->grad->storage->data[i]) < 1e-6f);
+        }
+        ag_tensor_release(loss);
+    }
+    ag_tensor_release(output);
+    ag_tensor_release(input);
+    nn_layer_norm_destroy(layer);
+}
+
 int main(void)
 {
     test_forward_and_backward();
     test_non_affine_and_invalid();
+    test_rank_three_constant_rows();
     if (failures != 0) {
         fprintf(stderr, "%d LayerNorm checks failed\n", failures);
         return 1;

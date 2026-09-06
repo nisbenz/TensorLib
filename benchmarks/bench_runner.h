@@ -24,13 +24,34 @@ typedef struct {
     int parallel;
     bench_operation operation;
     void* context;
+    bench_measure_reset reset;
 } bench_case;
 
 int bench_run_suites(const bench_options* options, FILE* csv);
+int bench_configure_threads(int requested_threads);
 int bench_execute_case(const bench_options* options,
                        FILE* csv,
                        const bench_case* benchmark,
                        int requested_threads,
                        bench_measurement* result);
+
+/* Writes a measurement already collected by a custom benchmark. */
+int bench_record_measurement(const bench_options* options,
+                             FILE* csv,
+                             const bench_case* benchmark,
+                             int requested_threads,
+                             int measured_threads,
+                             const bench_measurement* result);
+
+int bench_record_scalar(const bench_options* options,
+                        FILE* csv,
+                        const char* suite,
+                        const char* name,
+                        const char* shape,
+                        const char* layout,
+                        const char* metric,
+                        int requested_threads,
+                        int measured_threads,
+                        double value);
 
 #endif

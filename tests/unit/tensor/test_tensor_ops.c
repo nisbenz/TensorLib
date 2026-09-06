@@ -241,6 +241,36 @@ TEST(test_binary_operations_transposed_inputs) {
     t_free(div); t_free(mul); t_free(sub); t_free(b); t_free(a); t_free(bb); t_free(ab);
 }
 
+TEST(test_binary_operations_offset_transpose_and_broadcast) {
+    int base_dims[] = {3, 4};
+    int bias_dims[] = {1, 3};
+    tensor* base = t_alloc(2, base_dims);
+    tensor* transposed;
+    tensor* bias = t_alloc(2, bias_dims);
+    tensor* actual;
+
+    ASSERT_NOT_NULL(base);
+    ASSERT_NOT_NULL(bias);
+    for (int i = 0; i < 12; ++i) base->storage->data[i] = (float)(i + 1);
+    for (int i = 0; i < 3; ++i) bias->storage->data[i] = (float)(10 * i);
+    transposed = t_transpose(base, 0, 1);
+    actual = t_add(transposed, bias);
+    ASSERT_NOT_NULL(actual);
+    ASSERT_EQ_INT(actual->dims[0], 4);
+    ASSERT_EQ_INT(actual->dims[1], 3);
+    for (int row = 0; row < 4; ++row) {
+        for (int column = 0; column < 3; ++column) {
+            ASSERT_EQ_FLOAT(actual->storage->data[row * 3 + column],
+                            base->storage->data[column * 4 + row] +
+                            bias->storage->data[column]);
+        }
+    }
+    t_free(actual);
+    t_free(transposed);
+    t_free(bias);
+    t_free(base);
+}
+
 TEST(test_all_operations_reject_null_inputs) {
     TEST_LOG("checking every P0 operation returns NULL for NULL tensor input");
     unary_op ops[] = {t_neg, t_sqrt, t_exp, t_log, t_relu, t_gelu, t_sigmoid, t_tanh};
@@ -308,6 +338,7 @@ int main(void) {
     RUN_TEST(test_t_add_null_args_returns_null);
     RUN_TEST(test_sub_mul_div_contiguous_and_ieee_edges);
     RUN_TEST(test_binary_operations_transposed_inputs);
+    RUN_TEST(test_binary_operations_offset_transpose_and_broadcast);
     RUN_TEST(test_all_operations_reject_null_inputs);
     RUN_TEST(test_unary_operations_contiguous_values);
     RUN_TEST(test_unary_operations_transposed_inputs);

@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #include "./../../include/tensorlib/autograd_internal.h"
 
@@ -13,6 +15,35 @@ typedef struct {
     int count;
     int capacity;
 } node_list;
+
+static int backward_stats_enabled;
+static ag_backward_stats backward_stats;
+
+static double backward_now(void)
+{
+    return (double)clock() / (double)CLOCKS_PER_SEC;
+}
+
+static double backward_elapsed(double started)
+{
+    double elapsed = backward_now() - started;
+    return elapsed > 0.0 ? elapsed : 0.0;
+}
+
+void ag_backward_stats_enable(int enabled)
+{
+    backward_stats_enabled = enabled != 0;
+}
+
+void ag_backward_stats_reset(void)
+{
+    memset(&backward_stats, 0, sizeof(backward_stats));
+}
+
+void ag_backward_stats_read(ag_backward_stats* output)
+{
+    if (output != NULL) *output = backward_stats;
+}
 
 static int append_tensor(tensor_list* list, ag_tensor* value) {
     if (list->count == list->capacity) {
@@ -71,42 +102,196 @@ static int graph_versions_match(const node_list* nodes) {
     return 1;
 }
 
-static tensor* reduce_to_shape(tensor* contribution, const tensor* target) {
+tensor* ag_sum_to_shape(const tensor* source, const tensor* target, float scale)
+{
+    if (!tensor_has_valid_metadata(source) || !tensor_has_valid_metadata(target) ||
+        source->ndim < target->ndim) return NULL;
+    for (int axis = 0; axis < target->ndim; ++axis) {
+        int source_axis = source->ndim - target->ndim + axis;
+        if (target->dims[axis] != 1 &&
+            target->dims[axis] != source->dims[source_axis]) return NULL;
+    }
+    if (source->ndim == target->ndim &&
+        same_shape((tensor*)source, (tensor*)target)) {
+        if (scale == 1.0f) return t_clone((tensor*)source);
+        if (scale == -1.0f) return t_neg((tensor*)source);
+        return t_mul_scalar((tensor*)source, scale);
+    }
+
+    tensor* result = t_alloc(target->ndim, target->dims);
+    if (result == NULL) return NULL;
+    int result_count = tensor_numel(result);
+    for (int index = 0; index < result_count; ++index) {
+        result->storage->data[result->offset + index] = 0.0f;
+    }
+
+    int suffix_matches = is_contiguous((tensor*)source);
+    for (int axis = 0; axis < target->ndim && suffix_matches; ++axis) {
+        int source_axis = source->ndim - target->ndim + axis;
+        suffix_matches = target->dims[axis] == source->dims[source_axis];
+    }
+    if (suffix_matches && result_count > 0) {
+        int outer_count = tensor_numel((tensor*)source) / result_count;
+        const float* values = source->storage->data + source->offset;
+        float* destination = result->storage->data + result->offset;
+        for (int outer = 0; outer < outer_count; ++outer) {
+            for (int index = 0; index < result_count; ++index) {
+                destination[index] += scale * values[outer * result_count + index];
+            }
+        }
+        return result;
+    }
+
+    int* coords = source->ndim > 0
+                ? (int*)calloc((size_t)source->ndim, sizeof(*coords)) : NULL;
+    if (source->ndim > 0 && coords == NULL) {
+        t_free(result);
+        return NULL;
+    }
+    int source_count = tensor_numel((tensor*)source);
+    for (int index = 0; index < source_count; ++index) {
+        int result_index = result->offset;
+        for (int axis = 0; axis < target->ndim; ++axis) {
+            int source_axis = source->ndim - target->ndim + axis;
+            int coordinate = target->dims[axis] == 1 ? 0 : coords[source_axis];
+            result_index += coordinate * result->strides[axis];
+        }
+        result->storage->data[result_index] += scale *
+            source->storage->data[get_flat_index_nd((tensor*)source, coords)];
+        advance_coords(coords, source->dims, source->ndim);
+    }
+    free(coords);
+    return result;
+}
+
+static tensor* reduce_to_shape(tensor* contribution, const tensor* target,
+                               int* coords, int coord_capacity) {
     if (!tensor_has_valid_metadata(contribution) || !tensor_has_valid_metadata(target) ||
         contribution->ndim < target->ndim) {
         t_free(contribution);
         return NULL;
     }
 
-    tensor* current = contribution;
-    while (current->ndim > target->ndim) {
-        tensor* reduced = t_sum(current, 0);
-        t_free(current);
-        if (reduced == NULL) return NULL;
-        current = reduced;
-    }
+    if (contribution->ndim == target->ndim &&
+        same_shape(contribution, (tensor*)target)) return contribution;
 
-    for (int axis = 0; axis < target->ndim; ++axis) {
-        if (current->dims[axis] == target->dims[axis]) continue;
-        if (target->dims[axis] != 1 || current->dims[axis] == 1) {
-            t_free(current);
+    for (int target_axis = 0; target_axis < target->ndim; ++target_axis) {
+        int contribution_axis = contribution->ndim - target->ndim + target_axis;
+        if (target->dims[target_axis] != 1 &&
+            target->dims[target_axis] != contribution->dims[contribution_axis]) {
+            t_free(contribution);
             return NULL;
         }
-        tensor* reduced = t_sum_keepdim(current, axis);
-        t_free(current);
-        if (reduced == NULL) return NULL;
-        current = reduced;
     }
-    return current;
+    tensor* reduced = t_alloc(target->ndim, target->dims);
+    if (reduced == NULL) {
+        t_free(reduced);
+        t_free(contribution);
+        return NULL;
+    }
+    for (int index = 0; index < tensor_numel(reduced); ++index) {
+        reduced->storage->data[reduced->offset + index] = 0.0f;
+    }
+
+    int suffix_matches = is_contiguous(contribution);
+    for (int axis = 0; axis < target->ndim && suffix_matches; ++axis) {
+        int contribution_axis = contribution->ndim - target->ndim + axis;
+        suffix_matches = target->dims[axis] == contribution->dims[contribution_axis];
+    }
+    int reduced_count = tensor_numel(reduced);
+    if (suffix_matches && reduced_count > 0) {
+        int outer_count = tensor_numel(contribution) / reduced_count;
+        const float* source = contribution->storage->data + contribution->offset;
+        float* destination = reduced->storage->data + reduced->offset;
+        for (int outer = 0; outer < outer_count; ++outer) {
+            for (int index = 0; index < reduced_count; ++index) {
+                destination[index] += source[outer * reduced_count + index];
+            }
+        }
+        t_free(contribution);
+        return reduced;
+    }
+
+    if (contribution->ndim > coord_capacity ||
+        (contribution->ndim > 0 && coords == NULL)) {
+        t_free(reduced);
+        t_free(contribution);
+        return NULL;
+    }
+    memset(coords, 0, (size_t)contribution->ndim * sizeof(*coords));
+
+    int contribution_count = tensor_numel(contribution);
+    for (int index = 0; index < contribution_count; ++index) {
+        int reduced_index = reduced->offset;
+        for (int target_axis = 0; target_axis < target->ndim; ++target_axis) {
+            int contribution_axis = contribution->ndim - target->ndim + target_axis;
+            int coordinate = target->dims[target_axis] == 1
+                           ? 0 : coords[contribution_axis];
+            reduced_index += coordinate * reduced->strides[target_axis];
+        }
+        reduced->storage->data[reduced_index] +=
+            contribution->storage->data[get_flat_index_nd(contribution, coords)];
+        advance_coords(coords, contribution->dims, contribution->ndim);
+    }
+    t_free(contribution);
+    return reduced;
+}
+
+static int add_in_place(tensor* destination, const tensor* source,
+                        int* coords, int coord_capacity)
+{
+    if (!tensor_has_valid_metadata(destination) ||
+        !tensor_has_valid_metadata(source) ||
+        !same_shape(destination, (tensor*)source) ||
+        destination->storage == source->storage) return 1;
+
+    int count = tensor_numel(destination);
+    if (is_contiguous(destination) && is_contiguous((tensor*)source) &&
+        destination->offset == 0 && source->offset == 0) {
+        for (int index = 0; index < count; ++index) {
+            destination->storage->data[index] += source->storage->data[index];
+        }
+        return 0;
+    }
+
+    if (destination->ndim > coord_capacity ||
+        (destination->ndim > 0 && coords == NULL)) return 1;
+    memset(coords, 0, (size_t)destination->ndim * sizeof(*coords));
+    for (int index = 0; index < count; ++index) {
+        int destination_index = get_flat_index_nd(destination, coords);
+        int source_index = get_flat_index_nd((tensor*)source, coords);
+        destination->storage->data[destination_index] +=
+            source->storage->data[source_index];
+        advance_coords(coords, destination->dims, destination->ndim);
+    }
+    return 0;
 }
 
 static int accumulate_pass_gradient(tensor** destination,
                                     tensor* contribution,
-                                    const tensor* target) {
-    tensor* reduced = reduce_to_shape(contribution, target);
+                                    const tensor* target,
+                                    int* coords,
+                                    int coord_capacity) {
+    double started = backward_stats_enabled ? backward_now() : 0.0;
+    tensor* reduced = reduce_to_shape(contribution, target, coords,
+                                      coord_capacity);
+    if (backward_stats_enabled) {
+        backward_stats.reduction_seconds += backward_elapsed(started);
+        started = backward_now();
+    }
     if (reduced == NULL) return 1;
     if (*destination == NULL) {
         *destination = reduced;
+        if (backward_stats_enabled) {
+            backward_stats.accumulation_seconds += backward_elapsed(started);
+        }
+        return 0;
+    }
+    if (add_in_place(*destination, reduced, coords, coord_capacity) == 0) {
+        t_free(reduced);
+        if (backward_stats_enabled) {
+            backward_stats.accumulation_seconds += backward_elapsed(started);
+        }
         return 0;
     }
     tensor* sum = t_add(*destination, reduced);
@@ -114,22 +299,29 @@ static int accumulate_pass_gradient(tensor** destination,
     if (sum == NULL) return 1;
     t_free(*destination);
     *destination = sum;
+    if (backward_stats_enabled) {
+        backward_stats.accumulation_seconds += backward_elapsed(started);
+    }
     return 0;
 }
 
-static int merge_persistent_gradients(const tensor_list* tensors, tensor** pass_gradients) {
-    tensor** merged = (tensor**)calloc((size_t)tensors->count, sizeof(*merged));
-    if (merged == NULL) return 1;
-
+static int merge_persistent_gradients(const tensor_list* tensors,
+                                      tensor** pass_gradients,
+                                      tensor** merged) {
     for (int i = 0; i < tensors->count; ++i) {
         ag_tensor* value = tensors->values[i];
         if (!value->requires_grad || pass_gradients[i] == NULL) continue;
-        merged[i] = value->grad == NULL
-                  ? t_clone(pass_gradients[i])
-                  : t_add(value->grad, pass_gradients[i]);
+        if (value->grad == NULL && is_contiguous(pass_gradients[i]) &&
+            pass_gradients[i]->offset == 0) {
+            merged[i] = pass_gradients[i];
+            pass_gradients[i] = NULL;
+        } else {
+            merged[i] = value->grad == NULL
+                      ? t_clone(pass_gradients[i])
+                      : t_add(value->grad, pass_gradients[i]);
+        }
         if (merged[i] == NULL) {
             for (int j = 0; j < tensors->count; ++j) t_free(merged[j]);
-            free(merged);
             return 1;
         }
     }
@@ -140,8 +332,16 @@ static int merge_persistent_gradients(const tensor_list* tensors, tensor** pass_
         tensors->values[i]->grad = merged[i];
         merged[i] = NULL;
     }
-    free(merged);
     return 0;
+}
+
+static void free_contributions(tensor** contributions, int count)
+{
+    if (contributions == NULL) return;
+    for (int index = 0; index < count; ++index) {
+        t_free(contributions[index]);
+        contributions[index] = NULL;
+    }
 }
 
 int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
@@ -153,13 +353,40 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
     tensor_list tensors = {0};
     node_list nodes = {0};
     tensor** pass_gradients = NULL;
+    tensor** merged_gradients = NULL;
+    tensor** contributions = NULL;
+    int* reduction_coords = NULL;
+    void* workspace = NULL;
+    int contribution_capacity = 0;
+    int reduction_coord_capacity = 0;
     int status = 1;
+    double started = backward_stats_enabled ? backward_now() : 0.0;
 
     if (collect_graph(output, &tensors, &nodes) != 0) goto cleanup;
     if (!graph_versions_match(&nodes)) goto cleanup;
+    if (backward_stats_enabled) {
+        backward_stats.traversal_seconds += backward_elapsed(started);
+    }
 
-    pass_gradients = (tensor**)calloc((size_t)tensors.count, sizeof(*pass_gradients));
-    if (pass_gradients == NULL) goto cleanup;
+    for (int index = 0; index < tensors.count; ++index) {
+        int ndim = tensors.values[index]->value->ndim;
+        if (ndim > reduction_coord_capacity) reduction_coord_capacity = ndim;
+    }
+    for (int node_index = 0; node_index < nodes.count; ++node_index) {
+        if (nodes.values[node_index]->input_count > contribution_capacity) {
+            contribution_capacity = nodes.values[node_index]->input_count;
+        }
+    }
+    size_t pointer_count = (size_t)tensors.count * 2u +
+                           (size_t)contribution_capacity;
+    size_t workspace_bytes = pointer_count * sizeof(tensor*) +
+        (size_t)reduction_coord_capacity * sizeof(int);
+    workspace = calloc(1, workspace_bytes);
+    if (workspace == NULL) goto cleanup;
+    pass_gradients = (tensor**)workspace;
+    merged_gradients = pass_gradients + tensors.count;
+    contributions = merged_gradients + tensors.count;
+    reduction_coords = (int*)(contributions + contribution_capacity);
 
     {
         int output_index = output->graph_index;
@@ -172,10 +399,23 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
         int gradient_index = node->output->graph_index;
         if (gradient_index < 0 || pass_gradients[gradient_index] == NULL) goto cleanup;
 
-        tensor* contributions[2] = {NULL, NULL};
+        for (int input_index = 0; input_index < node->input_count; ++input_index) {
+            contributions[input_index] = NULL;
+        }
 
-        if (node->backward(node, pass_gradients[gradient_index], contributions) != 0) {
-            t_free(contributions[0]); t_free(contributions[1]);
+        started = backward_stats_enabled ? backward_now() : 0.0;
+        int backward_status =
+            node->backward(node, pass_gradients[gradient_index], contributions);
+        if (backward_stats_enabled) {
+            int operation = (int)node->operation;
+            if (operation >= 0 && operation < AG_BACKWARD_OP_COUNT) {
+                backward_stats.operation_seconds[operation] +=
+                    backward_elapsed(started);
+                ++backward_stats.operation_calls[operation];
+            }
+        }
+        if (backward_status != 0) {
+            free_contributions(contributions, node->input_count);
             goto cleanup;
         }
 
@@ -189,22 +429,30 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
             int destination = input->graph_index;
             if (destination < 0 || contributions[input_index] == NULL ||
                 accumulate_pass_gradient(&pass_gradients[destination],
-                                         contributions[input_index], input->value) != 0) {
+                                         contributions[input_index], input->value,
+                                         reduction_coords,
+                                         reduction_coord_capacity) != 0) {
                 contributions[input_index] = NULL;
-                t_free(contributions[0]); t_free(contributions[1]);
+                free_contributions(contributions, node->input_count);
                 goto cleanup;
             }
             contributions[input_index] = NULL;
         }
     }
 
-    status = merge_persistent_gradients(&tensors, pass_gradients);
+    started = backward_stats_enabled ? backward_now() : 0.0;
+    status = merge_persistent_gradients(&tensors, pass_gradients,
+                                        merged_gradients);
+    if (backward_stats_enabled) {
+        backward_stats.merge_seconds += backward_elapsed(started);
+    }
 
 cleanup:
+    free_contributions(contributions, contribution_capacity);
     if (pass_gradients != NULL) {
         for (int i = 0; i < tensors.count; ++i) t_free(pass_gradients[i]);
-        free(pass_gradients);
     }
+    free(workspace);
     for (int i = 0; i < tensors.count; ++i) tensors.values[i]->graph_index = -1;
     free(nodes.values);
     free(tensors.values);

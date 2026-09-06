@@ -94,6 +94,40 @@ TEST(test_broadcast_forward_and_local_gradient_use_output_shape) {
     ag_tensor_release(result); ag_tensor_release(b); ag_tensor_release(a);
 }
 
+TEST(test_add_sub_backward_reduce_broadcast_at_source) {
+    int matrix_dims[2] = {2, 3};
+    int bias_dims[1] = {3};
+    int owner_dims[2] = {3, 2};
+    float matrix_values[6] = {1, 2, 3, 4, 5, 6};
+    float bias_values[3] = {0.5f, 1.0f, 1.5f};
+    ag_tensor* matrix = make_ag(2, matrix_dims, matrix_values, 1);
+    ag_tensor* bias = make_ag(1, bias_dims, bias_values, 1);
+    tensor* owner = t_alloc(2, owner_dims);
+    for (int index = 0; index < 6; ++index) {
+        owner->storage->data[index] = (float)(index + 1);
+    }
+    tensor* upstream = t_transpose(owner, 0, 1);
+    tensor* gradients[2] = {NULL, NULL};
+    ag_tensor* added = ag_add(matrix, bias);
+    ASSERT_EQ_INT(added->creator->backward(
+        added->creator, upstream, gradients), 0);
+    ASSERT_EQ_INT(gradients[1]->ndim, 1);
+    ASSERT_EQ_FLOAT(gradients[1]->storage->data[0], 3.0f);
+    ASSERT_EQ_FLOAT(gradients[1]->storage->data[1], 7.0f);
+    ASSERT_EQ_FLOAT(gradients[1]->storage->data[2], 11.0f);
+    free_local_gradients(gradients, 2);
+    ag_tensor* subtracted = ag_sub(matrix, bias);
+    ASSERT_EQ_INT(subtracted->creator->backward(
+        subtracted->creator, upstream, gradients), 0);
+    ASSERT_EQ_FLOAT(gradients[1]->storage->data[0], -3.0f);
+    ASSERT_EQ_FLOAT(gradients[1]->storage->data[1], -7.0f);
+    ASSERT_EQ_FLOAT(gradients[1]->storage->data[2], -11.0f);
+    free_local_gradients(gradients, 2);
+    ag_tensor_release(subtracted); ag_tensor_release(added);
+    t_free(upstream); t_free(owner);
+    ag_tensor_release(bias); ag_tensor_release(matrix);
+}
+
 TEST(test_binary_rejects_null_and_incompatible_shapes) {
     int adims[1] = {2}, bdims[1] = {3};
     float av[2] = {1,2}, bv[3] = {1,2,3};
@@ -669,6 +703,7 @@ int main(void) {
     RUN_TEST(test_binary_without_grad_omits_graph);
     RUN_TEST(test_binary_local_gradients_match_derivatives);
     RUN_TEST(test_broadcast_forward_and_local_gradient_use_output_shape);
+    RUN_TEST(test_add_sub_backward_reduce_broadcast_at_source);
     RUN_TEST(test_binary_rejects_null_and_incompatible_shapes);
     RUN_TEST(test_scalar_arithmetic_forward_backward_and_lifecycle);
     RUN_TEST(test_scalar_arithmetic_views_ieee_and_finite_difference);

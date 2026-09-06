@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "nn_internal.h"
+#include "../../include/tensorlib/autograd_internal.h"
 
 static ag_tensor* attention_module_forward(const nn_module* module,
                                            const ag_tensor* input)
@@ -235,7 +236,6 @@ ag_tensor* nn_multihead_attention_forward(
     ag_tensor* transposed_key = NULL;
     ag_tensor* scores = NULL;
     ag_tensor* scaled = NULL;
-    ag_tensor* masked = NULL;
     ag_tensor* probabilities = NULL;
     ag_tensor* context = NULL;
     ag_tensor* transposed_context = NULL;
@@ -274,9 +274,7 @@ ag_tensor* nn_multihead_attention_forward(
     if (scores == NULL) goto cleanup;
     scaled = ag_div_scalar(scores, sqrtf((float)attention->head_width));
     if (scaled == NULL) goto cleanup;
-    masked = nn_apply_causal_mask(scaled);
-    if (masked == NULL) goto cleanup;
-    probabilities = nn_softmax(masked);
+    probabilities = ag_softmax_last_dim(scaled, 0, 1);
     if (probabilities == NULL) goto cleanup;
     context = ag_matmul(probabilities, value);
     if (context == NULL) goto cleanup;
@@ -297,7 +295,6 @@ cleanup:
     ag_tensor_release(transposed_context);
     ag_tensor_release(context);
     ag_tensor_release(probabilities);
-    ag_tensor_release(masked);
     ag_tensor_release(scaled);
     ag_tensor_release(scores);
     ag_tensor_release(transposed_key);

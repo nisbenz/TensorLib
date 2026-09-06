@@ -98,6 +98,33 @@ TEST(test_t_contiguous_on_transposed_materializes_correct_order) {
     t_free(a);
 }
 
+TEST(test_t_contiguous_transposed_offset_non_square) {
+    int dims[] = {4, 5};
+    tensor* base = t_alloc(2, dims);
+    tensor* slice;
+    tensor* transposed;
+    tensor* actual;
+
+    ASSERT_NOT_NULL(base);
+    for (int i = 0; i < 20; ++i) base->storage->data[i] = (float)i;
+    slice = t_slice(base, 0, 1, 4);
+    transposed = t_transpose(slice, 0, 1);
+    actual = t_contiguous(transposed);
+    ASSERT_NOT_NULL(actual);
+    ASSERT_EQ_INT(actual->dims[0], 5);
+    ASSERT_EQ_INT(actual->dims[1], 3);
+    for (int row = 0; row < 5; ++row) {
+        for (int column = 0; column < 3; ++column) {
+            ASSERT_EQ_FLOAT(actual->storage->data[row * 3 + column],
+                            base->storage->data[(column + 1) * 5 + row]);
+        }
+    }
+    t_free(actual);
+    t_free(transposed);
+    t_free(slice);
+    t_free(base);
+}
+
 TEST(test_t_contiguous_null_input) {
     ASSERT_NULL(t_contiguous(NULL));
 }
@@ -320,6 +347,7 @@ int main(void) {
     RUN_TEST(test_t_transpose_null_input);
     RUN_TEST(test_t_contiguous_on_already_contiguous_returns_equivalent_view);
     RUN_TEST(test_t_contiguous_on_transposed_materializes_correct_order);
+    RUN_TEST(test_t_contiguous_transposed_offset_non_square);
     RUN_TEST(test_t_contiguous_null_input);
     RUN_TEST(test_t_reshape_contiguous_input_returns_view);
     RUN_TEST(test_t_reshape_strided_input_materializes_contiguous_tensor);

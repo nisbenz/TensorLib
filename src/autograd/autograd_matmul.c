@@ -1,4 +1,19 @@
+#include <stdlib.h>
+
 #include "./../../include/tensorlib/autograd_internal.h"
+#include "../tensor/tensor_matmul_internal.h"
+
+typedef struct {
+    tensor_matmul_packed_rhs* backward_rhs;
+} matmul_context;
+
+static void free_matmul_context(void* opaque)
+{
+    matmul_context* context = (matmul_context*)opaque;
+    if (context == NULL) return;
+    t_free_matmul_packed_rhs(context->backward_rhs);
+    free(context);
+}
 
 static tensor* promote_operand(tensor* value, int left_operand) {
     if (value->ndim != 1) return t_contiguous(value);
@@ -46,8 +61,12 @@ static int backward_matmul(const ag_node* node,
     if (promoted_a == NULL || promoted_b == NULL || promoted_gradient == NULL ||
         transposed_a == NULL || transposed_b == NULL) goto fail;
 
+    matmul_context* context = (matmul_context*)node->context;
     if (node->inputs[0]->requires_grad) {
-        input_gradients[0] = t_matmul(promoted_gradient, transposed_b);
+        input_gradients[0] = context != NULL && context->backward_rhs != NULL
+                            ? t_matmul_packed_rhs(promoted_gradient,
+                                                  context->backward_rhs)
+                            : t_matmul(promoted_gradient, transposed_b);
         if (input_gradients[0] == NULL) goto fail;
         if (a_vector) {
             input_gradients[0] = remove_vector_dimension(input_gradients[0], 1);
@@ -55,7 +74,12 @@ static int backward_matmul(const ag_node* node,
         }
     }
     if (node->inputs[1]->requires_grad) {
-        input_gradients[1] = t_matmul(transposed_a, promoted_gradient);
+        input_gradients[1] = tensor_matmul_backward_rhs_fast(a,
+                                                             output_gradient,
+                                                             b);
+        if (input_gradients[1] == NULL) {
+            input_gradients[1] = t_matmul(transposed_a, promoted_gradient);
+        }
         if (input_gradients[1] == NULL) goto fail;
         if (b_vector) {
             input_gradients[1] = remove_vector_dimension(input_gradients[1], 0);
@@ -75,10 +99,42 @@ fail:
     return 1;
 }
 
-ag_tensor* ag_matmul(const ag_tensor* a, const ag_tensor* b) {
-    if (a == NULL || b == NULL) return NULL;
-    tensor* output = t_matmul(a->value, b->value);
+static ag_tensor* make_matmul_result(const ag_tensor* a,
+                                     const ag_tensor* b,
+                                     tensor* output,
+                                     matmul_context* context) {
     ag_tensor* inputs[2] = {(ag_tensor*)a, (ag_tensor*)b};
     return ag_make_result(output, AG_OP_MATMUL, 2, inputs,
-                          backward_matmul, NULL, NULL);
+                          backward_matmul, context,
+                          context == NULL ? NULL : free_matmul_context);
+}
+
+ag_tensor* ag_matmul(const ag_tensor* a, const ag_tensor* b) {
+    if (a == NULL || b == NULL) return NULL;
+    return make_matmul_result(a, b, t_matmul(a->value, b->value), NULL);
+}
+
+ag_tensor* ag_matmul_packed_rhs(const ag_tensor* a,
+                                const ag_tensor* b,
+                                const tensor_matmul_packed_rhs* packed_rhs) {
+    return ag_matmul_packed_rhs_with_backward_pack(a, b, packed_rhs, NULL);
+}
+
+ag_tensor* ag_matmul_packed_rhs_with_backward_pack(
+    const ag_tensor* a,
+    const ag_tensor* b,
+    const tensor_matmul_packed_rhs* packed_rhs,
+    const tensor_matmul_packed_rhs* backward_rhs)
+{
+    matmul_context* context = NULL;
+    if (a == NULL || b == NULL || packed_rhs == NULL) return NULL;
+    if (backward_rhs != NULL) {
+        context = (matmul_context*)calloc(1, sizeof(*context));
+        if (context == NULL) return NULL;
+        context->backward_rhs = (tensor_matmul_packed_rhs*)backward_rhs;
+        t_retain_matmul_packed_rhs(context->backward_rhs);
+    }
+    return make_matmul_result(a, b,
+                              t_matmul_packed_rhs(a->value, packed_rhs),
+                              context);
 }

@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include "../../fixtures/test_common.h"
 #include "../../../include/tensorlib/tensor.h"
+#include "../../../src/tensor/tensor_alloc_internal.h"
 
 TEST(test_s_alloc_basic) {
     int dims[2] = {2, 3};
@@ -42,6 +43,28 @@ TEST(test_t_alloc_basic_shape_and_strides) {
     ASSERT_EQ_INT(t->storage->size, 24);
     ASSERT_NOT_NULL(t->storage->data);
     t_free(t);
+}
+
+TEST(test_allocation_stats_track_storage_and_views) {
+    int dims[2] = {2, 3};
+    tensor_alloc_stats stats;
+    tensor* base;
+    tensor* view;
+
+    tensor_alloc_stats_enable(1);
+    tensor_alloc_stats_reset();
+    base = t_alloc(2, dims);
+    view = t_transpose(base, 0, 1);
+    tensor_alloc_stats_read(&stats);
+    ASSERT_EQ_INT(stats.allocations, 1);
+    ASSERT_EQ_INT(stats.live_bytes, 6 * sizeof(float));
+    ASSERT_EQ_INT(stats.peak_live_bytes, 6 * sizeof(float));
+    t_free(view);
+    t_free(base);
+    tensor_alloc_stats_read(&stats);
+    ASSERT_EQ_INT(stats.frees, 1);
+    ASSERT_EQ_INT(stats.live_bytes, 0);
+    tensor_alloc_stats_enable(0);
 }
 
 TEST(test_t_alloc_scalar_ndim_zero) {
@@ -239,6 +262,7 @@ int main(void) {
     RUN_TEST(test_s_alloc_rejects_null_dims_with_positive_ndim);
     RUN_TEST(test_alloc_rejects_nonpositive_and_overflowing_dimensions);
     RUN_TEST(test_t_alloc_basic_shape_and_strides);
+    RUN_TEST(test_allocation_stats_track_storage_and_views);
     RUN_TEST(test_t_alloc_scalar_ndim_zero);
     RUN_TEST(test_t_alloc_rejects_negative_ndim);
     RUN_TEST(test_t_alloc_rejects_null_dims_with_positive_ndim);

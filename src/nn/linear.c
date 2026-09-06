@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "nn_internal.h"
+#include "../../include/tensorlib/autograd_internal.h"
 
 static char* nn_parameter_name(const char* module_name, const char* suffix)
 {
@@ -100,6 +101,8 @@ fail:
 void nn_linear_destroy(nn_linear* layer)
 {
     if (layer == NULL) return;
+    t_free_matmul_packed_rhs(layer->packed_weight);
+    t_free_matmul_packed_rhs(layer->packed_backward_weight);
     nn_module_destroy_base(&layer->base);
     free(layer);
 }
@@ -110,12 +113,15 @@ ag_tensor* nn_linear_forward(const nn_linear* layer, const ag_tensor* input)
     ag_tensor* product;
     ag_tensor* result;
     tensor* input_value;
+    uint64_t weight_version;
+    nn_linear* mutable_layer;
 
     if (layer == NULL || input == NULL || layer->weight == NULL ||
         layer->weight->value == NULL) {
         return NULL;
     }
     input_value = input->value;
+    mutable_layer = (nn_linear*)layer;
     if (!tensor_has_valid_metadata(input_value) || input_value->ndim < 1 ||
         input_value->dims[input_value->ndim - 1] != layer->in_features) {
         return NULL;
@@ -123,7 +129,35 @@ ag_tensor* nn_linear_forward(const nn_linear* layer, const ag_tensor* input)
 
     transposed = ag_transpose(layer->weight->value, 0, 1);
     if (transposed == NULL) return NULL;
-    product = ag_matmul(input, transposed);
+    weight_version = layer->weight->value->value->storage->version;
+    if (mutable_layer->packed_weight == NULL ||
+        mutable_layer->packed_weight_version != weight_version) {
+        tensor_matmul_packed_rhs* packed =
+            t_pack_matmul_rhs(transposed->value);
+        if (packed != NULL) {
+            t_free_matmul_packed_rhs(mutable_layer->packed_weight);
+            mutable_layer->packed_weight = packed;
+            mutable_layer->packed_weight_version = weight_version;
+        }
+    }
+    if (mutable_layer->packed_backward_weight == NULL ||
+        mutable_layer->packed_backward_weight_version != weight_version) {
+        tensor_matmul_packed_rhs* packed =
+            t_pack_matmul_rhs(layer->weight->value->value);
+        if (packed != NULL) {
+            t_free_matmul_packed_rhs(mutable_layer->packed_backward_weight);
+            mutable_layer->packed_backward_weight = packed;
+            mutable_layer->packed_backward_weight_version = weight_version;
+        }
+    }
+    product = input_value->ndim >= 2 &&
+              mutable_layer->packed_weight != NULL &&
+              mutable_layer->packed_weight_version == weight_version
+            ? ag_matmul_packed_rhs_with_backward_pack(
+                  input, transposed, mutable_layer->packed_weight,
+                  mutable_layer->packed_backward_weight_version == weight_version
+                      ? mutable_layer->packed_backward_weight : NULL)
+            : ag_matmul(input, transposed);
     ag_tensor_release(transposed);
     if (product == NULL) return NULL;
     if (!layer->use_bias) return product;

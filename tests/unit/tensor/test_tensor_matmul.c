@@ -2,6 +2,11 @@
 
 #include "../../fixtures/test_common.h"
 #include "../../../include/tensorlib/tensor.h"
+#include "../../../src/tensor/tensor_matmul_internal.h"
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 static void fill_tensor(tensor* t, const float* values, int count) {
     for (int i = 0; i < count; ++i) t->storage->data[i] = values[i];
@@ -135,6 +140,45 @@ TEST(test_t_matmul_accepts_transposed_views) {
     t_free(a_base);
 }
 
+TEST(test_t_matmul_transposed_2d_uneven_rows_and_columns) {
+    int a_dims[] = {5, 3};
+    int b_dims[] = {4, 3};
+    tensor* a = t_alloc(2, a_dims);
+    tensor* b_base = t_alloc(2, b_dims);
+    tensor* b = NULL;
+    tensor* actual = NULL;
+
+    ASSERT_NOT_NULL(a);
+    ASSERT_NOT_NULL(b_base);
+    for (int i = 0; i < tensor_numel(a); ++i) {
+        a->storage->data[i] = (float)(i + 1);
+    }
+    for (int i = 0; i < tensor_numel(b_base); ++i) {
+        b_base->storage->data[i] = (float)(i - 3);
+    }
+    b = t_transpose(b_base, 0, 1);
+    actual = t_matmul(a, b);
+    ASSERT_NOT_NULL(b);
+    ASSERT_NOT_NULL(actual);
+    ASSERT_EQ_INT(actual->ndim, 2);
+    ASSERT_EQ_INT(actual->dims[0], 5);
+    ASSERT_EQ_INT(actual->dims[1], 4);
+    for (int row = 0; row < 5; ++row) {
+        for (int column = 0; column < 4; ++column) {
+            float expected = 0.0f;
+            for (int inner = 0; inner < 3; ++inner) {
+                expected += a->storage->data[row * 3 + inner] *
+                            b_base->storage->data[column * 3 + inner];
+            }
+            ASSERT_EQ_FLOAT(actual->storage->data[row * 4 + column], expected);
+        }
+    }
+    t_free(actual);
+    t_free(b);
+    t_free(b_base);
+    t_free(a);
+}
+
 TEST(test_t_matmul_vector_cases) {
     int vector_dims[1] = {3};
     int matrix_dims[2] = {2, 3};
@@ -201,6 +245,31 @@ TEST(test_packed_rhs_snapshots_transposed_view) {
     t_free(c);
     t_free_matmul_packed_rhs(packed);
     t_free(a);
+}
+
+TEST(test_packed_rhs_transpose_pack_retains_lifetime) {
+    int left_dims[2] = {1, 3};
+    int rhs_dims[2] = {2, 3};
+    tensor* left = t_alloc(2, left_dims);
+    tensor* rhs = t_alloc(2, rhs_dims);
+    const float left_values[3] = {1, 2, 3};
+    const float rhs_values[6] = {1, 2, 3, 4, 5, 6};
+    fill_tensor(left, left_values, 3);
+    fill_tensor(rhs, rhs_values, 6);
+
+    tensor_matmul_packed_rhs* packed = t_pack_matmul_rhs_transposed(rhs);
+    ASSERT_NOT_NULL(packed);
+    t_retain_matmul_packed_rhs(packed);
+    t_free_matmul_packed_rhs(packed);
+    tensor* result = t_matmul_packed_rhs(left, packed);
+    ASSERT_NOT_NULL(result);
+    ASSERT_EQ_FLOAT(result->storage->data[0], 14.0f);
+    ASSERT_EQ_FLOAT(result->storage->data[1], 32.0f);
+
+    t_free(result);
+    t_free_matmul_packed_rhs(packed);
+    t_free(rhs);
+    t_free(left);
 }
 
 TEST(test_packed_rhs_handles_transposed_slices_and_kernel_tails) {
@@ -473,14 +542,119 @@ TEST(test_t_matmul_allows_aliasing_and_returns_independent_storage) {
     t_free(a);
 }
 
+TEST(test_direct_rhs_gradient_handles_broadcast_strides_and_vectors) {
+    int owner_dims[3] = {2, 3, 2};
+    int gradient_dims[3] = {2, 2, 5};
+    int rhs_dims[2] = {3, 5};
+    tensor* owner = t_alloc(3, owner_dims);
+    tensor* lhs = t_transpose(owner, 1, 2);
+    tensor* gradient = t_alloc(3, gradient_dims);
+    tensor* rhs = t_alloc(2, rhs_dims);
+    for (int index = 0; index < tensor_numel(owner); ++index) {
+        owner->storage->data[index] = 0.1f * (float)(index + 1);
+    }
+    for (int index = 0; index < tensor_numel(gradient); ++index) {
+        gradient->storage->data[index] = 0.01f * (float)(index - 7);
+    }
+    tensor* lhs_transpose = t_transpose(lhs, 1, 2);
+    tensor* batched = t_matmul(lhs_transpose, gradient);
+    tensor* expected = t_sum(batched, 0);
+    tensor* actual = tensor_matmul_backward_rhs(lhs, gradient, rhs);
+    assert_same_tensor(actual, expected);
+    t_free(actual); t_free(expected); t_free(batched); t_free(lhs_transpose);
+    t_free(rhs); t_free(gradient); t_free(lhs); t_free(owner);
+
+    int vector_dims[1] = {3};
+    int matrix_dims[2] = {3, 2};
+    int output_dims[1] = {2};
+    float lhs_values[3] = {1, 2, 3};
+    float gradient_values[2] = {4, 5};
+    tensor* lhs_vector = t_alloc(1, vector_dims);
+    tensor* rhs_matrix = t_alloc(2, matrix_dims);
+    tensor* vector_gradient = t_alloc(1, output_dims);
+    fill_tensor(lhs_vector, lhs_values, 3);
+    fill_tensor(vector_gradient, gradient_values, 2);
+    actual = tensor_matmul_backward_rhs(lhs_vector, vector_gradient, rhs_matrix);
+    ASSERT_NOT_NULL(actual);
+    for (int inner = 0; inner < 3; ++inner) {
+        for (int column = 0; column < 2; ++column) {
+            ASSERT_EQ_FLOAT(actual->storage->data[inner * 2 + column],
+                            lhs_values[inner] * gradient_values[column]);
+        }
+    }
+    ASSERT_NULL(tensor_matmul_backward_rhs(lhs_vector, lhs_vector, rhs_matrix));
+    t_free(actual); t_free(vector_gradient); t_free(rhs_matrix);
+    t_free(lhs_vector);
+}
+
+TEST(test_direct_rhs_gradient_is_deterministic_across_threads) {
+#ifdef _OPENMP
+    int lhs_dims[2] = {128, 192};
+    int gradient_dims[2] = {128, 192};
+    int rhs_dims[2] = {192, 192};
+    tensor* lhs = t_alloc(2, lhs_dims);
+    tensor* gradient = t_alloc(2, gradient_dims);
+    tensor* rhs = t_alloc(2, rhs_dims);
+    for (int index = 0; index < tensor_numel(lhs); ++index) {
+        lhs->storage->data[index] = 0.001f * (float)((index % 17) - 8);
+    }
+    for (int index = 0; index < tensor_numel(gradient); ++index) {
+        gradient->storage->data[index] = 0.002f * (float)((index % 13) - 6);
+    }
+    omp_set_dynamic(0);
+    omp_set_num_threads(1);
+    tensor* serial = tensor_matmul_backward_rhs(lhs, gradient, rhs);
+    omp_set_num_threads(4);
+    tensor* parallel_a = tensor_matmul_backward_rhs(lhs, gradient, rhs);
+    tensor* parallel_b = tensor_matmul_backward_rhs(lhs, gradient, rhs);
+    ASSERT_NOT_NULL(serial); ASSERT_NOT_NULL(parallel_a); ASSERT_NOT_NULL(parallel_b);
+    for (int index = 0; index < tensor_numel(serial); ++index) {
+        ASSERT_EQ_FLOAT(parallel_a->storage->data[index],
+                        parallel_b->storage->data[index]);
+        ASSERT_FLOAT_NEAR(serial->storage->data[index],
+                          parallel_a->storage->data[index], 1e-6f);
+    }
+    omp_set_num_threads(1);
+    t_free(parallel_b); t_free(parallel_a); t_free(serial);
+    t_free(rhs); t_free(gradient); t_free(lhs);
+#endif
+}
+
+TEST(test_direct_rhs_gradient_contracts_projected_batch) {
+    int lhs_dims[4] = {1, 2, 3, 4};
+    int rhs_dims[4] = {3, 1, 4, 5};
+    int gradient_dims[4] = {3, 2, 3, 5};
+    tensor* lhs = t_alloc(4, lhs_dims);
+    tensor* rhs = t_alloc(4, rhs_dims);
+    tensor* gradient = t_alloc(4, gradient_dims);
+    for (int i = 0; i < tensor_numel(lhs); ++i) {
+        lhs->storage->data[i] = 0.1f * (float)((i % 7) - 3);
+    }
+    for (int i = 0; i < tensor_numel(gradient); ++i) {
+        gradient->storage->data[i] = 0.05f * (float)((i % 11) - 5);
+    }
+    tensor* lhs_transpose = t_transpose(lhs, 2, 3);
+    tensor* batched = t_matmul(lhs_transpose, gradient);
+    tensor* reduced = t_sum(batched, 1);
+    tensor* expected = t_unsqueeze(reduced, 1);
+    tensor* actual = tensor_matmul_backward_rhs_fast(lhs, gradient, rhs);
+    ASSERT_NOT_NULL(actual); ASSERT_NOT_NULL(expected);
+    assert_same_tensor(actual, expected);
+    t_free(actual); t_free(expected); t_free(reduced); t_free(batched);
+    t_free(lhs_transpose);
+    t_free(gradient); t_free(rhs); t_free(lhs);
+}
+
 int main(void) {
     printf("== tensor_matmul.c ==\n");
     RUN_TEST(test_t_matmul_2d);
     RUN_TEST(test_t_matmul_batched_3d);
     RUN_TEST(test_t_matmul_broadcasts_batch_dimensions);
     RUN_TEST(test_t_matmul_accepts_transposed_views);
+    RUN_TEST(test_t_matmul_transposed_2d_uneven_rows_and_columns);
     RUN_TEST(test_t_matmul_vector_cases);
     RUN_TEST(test_packed_rhs_snapshots_transposed_view);
+    RUN_TEST(test_packed_rhs_transpose_pack_retains_lifetime);
     RUN_TEST(test_packed_rhs_handles_transposed_slices_and_kernel_tails);
     RUN_TEST(test_packed_rhs_handles_non_multiple_kernel_dimensions);
     RUN_TEST(test_packed_rhs_handles_reshape_contiguous_squeeze_and_unsqueeze);
@@ -490,5 +664,8 @@ int main(void) {
     RUN_TEST(test_t_matmul_rejects_invalid_shapes);
     RUN_TEST(test_t_matmul_validates_vector_inner_dimension);
     RUN_TEST(test_t_matmul_allows_aliasing_and_returns_independent_storage);
+    RUN_TEST(test_direct_rhs_gradient_handles_broadcast_strides_and_vectors);
+    RUN_TEST(test_direct_rhs_gradient_is_deterministic_across_threads);
+    RUN_TEST(test_direct_rhs_gradient_contracts_projected_batch);
     TEST_SUITE_SUMMARY();
 }

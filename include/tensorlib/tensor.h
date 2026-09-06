@@ -89,7 +89,9 @@ tensor* t_mean_keepdim(tensor* a, int dim);
 tensor* t_max_keepdim(tensor* a, int dim);
 tensor* t_matmul(tensor* a, tensor* b);
 tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs);
+tensor_matmul_packed_rhs* t_pack_matmul_rhs_transposed(const tensor* rhs);
 tensor* t_matmul_packed_rhs(const tensor* lhs,
                             const tensor_matmul_packed_rhs* rhs);
+void t_retain_matmul_packed_rhs(tensor_matmul_packed_rhs* rhs);
 void t_free_matmul_packed_rhs(tensor_matmul_packed_rhs* rhs);
 #endif //TENSORLIB_TENSOR_H

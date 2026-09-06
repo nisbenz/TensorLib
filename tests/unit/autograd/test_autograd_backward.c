@@ -1,4 +1,5 @@
 #include "./../../../include/tensorlib/autograd.h"
+#include "./../../../include/tensorlib/autograd_internal.h"
 #include "./../../fixtures/test_common.h"
 
 static ag_tensor* make_ag(int ndim, const int* dims, const float* values, int requires_grad) {
@@ -26,6 +27,28 @@ TEST(test_backward_chain_computes_weight_gradients) {
     }
     ag_tensor_release(loss); ag_tensor_release(sum); ag_tensor_release(product);
     ag_tensor_release(b); ag_tensor_release(a);
+}
+
+TEST(test_backward_stats_are_disabled_by_default_and_resettable) {
+    int dims[1] = {2};
+    float values[2] = {2.0f, 3.0f};
+    ag_tensor* input = make_ag(1, dims, values, 1);
+    ag_tensor* square = ag_mul(input, input);
+    ag_tensor* loss = ag_mean(square, 0, 0);
+    ag_backward_stats stats;
+    ag_backward_stats_reset();
+    ag_backward_stats_enable(1);
+    ASSERT_EQ_INT(ag_backward(loss), 0);
+    ag_backward_stats_enable(0);
+    ag_backward_stats_read(&stats);
+    ASSERT_EQ_INT((int)stats.operation_calls[AG_OP_MEAN], 1);
+    ASSERT_EQ_INT((int)stats.operation_calls[AG_OP_MUL], 1);
+    ASSERT_TRUE(stats.traversal_seconds >= 0.0);
+    ASSERT_TRUE(stats.merge_seconds >= 0.0);
+    ag_backward_stats_reset();
+    ag_backward_stats_read(&stats);
+    ASSERT_EQ_INT((int)stats.operation_calls[AG_OP_MUL], 0);
+    ag_tensor_release(loss); ag_tensor_release(square); ag_tensor_release(input);
 }
 
 TEST(test_shared_dag_accumulates_each_branch_once) {
@@ -167,6 +190,7 @@ TEST(test_backward_rejects_modified_intermediate_output) {
 int main(void) {
     printf("== autograd_backward.c ==\n");
     RUN_TEST(test_backward_chain_computes_weight_gradients);
+    RUN_TEST(test_backward_stats_are_disabled_by_default_and_resettable);
     RUN_TEST(test_shared_dag_accumulates_each_branch_once);
     RUN_TEST(test_backward_unbroadcasts_gradient_to_operand_shape);
     RUN_TEST(test_seeded_backward_supports_non_scalar_output);

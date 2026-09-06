@@ -218,10 +218,33 @@ static void test_topology_validation_and_eval_rng(void)
     nn_multihead_attention_destroy(NULL);
 }
 
+static void test_single_token_causal_attention(void)
+{
+    nn_rng rng;
+    float values[2] = {2.0f, -3.0f};
+    ag_tensor* input;
+    ag_tensor* output;
+    nn_multihead_attention* attention;
+
+    nn_rng_seed(&rng, 44);
+    attention = identity_attention(&rng);
+    input = input_from(values, 1, 0);
+    output = nn_multihead_attention_forward(attention, input);
+    CHECK(output != NULL);
+    if (output != NULL) {
+        CHECK(fabsf(output->value->storage->data[0] - values[0]) < 1e-6f);
+        CHECK(fabsf(output->value->storage->data[1] - values[1]) < 1e-6f);
+    }
+    ag_tensor_release(output);
+    ag_tensor_release(input);
+    nn_multihead_attention_destroy(attention);
+}
+
 int main(void)
 {
     test_exact_forward_causality_and_backward();
     test_topology_validation_and_eval_rng();
+    test_single_token_causal_attention();
     if (failures != 0) {
         fprintf(stderr, "%d multi-head-attention checks failed\n", failures);
         return 1;
