@@ -152,6 +152,47 @@ static void test_vector_and_rank_three(void)
     ag_tensor_release(vector_logits);
 }
 
+static void test_rank_three_softmax_and_repeated_targets(void)
+{
+    int logit_dims[] = {2, 2, 4};
+    int target_dims[] = {2, 2};
+    float logits[] = {10000.0f, 9999.0f, -10000.0f, 0.0f,
+                      -3.0f, -2.0f, -1.0f, 0.0f,
+                      1.0f, 2.0f, 3.0f, 4.0f,
+                      4.0f, 3.0f, 2.0f, 1.0f};
+    float targets_data[] = {1, 1, 1, 1};
+    ag_tensor* input = make_ag(3, logit_dims, logits, 1);
+    tensor* targets = make_tensor(2, target_dims, targets_data);
+    ag_tensor* probabilities = nn_softmax(input);
+    ag_tensor* loss = nn_cross_entropy(input, targets);
+
+    CHECK(probabilities != NULL && loss != NULL);
+    if (probabilities != NULL) {
+        for (int row = 0; row < 4; ++row) {
+            float sum = 0.0f;
+            for (int column = 0; column < 4; ++column) {
+                float value = probabilities->value->storage->data[row * 4 + column];
+                CHECK(isfinite(value));
+                sum += value;
+            }
+            CHECK_NEAR(sum, 1.0f, 2.0e-6f);
+        }
+    }
+    if (loss != NULL) {
+        CHECK(ag_backward(loss) == 0);
+        CHECK(input->grad != NULL);
+        if (input->grad != NULL) {
+            for (int row = 0; row < 4; ++row) {
+                CHECK(input->grad->storage->data[row * 4 + 1] < 0.0f);
+            }
+        }
+    }
+    ag_tensor_release(loss);
+    ag_tensor_release(probabilities);
+    t_free(targets);
+    ag_tensor_release(input);
+}
+
 static void test_invalid(void)
 {
     int dims[] = {2, 3};
@@ -184,6 +225,7 @@ int main(void)
     test_softmax();
     test_cross_entropy();
     test_vector_and_rank_three();
+    test_rank_three_softmax_and_repeated_targets();
     test_invalid();
     if (failures != 0) {
         fprintf(stderr, "%d classification checks failed\n", failures);
