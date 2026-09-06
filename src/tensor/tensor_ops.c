@@ -107,23 +107,11 @@ static int broadcast_output_shape(const tensor* a,
     return 1;
 }
 
-static int input_index_for_broadcast(const tensor* input,
-                                     const int* output_coords,
-                                     int output_ndim) {
-    int index = input->offset;
-    int rank_offset = output_ndim - input->ndim;
-
-    for (int output_axis = 0; output_axis < output_ndim; ++output_axis) {
-        int input_axis = output_axis - rank_offset;
-        if (input_axis < 0) continue;
-
-        int coordinate = (input->dims[input_axis] == 1)
-                       ? 0
-                       : output_coords[output_axis];
-        index += coordinate * input->strides[input_axis];
-    }
-
-    return index;
+static int broadcast_step(const tensor* input, int output_axis, int output_ndim)
+{
+    int input_axis = output_axis - (output_ndim - input->ndim);
+    if (input_axis < 0 || input->dims[input_axis] == 1) return 0;
+    return input->strides[input_axis];
 }
 
 /* Fast path for element-wise binary ops where the output is contiguous and each
@@ -237,21 +225,45 @@ static tensor* apply_binary(tensor* a,
         /* Handled by the streaming broadcast fast path. */
     } else {
         int* coords = NULL;
+        int* steps_a = NULL;
+        int* steps_b = NULL;
+        int idx_a = a->offset;
+        int idx_b = b->offset;
+        int idx_c = c->offset;
         if (output_ndim > 0) {
             coords = (int*)calloc((size_t)output_ndim, sizeof(int));
+            steps_a = (int*)malloc((size_t)output_ndim * sizeof(int));
+            steps_b = (int*)malloc((size_t)output_ndim * sizeof(int));
         }
-        if (output_ndim > 0 && coords == NULL) {
+        if (output_ndim > 0 && (coords == NULL || steps_a == NULL ||
+                                steps_b == NULL)) {
+            free(steps_b);
+            free(steps_a);
+            free(coords);
             t_free(c);
             return NULL;
         }
+        for (int axis = 0; axis < output_ndim; ++axis) {
+            steps_a[axis] = broadcast_step(a, axis, output_ndim);
+            steps_b[axis] = broadcast_step(b, axis, output_ndim);
+        }
 
         for (int i = 0; i < total_elements; i++) {
-            int idx_a = input_index_for_broadcast(a, coords, output_ndim);
-            int idx_b = input_index_for_broadcast(b, coords, output_ndim);
-            int idx_c = get_flat_index_nd(c, coords);
             c->storage->data[idx_c] = scalar_op(a->storage->data[idx_a], b->storage->data[idx_b]);
-            advance_coords(coords, c->dims, c->ndim);
+            for (int axis = output_ndim - 1; axis >= 0; --axis) {
+                coords[axis]++;
+                idx_a += steps_a[axis];
+                idx_b += steps_b[axis];
+                idx_c += c->strides[axis];
+                if (coords[axis] < c->dims[axis]) break;
+                coords[axis] = 0;
+                idx_a -= c->dims[axis] * steps_a[axis];
+                idx_b -= c->dims[axis] * steps_b[axis];
+                idx_c -= c->dims[axis] * c->strides[axis];
+            }
         }
+        free(steps_b);
+        free(steps_a);
         free(coords);
     }
 
