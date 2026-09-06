@@ -1,6 +1,7 @@
 #include <stdlib.h>
 
 #include "./../../include/tensorlib/autograd_internal.h"
+#include "../tensor/tensor_matmul_internal.h"
 
 typedef struct {
     tensor_matmul_packed_rhs* backward_rhs;
@@ -73,7 +74,9 @@ static int backward_matmul(const ag_node* node,
         }
     }
     if (node->inputs[1]->requires_grad) {
-        input_gradients[1] = t_matmul(transposed_a, promoted_gradient);
+        input_gradients[1] = b->ndim == 2
+                           ? tensor_matmul_backward_rhs(a, output_gradient, b)
+                           : t_matmul(transposed_a, promoted_gradient);
         if (input_gradients[1] == NULL) goto fail;
         if (b_vector) {
             input_gradients[1] = remove_vector_dimension(input_gradients[1], 0);
