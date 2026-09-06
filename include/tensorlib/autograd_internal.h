@@ -27,6 +27,7 @@ ag_tensor* ag_make_result(tensor* output,
                           void (*free_context)(void*));
 
 tensor* ag_full_like(const tensor* reference, float value);
+tensor* ag_sum_to_shape(const tensor* source, const tensor* target, float scale);
 
 ag_tensor* ag_matmul_packed_rhs(
     const ag_tensor* a,

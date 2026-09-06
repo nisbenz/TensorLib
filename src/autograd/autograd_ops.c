@@ -20,7 +20,8 @@ static int backward_add(const ag_node* node,
         !tensor_has_valid_metadata(output_gradient) || input_gradients == NULL) return 1;
     for (int i = 0; i < 2; ++i) {
         if (node->inputs[i]->requires_grad) {
-            input_gradients[i] = t_clone((tensor*)output_gradient);
+            input_gradients[i] = ag_sum_to_shape(
+                output_gradient, node->inputs[i]->value, 1.0f);
             if (input_gradients[i] == NULL) {
                 free_gradients(input_gradients, 2);
                 return 1;
@@ -36,11 +37,13 @@ static int backward_sub(const ag_node* node,
     if (node == NULL || node->input_count != 2 ||
         !tensor_has_valid_metadata(output_gradient) || input_gradients == NULL) return 1;
     if (node->inputs[0]->requires_grad) {
-        input_gradients[0] = t_clone((tensor*)output_gradient);
+        input_gradients[0] = ag_sum_to_shape(
+            output_gradient, node->inputs[0]->value, 1.0f);
         if (input_gradients[0] == NULL) return 1;
     }
     if (node->inputs[1]->requires_grad) {
-        input_gradients[1] = t_neg((tensor*)output_gradient);
+        input_gradients[1] = ag_sum_to_shape(
+            output_gradient, node->inputs[1]->value, -1.0f);
         if (input_gradients[1] == NULL) {
             free_gradients(input_gradients, 2);
             return 1;

@@ -102,6 +102,68 @@ static int graph_versions_match(const node_list* nodes) {
     return 1;
 }
 
+tensor* ag_sum_to_shape(const tensor* source, const tensor* target, float scale)
+{
+    if (!tensor_has_valid_metadata(source) || !tensor_has_valid_metadata(target) ||
+        source->ndim < target->ndim) return NULL;
+    for (int axis = 0; axis < target->ndim; ++axis) {
+        int source_axis = source->ndim - target->ndim + axis;
+        if (target->dims[axis] != 1 &&
+            target->dims[axis] != source->dims[source_axis]) return NULL;
+    }
+    if (source->ndim == target->ndim &&
+        same_shape((tensor*)source, (tensor*)target)) {
+        if (scale == 1.0f) return t_clone((tensor*)source);
+        if (scale == -1.0f) return t_neg((tensor*)source);
+        return t_mul_scalar((tensor*)source, scale);
+    }
+
+    tensor* result = t_alloc(target->ndim, target->dims);
+    if (result == NULL) return NULL;
+    int result_count = tensor_numel(result);
+    for (int index = 0; index < result_count; ++index) {
+        result->storage->data[result->offset + index] = 0.0f;
+    }
+
+    int suffix_matches = is_contiguous((tensor*)source);
+    for (int axis = 0; axis < target->ndim && suffix_matches; ++axis) {
+        int source_axis = source->ndim - target->ndim + axis;
+        suffix_matches = target->dims[axis] == source->dims[source_axis];
+    }
+    if (suffix_matches && result_count > 0) {
+        int outer_count = tensor_numel((tensor*)source) / result_count;
+        const float* values = source->storage->data + source->offset;
+        float* destination = result->storage->data + result->offset;
+        for (int outer = 0; outer < outer_count; ++outer) {
+            for (int index = 0; index < result_count; ++index) {
+                destination[index] += scale * values[outer * result_count + index];
+            }
+        }
+        return result;
+    }
+
+    int* coords = source->ndim > 0
+                ? (int*)calloc((size_t)source->ndim, sizeof(*coords)) : NULL;
+    if (source->ndim > 0 && coords == NULL) {
+        t_free(result);
+        return NULL;
+    }
+    int source_count = tensor_numel((tensor*)source);
+    for (int index = 0; index < source_count; ++index) {
+        int result_index = result->offset;
+        for (int axis = 0; axis < target->ndim; ++axis) {
+            int source_axis = source->ndim - target->ndim + axis;
+            int coordinate = target->dims[axis] == 1 ? 0 : coords[source_axis];
+            result_index += coordinate * result->strides[axis];
+        }
+        result->storage->data[result_index] += scale *
+            source->storage->data[get_flat_index_nd((tensor*)source, coords)];
+        advance_coords(coords, source->dims, source->ndim);
+    }
+    free(coords);
+    return result;
+}
+
 static tensor* reduce_to_shape(tensor* contribution, const tensor* target,
                                int* coords, int coord_capacity) {
     if (!tensor_has_valid_metadata(contribution) || !tensor_has_valid_metadata(target) ||
