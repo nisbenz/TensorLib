@@ -1,5 +1,6 @@
 #include "bench_runner.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include <tensorlib/nn.h>
@@ -16,8 +17,9 @@ typedef struct {
     nn_adamw* adamw;
     nn_rng rng;
     int train;
-    double phase_seconds[6];
-    long phase_calls;
+    double* phase_samples[6];
+    int phase_sample_count;
+    int phase_sample_capacity;
 } nn_bench_context;
 
 enum {
@@ -60,6 +62,7 @@ static int nn_operation(void* opaque, double* checksum)
     ag_tensor* loss = NULL;
     int status = 1;
     double started;
+    double phase_times[PHASE_COUNT] = {0};
 
     if (context->train) {
         started = bench_now_seconds();
@@ -68,27 +71,23 @@ static int nn_operation(void* opaque, double* checksum)
         } else if (context->adamw != NULL) {
             nn_adamw_zero_grad(context->adamw);
         }
-        context->phase_seconds[PHASE_ZERO_GRAD] +=
-            bench_now_seconds() - started;
+        phase_times[PHASE_ZERO_GRAD] = bench_now_seconds() - started;
     }
 
     started = bench_now_seconds();
     output = context->forward(context->model, context->input);
     if (context->train) {
-        context->phase_seconds[PHASE_FORWARD] +=
-            bench_now_seconds() - started;
+        phase_times[PHASE_FORWARD] = bench_now_seconds() - started;
     }
     if (output == NULL) goto cleanup;
     if (context->train) {
         started = bench_now_seconds();
         loss = nn_cross_entropy(output, context->targets);
-        context->phase_seconds[PHASE_LOSS] +=
-            bench_now_seconds() - started;
+        phase_times[PHASE_LOSS] = bench_now_seconds() - started;
         if (loss == NULL) goto cleanup;
         started = bench_now_seconds();
         if (ag_backward(loss) != 0) goto cleanup;
-        context->phase_seconds[PHASE_BACKWARD] +=
-            bench_now_seconds() - started;
+        phase_times[PHASE_BACKWARD] = bench_now_seconds() - started;
         started = bench_now_seconds();
         if (context->sgd != NULL) {
             if (nn_sgd_step(context->sgd) != 0) goto cleanup;
@@ -97,8 +96,7 @@ static int nn_operation(void* opaque, double* checksum)
                 goto cleanup;
             }
         }
-        context->phase_seconds[PHASE_ADAMW] +=
-            bench_now_seconds() - started;
+        phase_times[PHASE_ADAMW] = bench_now_seconds() - started;
         *checksum += loss->value->storage->data[loss->value->offset];
     } else {
         *checksum += output->value->storage->data[output->value->offset];
@@ -110,11 +108,28 @@ cleanup:
     ag_tensor_release(loss);
     ag_tensor_release(output);
     if (context->train) {
-        context->phase_seconds[PHASE_GRAPH_RELEASE] +=
-            bench_now_seconds() - started;
-        ++context->phase_calls;
+        phase_times[PHASE_GRAPH_RELEASE] = bench_now_seconds() - started;
+        if (context->phase_sample_count < context->phase_sample_capacity) {
+            for (int phase = 0; phase < PHASE_COUNT; ++phase) {
+                context->phase_samples[phase][context->phase_sample_count] =
+                    phase_times[phase];
+            }
+            ++context->phase_sample_count;
+        }
     }
     return status;
+}
+
+static void reset_phase_samples(void* opaque)
+{
+    ((nn_bench_context*)opaque)->phase_sample_count = 0;
+}
+
+static int compare_double(const void* left, const void* right)
+{
+    double a = *(const double*)left;
+    double b = *(const double*)right;
+    return (a > b) - (a < b);
 }
 
 static void report_training_phases(const bench_options* options,
@@ -126,16 +141,19 @@ static void report_training_phases(const bench_options* options,
         "tiny_lm_zero_grad", "tiny_lm_forward_phase", "tiny_lm_loss",
         "tiny_lm_backward", "tiny_lm_adamw", "tiny_lm_graph_release"
     };
-    if (context->phase_calls <= 0) return;
+    if (context->phase_sample_count <= 0) return;
     for (int phase = 0; phase < PHASE_COUNT; ++phase) {
         bench_case benchmark = {
             "nn_phase", names[phase], "[Bx128]->[Bx128x256]",
             "isolated-phase", "ms/call", 0.0, 0, NULL, NULL
         };
         bench_measurement result;
-        result.median_seconds = context->phase_seconds[phase] /
-                                (double)context->phase_calls;
-        result.p95_seconds = result.median_seconds;
+        qsort(context->phase_samples[phase],
+              (size_t)context->phase_sample_count, sizeof(double), compare_double);
+        result.median_seconds =
+            context->phase_samples[phase][context->phase_sample_count / 2];
+        result.p95_seconds = context->phase_samples[phase][
+            (95 * context->phase_sample_count - 1) / 100];
         result.checksum = result.median_seconds;
         result.iterations_per_sample = 1;
         benchmark.context = context;
@@ -160,17 +178,34 @@ static int run_nn_case(const bench_options* options,
         suite, name, shape, layout, metric, items, 1,
         nn_operation, context
     };
+    benchmark.reset = context->train ? reset_phase_samples : NULL;
     return bench_execute_case(options, csv, &benchmark, threads, result);
 }
 
 static void destroy_context(nn_bench_context* context)
 {
+    for (int phase = 0; phase < PHASE_COUNT; ++phase) {
+        free(context->phase_samples[phase]);
+    }
     nn_sgd_destroy(context->sgd);
     nn_adamw_destroy(context->adamw);
     t_free(context->targets);
     ag_tensor_release(context->input);
     if (context->module != NULL) context->module->destroy(context->module);
     memset(context, 0, sizeof(*context));
+}
+
+static int allocate_phase_samples(nn_bench_context* context, int sample_count)
+{
+    int capacity = sample_count * 4;
+    if (capacity < 64) capacity = 64;
+    context->phase_sample_capacity = capacity;
+    for (int phase = 0; phase < PHASE_COUNT; ++phase) {
+        context->phase_samples[phase] =
+            (double*)calloc((size_t)capacity, sizeof(double));
+        if (context->phase_samples[phase] == NULL) return 1;
+    }
+    return 0;
 }
 
 static ag_tensor* linear_forward(const void* model, const ag_tensor* input)
@@ -382,6 +417,10 @@ static int run_decoder_case(const bench_options* options,
     bench_measurement local_result;
     bench_measurement* result = measurement == NULL ? &local_result : measurement;
     if (setup_decoder(&context, batch, time, channels, layers, train) != 0) {
+        destroy_context(&context);
+        return 1;
+    }
+    if (train && allocate_phase_samples(&context, options->profile.sample_count) != 0) {
         destroy_context(&context);
         return 1;
     }
