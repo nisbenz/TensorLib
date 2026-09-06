@@ -18,6 +18,7 @@ typedef struct {
     nn_adamw* adamw;
     nn_rng rng;
     int train;
+    int component_backward;
     double* phase_samples[6];
     int phase_sample_count;
     int phase_sample_capacity;
@@ -76,6 +77,7 @@ static int nn_operation(void* opaque, double* checksum)
         }
         phase_times[PHASE_ZERO_GRAD] = bench_now_seconds() - started;
     }
+    if (context->component_backward) nn_module_zero_grad(context->module);
 
     started = bench_now_seconds();
     output = context->forward(context->model, context->input);
@@ -101,6 +103,18 @@ static int nn_operation(void* opaque, double* checksum)
         }
         phase_times[PHASE_ADAMW] = bench_now_seconds() - started;
         *checksum += loss->value->storage->data[loss->value->offset];
+    } else if (context->component_backward) {
+        tensor* seed = t_alloc(output->value->ndim, output->value->dims);
+        if (seed == NULL) goto cleanup;
+        for (int index = 0; index < tensor_numel(seed); ++index) {
+            seed->storage->data[index] = 1.0f;
+        }
+        if (ag_backward_with_grad(output, seed) != 0) {
+            t_free(seed);
+            goto cleanup;
+        }
+        t_free(seed);
+        *checksum += output->value->storage->data[output->value->offset];
     } else {
         *checksum += output->value->storage->data[output->value->offset];
     }
@@ -110,6 +124,7 @@ cleanup:
     if (context->train) started = bench_now_seconds();
     ag_tensor_release(loss);
     ag_tensor_release(output);
+    if (context->component_backward) nn_module_zero_grad(context->module);
     if (context->train) {
         phase_times[PHASE_GRAPH_RELEASE] = bench_now_seconds() - started;
         if (context->phase_sample_count < context->phase_sample_capacity) {
@@ -280,6 +295,7 @@ typedef enum {
 static int run_component(const bench_options* options,
                          FILE* csv,
                          component_kind kind,
+                         int backward,
                          int batch,
                          int time,
                          int channels)
@@ -290,6 +306,7 @@ static int run_component(const bench_options* options,
     bench_measurement result;
     const char* name = NULL;
     const char* shape = "[BxTxC]";
+    char backward_name[64];
 
     memset(&context, 0, sizeof(context));
     nn_rng_seed(&context.rng, UINT64_C(0xB34C4));
@@ -332,9 +349,16 @@ static int run_component(const bench_options* options,
         destroy_context(&context);
         return 1;
     }
+    context.component_backward = backward;
+    if (backward) context.input->requires_grad = 1;
     nn_module_set_training(context.module, 0);
+    if (backward) {
+        snprintf(backward_name, sizeof(backward_name), "%s_backward", name);
+        name = backward_name;
+    }
     int status = run_nn_case(options, csv, "nn", name, shape,
-                             "forward;graph-build", "tokens/s",
+                             backward ? "forward+backward" : "forward;graph-build",
+                             "tokens/s",
                              (double)(batch * time),
                              1, &context, &result);
     destroy_context(&context);
@@ -538,13 +562,21 @@ int bench_run_nn_suite(const bench_options* options, FILE* csv)
     int status = 0;
 
     printf("Neural-network suite (eager float32)\n");
-    status |= run_component(options, csv, COMPONENT_LINEAR,
+    status |= run_component(options, csv, COMPONENT_LINEAR, 0,
                             batch, time, channels);
-    status |= run_component(options, csv, COMPONENT_LAYER_NORM,
+    status |= run_component(options, csv, COMPONENT_LINEAR, 1,
                             batch, time, channels);
-    status |= run_component(options, csv, COMPONENT_ATTENTION,
+    status |= run_component(options, csv, COMPONENT_LAYER_NORM, 0,
                             batch, time, channels);
-    status |= run_component(options, csv, COMPONENT_BLOCK,
+    status |= run_component(options, csv, COMPONENT_LAYER_NORM, 1,
+                            batch, time, channels);
+    status |= run_component(options, csv, COMPONENT_ATTENTION, 0,
+                            batch, time, channels);
+    status |= run_component(options, csv, COMPONENT_ATTENTION, 1,
+                            batch, time, channels);
+    status |= run_component(options, csv, COMPONENT_BLOCK, 0,
+                            batch, time, channels);
+    status |= run_component(options, csv, COMPONENT_BLOCK, 1,
                             batch, time, channels);
     status |= run_mlp(options, csv, smoke ? 2 : 64, 0);
     status |= run_mlp(options, csv, smoke ? 2 : 64, 1);
