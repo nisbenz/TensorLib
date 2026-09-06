@@ -305,10 +305,9 @@ static int accumulate_pass_gradient(tensor** destination,
     return 0;
 }
 
-static int merge_persistent_gradients(const tensor_list* tensors, tensor** pass_gradients) {
-    tensor** merged = (tensor**)calloc((size_t)tensors->count, sizeof(*merged));
-    if (merged == NULL) return 1;
-
+static int merge_persistent_gradients(const tensor_list* tensors,
+                                      tensor** pass_gradients,
+                                      tensor** merged) {
     for (int i = 0; i < tensors->count; ++i) {
         ag_tensor* value = tensors->values[i];
         if (!value->requires_grad || pass_gradients[i] == NULL) continue;
@@ -323,7 +322,6 @@ static int merge_persistent_gradients(const tensor_list* tensors, tensor** pass_
         }
         if (merged[i] == NULL) {
             for (int j = 0; j < tensors->count; ++j) t_free(merged[j]);
-            free(merged);
             return 1;
         }
     }
@@ -334,7 +332,6 @@ static int merge_persistent_gradients(const tensor_list* tensors, tensor** pass_
         tensors->values[i]->grad = merged[i];
         merged[i] = NULL;
     }
-    free(merged);
     return 0;
 }
 
@@ -356,8 +353,10 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
     tensor_list tensors = {0};
     node_list nodes = {0};
     tensor** pass_gradients = NULL;
+    tensor** merged_gradients = NULL;
     tensor** contributions = NULL;
     int* reduction_coords = NULL;
+    void* workspace = NULL;
     int contribution_capacity = 0;
     int reduction_coord_capacity = 0;
     int status = 1;
@@ -373,25 +372,21 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
         int ndim = tensors.values[index]->value->ndim;
         if (ndim > reduction_coord_capacity) reduction_coord_capacity = ndim;
     }
-    if (reduction_coord_capacity > 0) {
-        reduction_coords = (int*)calloc((size_t)reduction_coord_capacity,
-                                        sizeof(*reduction_coords));
-        if (reduction_coords == NULL) goto cleanup;
-    }
-
     for (int node_index = 0; node_index < nodes.count; ++node_index) {
         if (nodes.values[node_index]->input_count > contribution_capacity) {
             contribution_capacity = nodes.values[node_index]->input_count;
         }
     }
-    if (contribution_capacity > 0) {
-        contributions = (tensor**)calloc((size_t)contribution_capacity,
-                                         sizeof(*contributions));
-        if (contributions == NULL) goto cleanup;
-    }
-
-    pass_gradients = (tensor**)calloc((size_t)tensors.count, sizeof(*pass_gradients));
-    if (pass_gradients == NULL) goto cleanup;
+    size_t pointer_count = (size_t)tensors.count * 2u +
+                           (size_t)contribution_capacity;
+    size_t workspace_bytes = pointer_count * sizeof(tensor*) +
+        (size_t)reduction_coord_capacity * sizeof(int);
+    workspace = calloc(1, workspace_bytes);
+    if (workspace == NULL) goto cleanup;
+    pass_gradients = (tensor**)workspace;
+    merged_gradients = pass_gradients + tensors.count;
+    contributions = merged_gradients + tensors.count;
+    reduction_coords = (int*)(contributions + contribution_capacity);
 
     {
         int output_index = output->graph_index;
@@ -446,19 +441,18 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
     }
 
     started = backward_stats_enabled ? backward_now() : 0.0;
-    status = merge_persistent_gradients(&tensors, pass_gradients);
+    status = merge_persistent_gradients(&tensors, pass_gradients,
+                                        merged_gradients);
     if (backward_stats_enabled) {
         backward_stats.merge_seconds += backward_elapsed(started);
     }
 
 cleanup:
-    free(reduction_coords);
     free_contributions(contributions, contribution_capacity);
-    free(contributions);
     if (pass_gradients != NULL) {
         for (int i = 0; i < tensors.count; ++i) t_free(pass_gradients[i]);
-        free(pass_gradients);
     }
+    free(workspace);
     for (int i = 0; i < tensors.count; ++i) tensors.values[i]->graph_index = -1;
     free(nodes.values);
     free(tensors.values);
