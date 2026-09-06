@@ -26,6 +26,13 @@ typedef struct {
     int out_features;
 } linear_shape;
 
+typedef struct {
+    int probability_value;
+    tensor* left;
+    tensor* right;
+    tensor* output_gradient;
+} attention_gradient_context;
+
 static void fill_tensor(tensor* value, float scale)
 {
     int count = tensor_numel(value);
@@ -134,6 +141,91 @@ static int run_linear_gradient(const bench_options* options,
     return status == 1;
 }
 
+static void destroy_attention_context(attention_gradient_context* context)
+{
+    t_free(context->output_gradient);
+    t_free(context->right);
+    t_free(context->left);
+    memset(context, 0, sizeof(*context));
+}
+
+static int init_attention_context(attention_gradient_context* context,
+                                  int probability_value)
+{
+    int square_dims[3] = {24, 128, 128};
+    int head_dims[3] = {24, 128, 32};
+    memset(context, 0, sizeof(*context));
+    context->probability_value = probability_value;
+    context->left = t_alloc(3, probability_value ? square_dims : head_dims);
+    context->right = t_alloc(3, head_dims);
+    context->output_gradient =
+        t_alloc(3, probability_value ? head_dims : square_dims);
+    if (context->left == NULL || context->right == NULL ||
+        context->output_gradient == NULL) return 1;
+    fill_tensor(context->left, 0.001f);
+    fill_tensor(context->right, 0.002f);
+    fill_tensor(context->output_gradient, 0.003f);
+    return 0;
+}
+
+static int attention_gradient_operation(void* opaque, double* checksum)
+{
+    attention_gradient_context* context =
+        (attention_gradient_context*)opaque;
+    tensor* left_transpose = NULL;
+    tensor* right_transpose = NULL;
+    tensor* left_gradient = NULL;
+    tensor* right_gradient = NULL;
+    if (context->probability_value) {
+        right_transpose = t_transpose(context->right, 1, 2);
+        left_transpose = t_transpose(context->left, 1, 2);
+        left_gradient = right_transpose == NULL ? NULL :
+            t_matmul(context->output_gradient, right_transpose);
+        right_gradient = left_transpose == NULL ? NULL :
+            t_matmul(left_transpose, context->output_gradient);
+    } else {
+        left_transpose = t_transpose(context->output_gradient, 1, 2);
+        left_gradient = t_matmul(context->output_gradient, context->right);
+        right_gradient = left_transpose == NULL ? NULL :
+            t_matmul(left_transpose, context->left);
+    }
+    if (left_gradient == NULL || right_gradient == NULL) {
+        t_free(right_gradient); t_free(left_gradient);
+        t_free(right_transpose); t_free(left_transpose);
+        return 1;
+    }
+    *checksum += left_gradient->storage->data[left_gradient->offset] +
+                 right_gradient->storage->data[right_gradient->offset];
+    t_free(right_gradient); t_free(left_gradient);
+    t_free(right_transpose); t_free(left_transpose);
+    return 0;
+}
+
+static int run_attention_gradient(const bench_options* options,
+                                  FILE* csv,
+                                  int probability_value)
+{
+    attention_gradient_context context;
+    bench_measurement result;
+    if (init_attention_context(&context, probability_value) != 0) {
+        destroy_attention_context(&context);
+        return 1;
+    }
+    bench_case benchmark = {
+        "nn_backward",
+        probability_value ? "attention_probability_value_backward" :
+                            "attention_qk_transpose_backward",
+        probability_value ? "[24x128x128]@[24x128x32]" :
+                            "[24x128x32]@[24x32x128]",
+        "two-gradient-matmuls", "ms/call", 0.0, 1,
+        attention_gradient_operation, &context, NULL
+    };
+    int status = bench_execute_case(options, csv, &benchmark,
+                                    options->threads[0], &result);
+    destroy_attention_context(&context);
+    return status == 1;
+}
+
 int bench_run_backward_matrix_suite(const bench_options* options, FILE* csv)
 {
     static const linear_shape shapes[] = {
@@ -158,6 +250,8 @@ int bench_run_backward_matrix_suite(const bench_options* options, FILE* csv)
         status |= run_linear_gradient(options, csv, &shapes[index],
                                       LINEAR_PACK, "pack", "packing-only");
     }
+    status |= run_attention_gradient(options, csv, 0);
+    status |= run_attention_gradient(options, csv, 1);
     printf("\n");
     return status;
 }
