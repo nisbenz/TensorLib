@@ -61,7 +61,8 @@ static int matmul_2d_packed_rhs_avx2(const tensor* lhs, int lhs_base,
                                       const float* packed_rhs, int inner,
                                       int columns, tensor* output,
                                       int output_base, int output_batch_ndim,
-                                      int row_start, int row_end);
+                                      int row_start, int row_end,
+                                      float* packed_lhs);
 #endif
 
 static void* matmul_aligned_malloc(size_t bytes) {
@@ -295,7 +296,8 @@ static void matmul_packed_rhs_batch(const tensor* lhs,
                                     int batch_ndim,
                                     size_t batch,
                                     int row_start,
-                                    int row_end) {
+                                    int row_end,
+                                    float* workspace) {
     int coords[TENSORLIB_MATMUL_MAX_NDIM];
     batch_index_to_coords(batch, batch_dims, batch_ndim, coords);
 
@@ -312,7 +314,7 @@ static void matmul_packed_rhs_batch(const tensor* lhs,
         matmul_2d_packed_rhs_avx2(lhs, lhs_base, packed_rhs,
                                    lhs_info->inner, rhs->columns,
                                    output, output_base,
-                                   batch_ndim, row_start, row_end)) {
+                                   batch_ndim, row_start, row_end, workspace)) {
         /* The AVX2 kernel completed this batch. */
     } else {
         matmul_2d_packed_rhs_scalar(lhs, lhs_info, lhs_base,
@@ -393,6 +395,10 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
     int threads = tensorlib_parallel_threads(
         batch_flops, TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS,
         batch_ndim <= TENSORLIB_MATMUL_MAX_NDIM ? task_count : 1);
+    size_t workspace_values = (size_t)TENSORLIB_MATMUL_MC *
+                              (size_t)TENSORLIB_MATMUL_KC;
+    float* workspaces = (float*)matmul_aligned_malloc(
+        (size_t)threads * workspace_values * sizeof(float));
 
     if (threads > 1) {
 #ifdef _OPENMP
@@ -404,16 +410,25 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
                             TENSORLIB_MATMUL_MC;
             int row_end = row_start + TENSORLIB_MATMUL_MC;
             if (row_end > lhs_info.rows) row_end = lhs_info.rows;
+            int thread_index = 0;
+#ifdef _OPENMP
+            thread_index = omp_get_thread_num();
+#endif
+            float* workspace = workspaces == NULL ? NULL : workspaces +
+                (size_t)thread_index * workspace_values;
             matmul_packed_rhs_batch(lhs, &lhs_info, rhs, output, batch_dims,
-                                    batch_ndim, batch, row_start, row_end);
+                                    batch_ndim, batch, row_start, row_end,
+                                    workspace);
         }
     } else {
         for (size_t batch = 0; batch < batch_count; ++batch) {
             matmul_packed_rhs_batch(lhs, &lhs_info, rhs, output, batch_dims,
-                                    batch_ndim, batch, 0, lhs_info.rows);
+                                    batch_ndim, batch, 0, lhs_info.rows,
+                                    workspaces);
         }
     }
 
+    matmul_aligned_free(workspaces);
     free(batch_dims);
     return output;
 }
@@ -806,13 +821,8 @@ static int matmul_2d_packed_rhs_avx2(const tensor* lhs, int lhs_base,
                                       const float* packed_rhs, int inner,
                                       int columns, tensor* output,
                                       int output_base, int output_batch_ndim,
-                                      int row_start, int row_end) {
-    size_t workspace_values;
-    if (!checked_size_multiply(TENSORLIB_MATMUL_MC, TENSORLIB_MATMUL_KC,
-                               &workspace_values)) {
-        return 0;
-    }
-    float* packed_lhs = (float*)matmul_aligned_malloc(workspace_values * sizeof(float));
+                                      int row_start, int row_end,
+                                      float* packed_lhs) {
     if (packed_lhs == NULL) return 0;
 
     int row_count = row_end - row_start;
@@ -863,7 +873,6 @@ static int matmul_2d_packed_rhs_avx2(const tensor* lhs, int lhs_base,
                                       output,
                                       output_base + row_start * output_stride,
                                       output_batch_ndim);
-    matmul_aligned_free(packed_lhs);
     return 1;
 }
 #else
