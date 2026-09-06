@@ -57,6 +57,30 @@ TEST(test_slice_backward_scatters_and_zero_fills) {
     t_free(gradients[0]); t_free(upstream); ag_tensor_release(output); ag_tensor_release(input);
 }
 
+TEST(test_slice_backward_copies_contiguous_middle_axis_blocks) {
+    int dims[3] = {2, 4, 3};
+    float values[24] = {0};
+    ag_tensor* input = make_ag(3, dims, values);
+    ag_tensor* output = ag_slice(input, 1, 1, 3);
+    tensor* upstream = sequential_gradient(output->value->ndim,
+                                           output->value->dims);
+    tensor* gradients[1] = {NULL};
+    ASSERT_EQ_INT(output->creator->backward(output->creator, upstream,
+                                            gradients), 0);
+    for (int batch = 0; batch < 2; ++batch) {
+        for (int row = 0; row < 4; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                int index = (batch * 4 + row) * 3 + column;
+                float expected = row < 1 || row >= 3 ? 0.0f :
+                    (float)((batch * 2 + row - 1) * 3 + column + 1);
+                ASSERT_EQ_FLOAT(gradients[0]->storage->data[index], expected);
+            }
+        }
+    }
+    t_free(gradients[0]); t_free(upstream);
+    ag_tensor_release(output); ag_tensor_release(input);
+}
+
 TEST(test_expand_backward_emits_output_shaped_contribution) {
     int input_dims[2] = {1, 3}, output_dims[3] = {2, 4, 3};
     float values[3] = {1,2,3};
@@ -86,6 +110,7 @@ int main(void) {
     RUN_TEST(test_reshape_backward_restores_input_shape);
     RUN_TEST(test_transpose_backward_applies_inverse_transpose);
     RUN_TEST(test_slice_backward_scatters_and_zero_fills);
+    RUN_TEST(test_slice_backward_copies_contiguous_middle_axis_blocks);
     RUN_TEST(test_expand_backward_emits_output_shaped_contribution);
     RUN_TEST(test_view_wrappers_reject_invalid_arguments);
     TEST_SUITE_SUMMARY();

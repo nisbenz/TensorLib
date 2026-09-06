@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 
 #include "./../../include/tensorlib/autograd_internal.h"
 
@@ -44,9 +45,32 @@ static int backward_slice(const ag_node* node,
     tensor* input = node->inputs[0]->value;
     slice_context* context = (slice_context*)node->context;
     tensor* gradient = ag_full_like(input, 0.0f);
+    if (gradient == NULL) return 1;
+    if (is_contiguous((tensor*)output_gradient)) {
+        size_t outer = 1;
+        size_t inner = 1;
+        for (int axis = 0; axis < context->dim; ++axis) {
+            outer *= (size_t)input->dims[axis];
+        }
+        for (int axis = context->dim + 1; axis < input->ndim; ++axis) {
+            inner *= (size_t)input->dims[axis];
+        }
+        size_t slice = (size_t)output_gradient->dims[context->dim];
+        for (size_t block = 0; block < outer; ++block) {
+            size_t source = (size_t)output_gradient->offset +
+                            block * slice * inner;
+            size_t destination = block * (size_t)input->dims[context->dim] *
+                                 inner + (size_t)context->start * inner;
+            memcpy(gradient->storage->data + destination,
+                   output_gradient->storage->data + source,
+                   slice * inner * sizeof(float));
+        }
+        input_gradients[0] = gradient;
+        return 0;
+    }
     int* output_coords = (int*)calloc((size_t)output_gradient->ndim, sizeof(int));
     int* input_coords = (int*)calloc((size_t)input->ndim, sizeof(int));
-    if (gradient == NULL || output_coords == NULL || input_coords == NULL) {
+    if (output_coords == NULL || input_coords == NULL) {
         t_free(gradient); free(output_coords); free(input_coords);
         return 1;
     }
