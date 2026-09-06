@@ -4,6 +4,10 @@
 #include "../../../include/tensorlib/tensor.h"
 #include "../../../src/tensor/tensor_matmul_internal.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 static void fill_tensor(tensor* t, const float* values, int count) {
     for (int i = 0; i < count; ++i) t->storage->data[i] = values[i];
 }
@@ -583,6 +587,39 @@ TEST(test_direct_rhs_gradient_handles_broadcast_strides_and_vectors) {
     t_free(lhs_vector);
 }
 
+TEST(test_direct_rhs_gradient_is_deterministic_across_threads) {
+#ifdef _OPENMP
+    int lhs_dims[2] = {128, 192};
+    int gradient_dims[2] = {128, 192};
+    int rhs_dims[2] = {192, 192};
+    tensor* lhs = t_alloc(2, lhs_dims);
+    tensor* gradient = t_alloc(2, gradient_dims);
+    tensor* rhs = t_alloc(2, rhs_dims);
+    for (int index = 0; index < tensor_numel(lhs); ++index) {
+        lhs->storage->data[index] = 0.001f * (float)((index % 17) - 8);
+    }
+    for (int index = 0; index < tensor_numel(gradient); ++index) {
+        gradient->storage->data[index] = 0.002f * (float)((index % 13) - 6);
+    }
+    omp_set_dynamic(0);
+    omp_set_num_threads(1);
+    tensor* serial = tensor_matmul_backward_rhs(lhs, gradient, rhs);
+    omp_set_num_threads(4);
+    tensor* parallel_a = tensor_matmul_backward_rhs(lhs, gradient, rhs);
+    tensor* parallel_b = tensor_matmul_backward_rhs(lhs, gradient, rhs);
+    ASSERT_NOT_NULL(serial); ASSERT_NOT_NULL(parallel_a); ASSERT_NOT_NULL(parallel_b);
+    for (int index = 0; index < tensor_numel(serial); ++index) {
+        ASSERT_EQ_FLOAT(parallel_a->storage->data[index],
+                        parallel_b->storage->data[index]);
+        ASSERT_FLOAT_NEAR(serial->storage->data[index],
+                          parallel_a->storage->data[index], 1e-6f);
+    }
+    omp_set_num_threads(1);
+    t_free(parallel_b); t_free(parallel_a); t_free(serial);
+    t_free(rhs); t_free(gradient); t_free(lhs);
+#endif
+}
+
 int main(void) {
     printf("== tensor_matmul.c ==\n");
     RUN_TEST(test_t_matmul_2d);
@@ -603,5 +640,6 @@ int main(void) {
     RUN_TEST(test_t_matmul_validates_vector_inner_dimension);
     RUN_TEST(test_t_matmul_allows_aliasing_and_returns_independent_storage);
     RUN_TEST(test_direct_rhs_gradient_handles_broadcast_strides_and_vectors);
+    RUN_TEST(test_direct_rhs_gradient_is_deterministic_across_threads);
     TEST_SUITE_SUMMARY();
 }

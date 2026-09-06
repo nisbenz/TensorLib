@@ -123,7 +123,8 @@ static int run_linear_gradient(const bench_options* options,
                                const linear_shape* shape,
                                linear_gradient_kind kind,
                                const char* suffix,
-                               const char* layout)
+                               const char* layout,
+                               int threads)
 {
     linear_gradient_context context;
     bench_measurement result;
@@ -142,7 +143,7 @@ static int run_linear_gradient(const bench_options* options,
         linear_gradient_operation, &context, NULL
     };
     int status = bench_execute_case(options, csv, &benchmark,
-                                    options->threads[0], &result);
+                                    threads, &result);
     destroy_linear_context(&context);
     return status == 1;
 }
@@ -246,18 +247,22 @@ int bench_run_backward_matrix_suite(const bench_options* options, FILE* csv)
     for (size_t index = 0; index < sizeof(shapes) / sizeof(shapes[0]); ++index) {
         status |= run_linear_gradient(options, csv, &shapes[index],
                                       LINEAR_DINPUT, "dinput",
-                                      "packed-weight");
+                                      "packed-weight", options->threads[0]);
         status |= run_linear_gradient(options, csv, &shapes[index],
                                       LINEAR_DWEIGHT, "dweight",
-                                      "batched-matmul+reduce");
-        status |= run_linear_gradient(options, csv, &shapes[index],
-                                      LINEAR_DWEIGHT_DIRECT, "dweight_direct",
-                                      "flattened-transpose-left");
+                                      "batched-matmul+reduce", options->threads[0]);
+        for (int thread_index = 0; thread_index < options->thread_count;
+             ++thread_index) {
+            status |= run_linear_gradient(options, csv, &shapes[index],
+                LINEAR_DWEIGHT_DIRECT, "dweight_direct",
+                "flattened-transpose-left", options->threads[thread_index]);
+        }
         status |= run_linear_gradient(options, csv, &shapes[index],
                                       LINEAR_DBIAS, "dbias",
-                                      "two-axis-reduce");
+                                      "two-axis-reduce", options->threads[0]);
         status |= run_linear_gradient(options, csv, &shapes[index],
-                                      LINEAR_PACK, "pack", "packing-only");
+                                      LINEAR_PACK, "pack", "packing-only",
+                                      options->threads[0]);
     }
     status |= run_attention_gradient(options, csv, 0);
     status |= run_attention_gradient(options, csv, 1);
