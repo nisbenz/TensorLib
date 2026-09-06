@@ -140,7 +140,7 @@ static void report_training_phases(const bench_options* options,
         result.iterations_per_sample = 1;
         benchmark.context = context;
         bench_record_measurement(options, csv, &benchmark,
-                                 requested_threads, &result);
+                                 requested_threads, requested_threads, &result);
     }
 }
 

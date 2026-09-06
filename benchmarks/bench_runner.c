@@ -49,28 +49,27 @@ int bench_record_measurement(const bench_options* options,
                              FILE* csv,
                              const bench_case* benchmark,
                              int requested_threads,
+                             int measured_threads,
                              const bench_measurement* result)
 {
     double value;
-    int threads;
 
     if (options == NULL || benchmark == NULL || result == NULL ||
         !isfinite(result->median_seconds) ||
         !isfinite(result->p95_seconds) ||
         !isfinite(result->checksum)) return 1;
-    threads = actual_threads(requested_threads);
     value = benchmark->units_per_call > 0.0
           ? benchmark->units_per_call / result->median_seconds
           : result->median_seconds * 1000.0;
     printf("  %-24s threads=%-3d median=%9.3f ms p95=%9.3f ms "
            "%s=%9.3f\n",
-           benchmark->name, threads, result->median_seconds * 1000.0,
+           benchmark->name, measured_threads, result->median_seconds * 1000.0,
            result->p95_seconds * 1000.0, benchmark->metric, value);
     if (csv != NULL) {
         fprintf(csv, "%s,%s,%s,%s,%s,%d,%d,%.9g,%.9g,%s,%.9g,%d,%.9g,ok\n",
                 benchmark->suite, benchmark->name, benchmark->shape,
                 benchmark->layout, options->profile.profile,
-                requested_threads, threads, result->median_seconds,
+                requested_threads, measured_threads, result->median_seconds,
                 result->p95_seconds, benchmark->metric, value,
                 result->iterations_per_sample, result->checksum);
     }
@@ -90,6 +89,7 @@ int bench_execute_case(const bench_options* options,
         return 2;
     }
 #endif
+    int measured_threads = actual_threads(requested_threads);
     if (bench_measure(benchmark->operation, benchmark->context,
                       &options->profile, result) != 0 ||
         !isfinite(result->checksum)) {
@@ -98,7 +98,7 @@ int bench_execute_case(const bench_options* options,
         return 1;
     }
     return bench_record_measurement(options, csv, benchmark,
-                                    requested_threads, result);
+                                    requested_threads, measured_threads, result);
 }
 
 static int suite_selected(const char* requested, const char* suite)

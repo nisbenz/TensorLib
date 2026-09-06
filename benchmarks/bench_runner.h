@@ -38,6 +38,7 @@ int bench_record_measurement(const bench_options* options,
                              FILE* csv,
                              const bench_case* benchmark,
                              int requested_threads,
+                             int measured_threads,
                              const bench_measurement* result);
 
 #endif
