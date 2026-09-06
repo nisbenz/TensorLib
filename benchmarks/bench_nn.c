@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include <tensorlib/nn.h>
+#include "../src/tensor/tensor_alloc_internal.h"
 
 typedef ag_tensor* (*model_forward)(const void* model, const ag_tensor* input);
 
@@ -20,6 +21,8 @@ typedef struct {
     double* phase_samples[6];
     int phase_sample_count;
     int phase_sample_capacity;
+    tensor_alloc_stats allocation_stats;
+    size_t allocation_baseline_bytes;
 } nn_bench_context;
 
 enum {
@@ -122,7 +125,35 @@ cleanup:
 
 static void reset_phase_samples(void* opaque)
 {
-    ((nn_bench_context*)opaque)->phase_sample_count = 0;
+    nn_bench_context* context = (nn_bench_context*)opaque;
+    context->phase_sample_count = 0;
+    tensor_alloc_stats_reset_counters();
+}
+
+static void report_allocation_stats(const bench_options* options,
+                                    FILE* csv,
+                                    int requested_threads,
+                                    int measured_threads,
+                                    const nn_bench_context* context)
+{
+    double calls = context->phase_sample_count > 0
+                 ? (double)context->phase_sample_count : 1.0;
+    const tensor_alloc_stats* stats = &context->allocation_stats;
+    bench_record_scalar(options, csv, "nn_phase", "tiny_lm_allocations",
+                        "[Bx128]->[Bx128x256]", "isolated-phase",
+                        "alloc/call", requested_threads, measured_threads,
+                        (double)stats->allocations / calls);
+    bench_record_scalar(options, csv, "nn_phase", "tiny_lm_allocated_bytes",
+                        "[Bx128]->[Bx128x256]", "isolated-phase",
+                        "bytes/call", requested_threads, measured_threads,
+                        (double)stats->allocated_bytes / calls);
+    bench_record_scalar(options, csv, "nn_phase", "tiny_lm_peak_live_bytes",
+                        "[Bx128]->[Bx128x256]", "isolated-phase",
+                        "bytes", requested_threads, measured_threads,
+                        (double)(stats->peak_live_bytes >=
+                                 context->allocation_baseline_bytes
+                             ? stats->peak_live_bytes -
+                               context->allocation_baseline_bytes : 0));
 }
 
 static int compare_double(const void* left, const void* right)
@@ -416,7 +447,12 @@ static int run_decoder_case(const bench_options* options,
     nn_bench_context context;
     bench_measurement local_result;
     bench_measurement* result = measurement == NULL ? &local_result : measurement;
+    if (train) {
+        tensor_alloc_stats_enable(1);
+        tensor_alloc_stats_reset();
+    }
     if (setup_decoder(&context, batch, time, channels, layers, train) != 0) {
+        if (train) tensor_alloc_stats_enable(0);
         destroy_context(&context);
         return 1;
     }
@@ -424,14 +460,23 @@ static int run_decoder_case(const bench_options* options,
         destroy_context(&context);
         return 1;
     }
+    if (train) {
+        tensor_alloc_stats_read(&context.allocation_stats);
+        context.allocation_baseline_bytes =
+            context.allocation_stats.live_bytes;
+        tensor_alloc_stats_reset_counters();
+    }
     int status = run_nn_case(options, csv, suite,
         train ? "tiny_lm_train_step" : "tiny_lm_forward",
         "[Bx128]->[Bx128x256]",
         train ? "forward+loss+backward+adamw" : "forward;graph-build",
         "tokens/s", (double)(batch * time), threads, &context, result);
     if (status == 0 && train && strcmp(suite, "nn") == 0) {
+        tensor_alloc_stats_read(&context.allocation_stats);
         report_training_phases(options, csv, threads, &context);
+        report_allocation_stats(options, csv, threads, threads, &context);
     }
+    if (train) tensor_alloc_stats_enable(0);
     destroy_context(&context);
     return status;
 }

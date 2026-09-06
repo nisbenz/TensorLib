@@ -1,6 +1,82 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../../include/tensorlib/tensor.h"
+#include "tensor_alloc_internal.h"
+
+static int stats_enabled;
+static volatile unsigned long long stats_allocations;
+static volatile unsigned long long stats_frees;
+static volatile size_t stats_allocated_bytes;
+static volatile size_t stats_live_bytes;
+static volatile size_t stats_peak_live_bytes;
+
+static void record_storage_alloc(size_t bytes)
+{
+    if (!stats_enabled) return;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    ++stats_allocations;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    stats_allocated_bytes += bytes;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    stats_live_bytes += bytes;
+#ifdef _OPENMP
+#pragma omp critical(tensor_alloc_stats_peak)
+#endif
+    if (stats_live_bytes > stats_peak_live_bytes) {
+        stats_peak_live_bytes = stats_live_bytes;
+    }
+}
+
+static void record_storage_free(size_t bytes)
+{
+    if (!stats_enabled) return;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    ++stats_frees;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    stats_live_bytes -= bytes;
+}
+
+void tensor_alloc_stats_enable(int enabled)
+{
+    stats_enabled = enabled != 0;
+}
+
+void tensor_alloc_stats_reset(void)
+{
+    stats_allocations = 0;
+    stats_frees = 0;
+    stats_allocated_bytes = 0;
+    stats_live_bytes = 0;
+    stats_peak_live_bytes = 0;
+}
+
+void tensor_alloc_stats_reset_counters(void)
+{
+    stats_allocations = 0;
+    stats_frees = 0;
+    stats_allocated_bytes = 0;
+    stats_peak_live_bytes = stats_live_bytes;
+}
+
+void tensor_alloc_stats_read(tensor_alloc_stats* result)
+{
+    if (result == NULL) return;
+    result->allocations = stats_allocations;
+    result->frees = stats_frees;
+    result->allocated_bytes = stats_allocated_bytes;
+    result->live_bytes = stats_live_bytes;
+    result->peak_live_bytes = stats_peak_live_bytes;
+}
 
 void add_ref_count(Storage* a, tensor* b) {
     if (a != NULL && b != NULL) {
@@ -23,6 +99,7 @@ Storage* s_alloc(int ndim, const int* dims) {
         free(s);
         return NULL;
     }
+    record_storage_alloc(count * sizeof(float));
     return s;
 }
 
@@ -64,6 +141,7 @@ void t_free(tensor* t) {
         if (t->storage->ref_count > 1) {
             t->storage->ref_count--;
         } else {
+            record_storage_free((size_t)t->storage->size * sizeof(float));
             free(t->storage->data);
             free(t->storage);
         }
@@ -95,6 +173,7 @@ int init_t(tensor* c, tensor* ref) {
         c->storage = NULL;
         return 1;
     }
+    record_storage_alloc((size_t)total_elements * sizeof(float));
 
     if (ref->ndim > 0) {
         int* strides = (int*)malloc((size_t)ref->ndim * sizeof(int));

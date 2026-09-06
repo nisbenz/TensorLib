@@ -76,6 +76,29 @@ int bench_record_measurement(const bench_options* options,
     return 0;
 }
 
+int bench_record_scalar(const bench_options* options,
+                        FILE* csv,
+                        const char* suite,
+                        const char* name,
+                        const char* shape,
+                        const char* layout,
+                        const char* metric,
+                        int requested_threads,
+                        int measured_threads,
+                        double value)
+{
+    if (options == NULL || suite == NULL || name == NULL ||
+        !isfinite(value)) return 1;
+    printf("  %-24s threads=%-3d %s=%9.3f\n",
+           name, measured_threads, metric, value);
+    if (csv != NULL) {
+        fprintf(csv, "%s,%s,%s,%s,%s,%d,%d,0,0,%s,%.9g,1,%.9g,ok\n",
+                suite, name, shape, layout, options->profile.profile,
+                requested_threads, measured_threads, metric, value, value);
+    }
+    return 0;
+}
+
 int bench_execute_case(const bench_options* options,
                        FILE* csv,
                        const bench_case* benchmark,

@@ -42,4 +42,15 @@ int bench_record_measurement(const bench_options* options,
                              int measured_threads,
                              const bench_measurement* result);
 
+int bench_record_scalar(const bench_options* options,
+                        FILE* csv,
+                        const char* suite,
+                        const char* name,
+                        const char* shape,
+                        const char* layout,
+                        const char* metric,
+                        int requested_threads,
+                        int measured_threads,
+                        double value);
+
 #endif
