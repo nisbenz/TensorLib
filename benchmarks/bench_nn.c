@@ -554,8 +554,12 @@ static int run_decoder_case(const bench_options* options,
                                   &context);
         }
     }
-    if (train) tensor_alloc_stats_enable(0);
     destroy_context(&context);
+    if (train) {
+        tensor_alloc_stats_read(&context.allocation_stats);
+        if (context.allocation_stats.live_bytes != 0) status = 1;
+        tensor_alloc_stats_enable(0);
+    }
     return status;
 }
 
