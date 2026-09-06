@@ -13,4 +13,10 @@ ag_tensor* ag_make_result(tensor* output,
 
 tensor* ag_full_like(const tensor* reference, float value);
 
+ag_tensor* ag_matmul_packed_rhs(
+    const ag_tensor* a,
+    const ag_tensor* b,
+    const tensor_matmul_packed_rhs* packed_rhs
+);
+
 #endif

@@ -75,10 +75,22 @@ fail:
     return 1;
 }
 
-ag_tensor* ag_matmul(const ag_tensor* a, const ag_tensor* b) {
-    if (a == NULL || b == NULL) return NULL;
-    tensor* output = t_matmul(a->value, b->value);
+static ag_tensor* make_matmul_result(const ag_tensor* a,
+                                     const ag_tensor* b,
+                                     tensor* output) {
     ag_tensor* inputs[2] = {(ag_tensor*)a, (ag_tensor*)b};
     return ag_make_result(output, AG_OP_MATMUL, 2, inputs,
                           backward_matmul, NULL, NULL);
+}
+
+ag_tensor* ag_matmul(const ag_tensor* a, const ag_tensor* b) {
+    if (a == NULL || b == NULL) return NULL;
+    return make_matmul_result(a, b, t_matmul(a->value, b->value));
+}
+
+ag_tensor* ag_matmul_packed_rhs(const ag_tensor* a,
+                                const ag_tensor* b,
+                                const tensor_matmul_packed_rhs* packed_rhs) {
+    if (a == NULL || b == NULL || packed_rhs == NULL) return NULL;
+    return make_matmul_result(a, b, t_matmul_packed_rhs(a->value, packed_rhs));
 }
