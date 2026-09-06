@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #include "./../../include/tensorlib/autograd_internal.h"
 
@@ -13,6 +15,35 @@ typedef struct {
     int count;
     int capacity;
 } node_list;
+
+static int backward_stats_enabled;
+static ag_backward_stats backward_stats;
+
+static double backward_now(void)
+{
+    return (double)clock() / (double)CLOCKS_PER_SEC;
+}
+
+static double backward_elapsed(double started)
+{
+    double elapsed = backward_now() - started;
+    return elapsed > 0.0 ? elapsed : 0.0;
+}
+
+void ag_backward_stats_enable(int enabled)
+{
+    backward_stats_enabled = enabled != 0;
+}
+
+void ag_backward_stats_reset(void)
+{
+    memset(&backward_stats, 0, sizeof(backward_stats));
+}
+
+void ag_backward_stats_read(ag_backward_stats* output)
+{
+    if (output != NULL) *output = backward_stats;
+}
 
 static int append_tensor(tensor_list* list, ag_tensor* value) {
     if (list->count == list->capacity) {
@@ -153,14 +184,25 @@ static int add_in_place(tensor* destination, const tensor* source)
 static int accumulate_pass_gradient(tensor** destination,
                                     tensor* contribution,
                                     const tensor* target) {
+    double started = backward_stats_enabled ? backward_now() : 0.0;
     tensor* reduced = reduce_to_shape(contribution, target);
+    if (backward_stats_enabled) {
+        backward_stats.reduction_seconds += backward_elapsed(started);
+        started = backward_now();
+    }
     if (reduced == NULL) return 1;
     if (*destination == NULL) {
         *destination = reduced;
+        if (backward_stats_enabled) {
+            backward_stats.accumulation_seconds += backward_elapsed(started);
+        }
         return 0;
     }
     if (add_in_place(*destination, reduced) == 0) {
         t_free(reduced);
+        if (backward_stats_enabled) {
+            backward_stats.accumulation_seconds += backward_elapsed(started);
+        }
         return 0;
     }
     tensor* sum = t_add(*destination, reduced);
@@ -168,6 +210,9 @@ static int accumulate_pass_gradient(tensor** destination,
     if (sum == NULL) return 1;
     t_free(*destination);
     *destination = sum;
+    if (backward_stats_enabled) {
+        backward_stats.accumulation_seconds += backward_elapsed(started);
+    }
     return 0;
 }
 
@@ -225,9 +270,13 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
     tensor** contributions = NULL;
     int contribution_capacity = 0;
     int status = 1;
+    double started = backward_stats_enabled ? backward_now() : 0.0;
 
     if (collect_graph(output, &tensors, &nodes) != 0) goto cleanup;
     if (!graph_versions_match(&nodes)) goto cleanup;
+    if (backward_stats_enabled) {
+        backward_stats.traversal_seconds += backward_elapsed(started);
+    }
 
     for (int node_index = 0; node_index < nodes.count; ++node_index) {
         if (nodes.values[node_index]->input_count > contribution_capacity) {
@@ -258,7 +307,18 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
             contributions[input_index] = NULL;
         }
 
-        if (node->backward(node, pass_gradients[gradient_index], contributions) != 0) {
+        started = backward_stats_enabled ? backward_now() : 0.0;
+        int backward_status =
+            node->backward(node, pass_gradients[gradient_index], contributions);
+        if (backward_stats_enabled) {
+            int operation = (int)node->operation;
+            if (operation >= 0 && operation < AG_BACKWARD_OP_COUNT) {
+                backward_stats.operation_seconds[operation] +=
+                    backward_elapsed(started);
+                ++backward_stats.operation_calls[operation];
+            }
+        }
+        if (backward_status != 0) {
             free_contributions(contributions, node->input_count);
             goto cleanup;
         }
@@ -282,7 +342,11 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
         }
     }
 
+    started = backward_stats_enabled ? backward_now() : 0.0;
     status = merge_persistent_gradients(&tensors, pass_gradients);
+    if (backward_stats_enabled) {
+        backward_stats.merge_seconds += backward_elapsed(started);
+    }
 
 cleanup:
     free_contributions(contributions, contribution_capacity);

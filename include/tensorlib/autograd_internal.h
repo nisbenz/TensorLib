@@ -3,6 +3,21 @@
 
 #include "../../include/tensorlib/autograd.h"
 
+#define AG_BACKWARD_OP_COUNT ((int)AG_OP_CROSS_ENTROPY + 1)
+
+typedef struct {
+    double operation_seconds[AG_BACKWARD_OP_COUNT];
+    unsigned long operation_calls[AG_BACKWARD_OP_COUNT];
+    double traversal_seconds;
+    double reduction_seconds;
+    double accumulation_seconds;
+    double merge_seconds;
+} ag_backward_stats;
+
+void ag_backward_stats_enable(int enabled);
+void ag_backward_stats_reset(void);
+void ag_backward_stats_read(ag_backward_stats* output);
+
 ag_tensor* ag_make_result(tensor* output,
                           ag_op operation,
                           int input_count,

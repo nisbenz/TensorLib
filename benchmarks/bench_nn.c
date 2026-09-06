@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include <tensorlib/nn.h>
+#include <tensorlib/autograd_internal.h>
 #include "../src/tensor/tensor_alloc_internal.h"
 
 typedef ag_tensor* (*model_forward)(const void* model, const ag_tensor* input);
@@ -23,6 +24,7 @@ typedef struct {
     int phase_sample_count;
     int phase_sample_capacity;
     tensor_alloc_stats allocation_stats;
+    ag_backward_stats backward_stats;
     size_t allocation_baseline_bytes;
 } nn_bench_context;
 
@@ -169,6 +171,45 @@ static void report_allocation_stats(const bench_options* options,
                                  context->allocation_baseline_bytes
                              ? stats->peak_live_bytes -
                                context->allocation_baseline_bytes : 0));
+}
+
+static void report_backward_stats(const bench_options* options,
+                                  FILE* csv,
+                                  int requested_threads,
+                                  int measured_threads,
+                                  const nn_bench_context* context)
+{
+    static const char* names[AG_BACKWARD_OP_COUNT] = {
+        "add", "sub", "mul", "div", "neg", "exp", "log", "pow",
+        "sqrt", "relu", "sigmoid", "tanh", "gelu", "matmul", "sum",
+        "mean", "max", "reshape", "transpose", "slice", "expand",
+        "gather_rows", "mul_scalar", "div_scalar", "layer_norm",
+        "softmax", "log_softmax", "cross_entropy"
+    };
+    const ag_backward_stats* stats = &context->backward_stats;
+    for (int operation = 0; operation < AG_BACKWARD_OP_COUNT; ++operation) {
+        if (stats->operation_calls[operation] == 0) continue;
+        char name[64];
+        snprintf(name, sizeof(name), "backward_op_%s", names[operation]);
+        bench_record_scalar(options, csv, "nn_backward", name,
+            "[Bx128]->[Bx128x256]", "profiled-single-call", "ms/call",
+            requested_threads, measured_threads,
+            stats->operation_seconds[operation] * 1000.0);
+    }
+    static const char* engine_names[] = {
+        "backward_graph_traversal", "backward_shape_reduction",
+        "backward_gradient_accumulation", "backward_persistent_merge"
+    };
+    const double engine_values[] = {
+        stats->traversal_seconds, stats->reduction_seconds,
+        stats->accumulation_seconds, stats->merge_seconds
+    };
+    for (int index = 0; index < 4; ++index) {
+        bench_record_scalar(options, csv, "nn_backward", engine_names[index],
+            "[Bx128]->[Bx128x256]", "profiled-single-call", "ms/call",
+            requested_threads, measured_threads,
+            engine_values[index] * 1000.0);
+    }
 }
 
 static int compare_double(const void* left, const void* right)
@@ -501,6 +542,17 @@ static int run_decoder_case(const bench_options* options,
         tensor_alloc_stats_read(&context.allocation_stats);
         report_training_phases(options, csv, threads, measured_threads, &context);
         report_allocation_stats(options, csv, threads, measured_threads, &context);
+        ag_backward_stats_reset();
+        ag_backward_stats_enable(1);
+        double checksum = 0.0;
+        int profile_status = nn_operation(&context, &checksum);
+        ag_backward_stats_enable(0);
+        ag_backward_stats_read(&context.backward_stats);
+        if (profile_status != 0) status = 1;
+        if (status == 0) {
+            report_backward_stats(options, csv, threads, measured_threads,
+                                  &context);
+        }
     }
     if (train) tensor_alloc_stats_enable(0);
     destroy_context(&context);
