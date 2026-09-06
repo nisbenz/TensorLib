@@ -2,6 +2,9 @@
 #include <stdlib.h>
 
 #include "../../include/tensorlib/autograd_internal.h"
+#include "../tensor/parallel.h"
+
+#define TENSORLIB_LAYER_NORM_MIN_PARALLEL_ELEMENTS (1 << 16)
 
 typedef struct {
     int rows;
@@ -44,6 +47,8 @@ static int backward_layer_norm(const ag_node* node,
     tensor* input_gradient = NULL;
     tensor* weight_gradient = NULL;
     tensor* bias_gradient = NULL;
+    float* weight_partials = NULL;
+    float* bias_partials = NULL;
 
     if (node == NULL || input_gradients == NULL ||
         !tensor_has_valid_metadata(output_gradient)) return 1;
@@ -72,7 +77,36 @@ static int backward_layer_norm(const ag_node* node,
         for (int k = 0; k < width; ++k) bias_gradient->storage->data[k] = 0.0f;
     }
 
+    int threads = tensorlib_parallel_threads(
+        (long long)context->rows * width,
+        TENSORLIB_LAYER_NORM_MIN_PARALLEL_ELEMENTS, context->rows);
+    if (threads > 1 && weight_gradient != NULL) {
+        weight_partials = (float*)calloc((size_t)threads * (size_t)width,
+                                         sizeof(*weight_partials));
+        if (weight_partials == NULL) goto fail;
+    }
+    if (threads > 1 && bias_gradient != NULL) {
+        bias_partials = (float*)calloc((size_t)threads * (size_t)width,
+                                       sizeof(*bias_partials));
+        if (bias_partials == NULL) goto fail;
+    }
+
+#ifdef _OPENMP
+#pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
+#endif
     for (int row = 0; row < context->rows; ++row) {
+        int tid = 0;
+#ifdef _OPENMP
+        tid = omp_get_thread_num();
+#endif
+        float* local_weight = weight_partials == NULL
+                            ? (weight_gradient == NULL ? NULL :
+                               weight_gradient->storage->data)
+                            : weight_partials + (size_t)tid * (size_t)width;
+        float* local_bias = bias_partials == NULL
+                          ? (bias_gradient == NULL ? NULL :
+                             bias_gradient->storage->data)
+                          : bias_partials + (size_t)tid * (size_t)width;
         int input_base = row_base(input, row, width);
         int gradient_base = row_base(output_gradient, row, width);
         float sum = 0.0f;
@@ -86,10 +120,8 @@ static int backward_layer_norm(const ag_node* node,
             float scale = weight == NULL ? 1.0f : weight->storage->data[k];
             sum += upstream * scale;
             weighted_sum += upstream * scale * normalized;
-            if (weight_gradient != NULL) {
-                weight_gradient->storage->data[k] += upstream * normalized;
-            }
-            if (bias_gradient != NULL) bias_gradient->storage->data[k] += upstream;
+            if (local_weight != NULL) local_weight[k] += upstream * normalized;
+            if (local_bias != NULL) local_bias[k] += upstream;
         }
         if (input_gradient != NULL) {
             for (int k = 0; k < width; ++k) {
@@ -106,6 +138,24 @@ static int backward_layer_norm(const ag_node* node,
             }
         }
     }
+    if (weight_partials != NULL) {
+        for (int tid = 0; tid < threads; ++tid) {
+            for (int k = 0; k < width; ++k) {
+                weight_gradient->storage->data[k] +=
+                    weight_partials[(size_t)tid * (size_t)width + (size_t)k];
+            }
+        }
+    }
+    if (bias_partials != NULL) {
+        for (int tid = 0; tid < threads; ++tid) {
+            for (int k = 0; k < width; ++k) {
+                bias_gradient->storage->data[k] +=
+                    bias_partials[(size_t)tid * (size_t)width + (size_t)k];
+            }
+        }
+    }
+    free(weight_partials);
+    free(bias_partials);
     input_gradients[0] = input_gradient;
     if (node->input_count == 3) {
         input_gradients[1] = weight_gradient;
@@ -114,6 +164,8 @@ static int backward_layer_norm(const ag_node* node,
     return 0;
 
 fail:
+    free(weight_partials);
+    free(bias_partials);
     t_free(input_gradient);
     t_free(weight_gradient);
     t_free(bias_gradient);
