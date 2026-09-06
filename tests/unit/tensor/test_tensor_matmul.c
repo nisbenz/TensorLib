@@ -242,6 +242,31 @@ TEST(test_packed_rhs_snapshots_transposed_view) {
     t_free(a);
 }
 
+TEST(test_packed_rhs_transpose_pack_retains_lifetime) {
+    int left_dims[2] = {1, 3};
+    int rhs_dims[2] = {2, 3};
+    tensor* left = t_alloc(2, left_dims);
+    tensor* rhs = t_alloc(2, rhs_dims);
+    const float left_values[3] = {1, 2, 3};
+    const float rhs_values[6] = {1, 2, 3, 4, 5, 6};
+    fill_tensor(left, left_values, 3);
+    fill_tensor(rhs, rhs_values, 6);
+
+    tensor_matmul_packed_rhs* packed = t_pack_matmul_rhs_transposed(rhs);
+    ASSERT_NOT_NULL(packed);
+    t_retain_matmul_packed_rhs(packed);
+    t_free_matmul_packed_rhs(packed);
+    tensor* result = t_matmul_packed_rhs(left, packed);
+    ASSERT_NOT_NULL(result);
+    ASSERT_EQ_FLOAT(result->storage->data[0], 14.0f);
+    ASSERT_EQ_FLOAT(result->storage->data[1], 32.0f);
+
+    t_free(result);
+    t_free_matmul_packed_rhs(packed);
+    t_free(rhs);
+    t_free(left);
+}
+
 TEST(test_packed_rhs_handles_transposed_slices_and_kernel_tails) {
     int left_dims[2] = {4, 4};
     int right_dims[2] = {4, 4};
@@ -521,6 +546,7 @@ int main(void) {
     RUN_TEST(test_t_matmul_transposed_2d_uneven_rows_and_columns);
     RUN_TEST(test_t_matmul_vector_cases);
     RUN_TEST(test_packed_rhs_snapshots_transposed_view);
+    RUN_TEST(test_packed_rhs_transpose_pack_retains_lifetime);
     RUN_TEST(test_packed_rhs_handles_transposed_slices_and_kernel_tails);
     RUN_TEST(test_packed_rhs_handles_non_multiple_kernel_dimensions);
     RUN_TEST(test_packed_rhs_handles_reshape_contiguous_squeeze_and_unsqueeze);

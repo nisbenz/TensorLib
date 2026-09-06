@@ -38,6 +38,7 @@ enum {
 #endif
 
 struct tensor_matmul_packed_rhs {
+    int ref_count;
     int batch_rank;
     int* batch_dims;
     int inner;
@@ -128,6 +129,7 @@ tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs) {
     tensor_matmul_packed_rhs* packed =
         (tensor_matmul_packed_rhs*)calloc(1, sizeof(*packed));
     if (packed == NULL) return NULL;
+    packed->ref_count = 1;
 
     packed->batch_rank = batch_rank;
     packed->inner = rhs->dims[rhs->ndim - 2];
@@ -191,8 +193,30 @@ tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs) {
     return packed;
 }
 
+tensor_matmul_packed_rhs* t_pack_matmul_rhs_transposed(const tensor* rhs)
+{
+    tensor* transposed;
+    tensor_matmul_packed_rhs* packed;
+
+    if (!tensor_has_valid_metadata(rhs) || rhs->ndim < 2) return NULL;
+    transposed = t_transpose((tensor*)rhs, rhs->ndim - 2, rhs->ndim - 1);
+    if (transposed == NULL) return NULL;
+    packed = t_pack_matmul_rhs(transposed);
+    t_free(transposed);
+    return packed;
+}
+
+void t_retain_matmul_packed_rhs(tensor_matmul_packed_rhs* rhs)
+{
+    if (rhs != NULL && rhs->ref_count > 0) ++rhs->ref_count;
+}
+
 void t_free_matmul_packed_rhs(tensor_matmul_packed_rhs* rhs) {
     if (rhs == NULL) return;
+    if (rhs->ref_count > 1) {
+        --rhs->ref_count;
+        return;
+    }
     matmul_aligned_free(rhs->data);
     free(rhs->batch_dims);
     free(rhs);
