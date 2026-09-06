@@ -28,6 +28,7 @@ typedef struct {
 } bench_case;
 
 int bench_run_suites(const bench_options* options, FILE* csv);
+int bench_configure_threads(int requested_threads);
 int bench_execute_case(const bench_options* options,
                        FILE* csv,
                        const bench_case* benchmark,

@@ -181,6 +181,7 @@ static int compare_double(const void* left, const void* right)
 static void report_training_phases(const bench_options* options,
                                    FILE* csv,
                                    int requested_threads,
+                                   int measured_threads,
                                    nn_bench_context* context)
 {
     static const char* names[PHASE_COUNT] = {
@@ -204,7 +205,7 @@ static void report_training_phases(const bench_options* options,
         result.iterations_per_sample = 1;
         benchmark.context = context;
         bench_record_measurement(options, csv, &benchmark,
-                                 requested_threads, requested_threads, &result);
+                                 requested_threads, measured_threads, &result);
     }
 }
 
@@ -496,27 +497,31 @@ static int run_decoder_case(const bench_options* options,
         train ? "forward+loss+backward+adamw" : "forward;graph-build",
         "tokens/s", (double)(batch * time), threads, &context, result);
     if (status == 0 && train && strcmp(suite, "nn") == 0) {
+        int measured_threads = bench_configure_threads(threads);
         tensor_alloc_stats_read(&context.allocation_stats);
-        report_training_phases(options, csv, threads, &context);
-        report_allocation_stats(options, csv, threads, threads, &context);
+        report_training_phases(options, csv, threads, measured_threads, &context);
+        report_allocation_stats(options, csv, threads, measured_threads, &context);
     }
     if (train) tensor_alloc_stats_enable(0);
     destroy_context(&context);
     return status;
 }
 
-static int run_decoder_cases(const bench_options* options, FILE* csv,
-                             int batch, int threads)
+static int run_decoder_cases(const bench_options* options, FILE* csv, int batch)
 {
     int smoke = strcmp(options->profile.profile, "smoke") == 0;
     int time = smoke ? 8 : 128;
     int channels = smoke ? 24 : 192;
     int layers = smoke ? 1 : 4;
     int forward_status = run_decoder_case(options, csv, "nn", batch, time,
-                                          channels, layers, 0, threads, NULL);
-    int train_status = run_decoder_case(options, csv, "nn", batch, time,
-                                        channels, layers, 1, threads, NULL);
-    return forward_status == 1 || train_status == 1;
+        channels, layers, 0, options->threads[0], NULL);
+    int status = forward_status == 1;
+    for (int index = 0; index < options->thread_count; ++index) {
+        int train_status = run_decoder_case(options, csv, "nn", batch, time,
+            channels, layers, 1, options->threads[index], NULL);
+        if (train_status == 1) status = 1;
+    }
+    return status;
 }
 
 int bench_run_decoder_scaling(const bench_options* options, FILE* csv)
@@ -580,7 +585,7 @@ int bench_run_nn_suite(const bench_options* options, FILE* csv)
                             batch, time, channels);
     status |= run_mlp(options, csv, smoke ? 2 : 64, 0);
     status |= run_mlp(options, csv, smoke ? 2 : 64, 1);
-    status |= run_decoder_cases(options, csv, batch, 1);
+    status |= run_decoder_cases(options, csv, batch);
     printf("\n");
     return status;
 }

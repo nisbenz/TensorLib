@@ -10,7 +10,7 @@
 #include <omp.h>
 #endif
 
-static int actual_threads(int requested)
+int bench_configure_threads(int requested)
 {
 #ifdef _OPENMP
     int actual = 1;
@@ -112,7 +112,7 @@ int bench_execute_case(const bench_options* options,
         return 2;
     }
 #endif
-    int measured_threads = actual_threads(requested_threads);
+    int measured_threads = bench_configure_threads(requested_threads);
     if (bench_measure_with_reset(benchmark->operation, benchmark->context,
                                  &options->profile, benchmark->reset, result) != 0 ||
         !isfinite(result->checksum)) {

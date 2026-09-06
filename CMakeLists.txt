@@ -234,6 +234,12 @@ if (TENSORLIB_BUILD_BENCHMARKS)
         add_test(NAME test_bench_harness COMMAND test_bench_harness)
         add_test(NAME test_benchmarks_smoke
                  COMMAND bench_tensorlib --smoke --threads 1)
+        if (TENSORLIB_ENABLE_OPENMP)
+            add_test(NAME test_benchmark_threads
+                     COMMAND bench_tensorlib --smoke --suite nn --threads 1,2,4)
+            set_tests_properties(test_benchmark_threads PROPERTIES
+                PASS_REGULAR_EXPRESSION "tiny_lm_backward +threads=4")
+        endif()
     endif()
 
     find_path(OPENBLAS_INCLUDE_DIR NAMES cblas.h PATH_SUFFIXES openblas)
