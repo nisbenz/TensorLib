@@ -100,6 +100,36 @@ static tensor* reduce_to_shape(tensor* contribution, const tensor* target) {
     return current;
 }
 
+static int add_in_place(tensor* destination, const tensor* source)
+{
+    if (!tensor_has_valid_metadata(destination) ||
+        !tensor_has_valid_metadata(source) ||
+        !same_shape(destination, (tensor*)source) ||
+        destination->storage == source->storage) return 1;
+
+    int count = tensor_numel(destination);
+    if (is_contiguous(destination) && is_contiguous((tensor*)source) &&
+        destination->offset == 0 && source->offset == 0) {
+        for (int index = 0; index < count; ++index) {
+            destination->storage->data[index] += source->storage->data[index];
+        }
+        return 0;
+    }
+
+    int* coords = destination->ndim > 0
+                ? (int*)calloc((size_t)destination->ndim, sizeof(*coords)) : NULL;
+    if (destination->ndim > 0 && coords == NULL) return 1;
+    for (int index = 0; index < count; ++index) {
+        int destination_index = get_flat_index_nd(destination, coords);
+        int source_index = get_flat_index_nd((tensor*)source, coords);
+        destination->storage->data[destination_index] +=
+            source->storage->data[source_index];
+        advance_coords(coords, destination->dims, destination->ndim);
+    }
+    free(coords);
+    return 0;
+}
+
 static int accumulate_pass_gradient(tensor** destination,
                                     tensor* contribution,
                                     const tensor* target) {
@@ -107,6 +137,10 @@ static int accumulate_pass_gradient(tensor** destination,
     if (reduced == NULL) return 1;
     if (*destination == NULL) {
         *destination = reduced;
+        return 0;
+    }
+    if (add_in_place(*destination, reduced) == 0) {
+        t_free(reduced);
         return 0;
     }
     tensor* sum = t_add(*destination, reduced);
