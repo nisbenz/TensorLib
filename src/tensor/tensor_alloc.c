@@ -131,19 +131,44 @@ tensor* t_clone(tensor* t) {
         return a;
     }
 
-    int* coords = NULL;
-    if (t->ndim > 0) {
-        coords = (int*)calloc((size_t)t->ndim, sizeof(int));
-        if (coords == NULL) {
-            t_free(a);
-            return NULL;
+    if (t->ndim == 2 && t->strides[0] == 1 &&
+        t->strides[1] >= t->dims[0]) {
+        const int tile = 32;
+        for (int row_block = 0; row_block < t->dims[0]; row_block += tile) {
+            int row_end = row_block + tile;
+            if (row_end > t->dims[0]) row_end = t->dims[0];
+            for (int column_block = 0; column_block < t->dims[1];
+                 column_block += tile) {
+                int column_end = column_block + tile;
+                if (column_end > t->dims[1]) column_end = t->dims[1];
+                for (int row = row_block; row < row_end; ++row) {
+                    for (int column = column_block; column < column_end; ++column) {
+                        a->storage->data[row * t->dims[1] + column] =
+                            t->storage->data[t->offset + row * t->strides[0] +
+                                             column * t->strides[1]];
+                    }
+                }
+            }
         }
+        return a;
+    }
+
+    int* coords = (int*)calloc((size_t)t->ndim, sizeof(int));
+    int src_idx = t->offset;
+    if (t->ndim > 0 && coords == NULL) {
+        t_free(a);
+        return NULL;
     }
 
     for (int i = 0; i < total_elements; i++) {
-        int src_idx = get_flat_index_nd(t, coords);
         a->storage->data[i] = t->storage->data[src_idx];
-        advance_coords(coords, t->dims, t->ndim);
+        for (int axis = t->ndim - 1; axis >= 0; --axis) {
+            coords[axis]++;
+            src_idx += t->strides[axis];
+            if (coords[axis] < t->dims[axis]) break;
+            coords[axis] = 0;
+            src_idx -= t->dims[axis] * t->strides[axis];
+        }
     }
     free(coords);
     return a;
