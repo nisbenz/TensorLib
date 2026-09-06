@@ -78,26 +78,46 @@ static tensor* reduce_to_shape(tensor* contribution, const tensor* target) {
         return NULL;
     }
 
-    tensor* current = contribution;
-    while (current->ndim > target->ndim) {
-        tensor* reduced = t_sum(current, 0);
-        t_free(current);
-        if (reduced == NULL) return NULL;
-        current = reduced;
-    }
-
-    for (int axis = 0; axis < target->ndim; ++axis) {
-        if (current->dims[axis] == target->dims[axis]) continue;
-        if (target->dims[axis] != 1 || current->dims[axis] == 1) {
-            t_free(current);
+    for (int target_axis = 0; target_axis < target->ndim; ++target_axis) {
+        int contribution_axis = contribution->ndim - target->ndim + target_axis;
+        if (target->dims[target_axis] != 1 &&
+            target->dims[target_axis] != contribution->dims[contribution_axis]) {
+            t_free(contribution);
             return NULL;
         }
-        tensor* reduced = t_sum_keepdim(current, axis);
-        t_free(current);
-        if (reduced == NULL) return NULL;
-        current = reduced;
     }
-    return current;
+    if (contribution->ndim == target->ndim &&
+        same_shape(contribution, (tensor*)target)) return contribution;
+
+    tensor* reduced = t_alloc(target->ndim, target->dims);
+    int* coords = contribution->ndim > 0
+                ? (int*)calloc((size_t)contribution->ndim, sizeof(*coords)) : NULL;
+    if (reduced == NULL || (contribution->ndim > 0 && coords == NULL)) {
+        free(coords);
+        t_free(reduced);
+        t_free(contribution);
+        return NULL;
+    }
+    for (int index = 0; index < tensor_numel(reduced); ++index) {
+        reduced->storage->data[reduced->offset + index] = 0.0f;
+    }
+
+    int contribution_count = tensor_numel(contribution);
+    for (int index = 0; index < contribution_count; ++index) {
+        int reduced_index = reduced->offset;
+        for (int target_axis = 0; target_axis < target->ndim; ++target_axis) {
+            int contribution_axis = contribution->ndim - target->ndim + target_axis;
+            int coordinate = target->dims[target_axis] == 1
+                           ? 0 : coords[contribution_axis];
+            reduced_index += coordinate * reduced->strides[target_axis];
+        }
+        reduced->storage->data[reduced_index] +=
+            contribution->storage->data[get_flat_index_nd(contribution, coords)];
+        advance_coords(coords, contribution->dims, contribution->ndim);
+    }
+    free(coords);
+    t_free(contribution);
+    return reduced;
 }
 
 static int add_in_place(tensor* destination, const tensor* source)
