@@ -49,5 +49,5 @@ ctest --test-dir build-sanitize --output-on-failure
 
 Correctness tests must pass before benchmarking. Record the compiler, flags,
 CPU, thread count, matrix shapes, and repeated-run variance with any performance
-claim. See [Performance and benchmarking](docs/performance.md) for the standard
-commands and reporting format.
+claim. See the [benchmark guide](docs/benchmarks.md) for the standard commands
+and reporting format.

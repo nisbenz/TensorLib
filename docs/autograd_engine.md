@@ -8,7 +8,7 @@ TensorLib's autograd engine provides **dynamic reverse-mode automatic differenti
 2. [Core Data Structures](#2-core-data-structures)
 3. [Computation Graph Construction](#3-computation-graph-construction)
 4. [Tensor Lifecycle in Autograd](#4-tensor-lifecycle-in-autograd)
-5. [The 23 Differentiable Operations](#5-the-23-differentiable-operations)
+5. [The 24 Differentiable Operations](#5-the-24-differentiable-operations)
 6. [Backward Pass (The Core Algorithm)](#6-backward-pass-the-core-algorithm)
 7. [Broadcast Gradient Reduction](#7-broadcast-gradient-reduction)
 8. [Error Handling & Graph Consistency](#8-error-handling--graph-consistency)
@@ -25,7 +25,7 @@ TensorLib's autograd system is a from-scratch C99 implementation of the same fun
 ### What autograd provides
 
 - **Dynamic reverse-mode AD**: the graph is built on-the-fly as `ag_add`, `ag_matmul`, etc. are called. No separate tracing or compilation step.
-- **23 differentiable operations** spanning element-wise arithmetic, activations, reductions, views, matrix multiplication, and gathering.
+- **24 differentiable operations** spanning element-wise arithmetic, activations, reductions, views, matrix multiplication, and gathering.
 - **Automatic broadcast-reduction**: when inputs are broadcast during forward, gradients are automatically reduced back to input shape during backward.
 - **Gradient accumulation**: repeated calls to `ag_backward` accumulate gradients on leaf tensors, matching PyTorch's behavior.
 - **Transactional safety**: if any tensor is modified between forward and backward, the entire backward pass is rejected and existing gradients are left unchanged.
@@ -54,7 +54,7 @@ TensorLib's autograd system is a from-scratch C99 implementation of the same fun
 
 ## 2. Core Data Structures
 
-### `ag_op` enum — all 23 differentiable operations
+### `ag_op` enum — all 24 differentiable operations
 
 Defined in `include/tensorlib/autograd.h:27-52`:
 
@@ -316,7 +316,7 @@ stateDiagram-v2
 
 ---
 
-## 5. The 23 Differentiable Operations
+## 5. The 24 Differentiable Operations
 
 Operations are grouped by category. For each operation, the table shows the forward behavior and the backward gradient formula.
 
@@ -764,12 +764,12 @@ Both TensorLib and PyTorch use monotonically increasing version counters on stor
 
 TensorLib checks versions for **both inputs and outputs** at every node, while PyTorch primarily checks input versions. This provides comprehensive staleness detection including cases where an intermediate output is modified.
 
-### Why 23 operations specifically?
+### Why 24 operations specifically?
 
-The 23 operations represent the **minimal set** needed for common deep learning workloads:
+The 24 operations represent the **minimal set** needed for common deep learning workloads:
 
 - **4 binary arithmetic** (add, sub, mul, div) + 2 scalar variants
-- **8 unary** (neg, exp, log, pow, sqrt, relu, sigmoid, tanh, gelu) — covers all standard activation functions
+- **9 unary** (neg, exp, log, pow, sqrt, relu, sigmoid, tanh, gelu) — covers all standard activation functions
 - **1 matmul** — the core linear algebra primitive
 - **3 reductions** (sum, mean, max) — covers loss computation and normalization
 - **4 views** (reshape, transpose, slice, expand) — covers tensor manipulation
@@ -787,7 +787,7 @@ Every forward operation funnels through `ag_make_result`, which centralizes:
 4. Retaining inputs.
 5. Handling allocation failures transactionally.
 
-This eliminates duplicated graph-construction logic across 23 operations and ensures consistent error handling.
+This eliminates duplicated graph-construction logic across 24 operations and ensures consistent error handling.
 
 ---
 

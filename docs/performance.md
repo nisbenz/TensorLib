@@ -1,4 +1,8 @@
-# Performance and benchmarking
+# Performance notes
+
+For commands, suite definitions, timing methodology, CSV fields, comparison
+boundaries, and contribution guidance, see the dedicated
+[Benchmark guide](benchmarks.md).
 
 TensorLib's benchmark suite measures public tensor operations, autograd, neural
 network modules, end-to-end training work, and CPU thread scaling. Matmul is
@@ -39,7 +43,8 @@ build-bench/bench_tensorlib --profile quick --suite all \
 The quick profile uses five adaptively batched samples of at least 20 ms. The
 full profile uses fifteen samples of at least 100 ms after a longer warm-up.
 `--smoke` exists for correctness and portability checks; its timings are not
-performance results.
+performance results. See the [profile table](benchmarks.md#profiles) for exact
+warm-up durations and intended uses.
 
 ## What is measured
 
@@ -71,7 +76,8 @@ If PyTorch is installed, `make benchmark-compare` also runs the eager float32
 CPU reference in `benchmarks/bench_pytorch.py`. It matches the MLP and
 TinyLM-style forward/training workloads without making PyTorch a TensorLib
 build dependency. Reference results use `BENCHMARK_REFERENCE_THREADS`, which
-defaults to one for fair single-core comparison.
+defaults to one. Set `BENCHMARK_THREADS=1` as well when collecting a deliberately
+matched single-thread comparison.
 
 ## Reading results
 

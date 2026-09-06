@@ -36,7 +36,7 @@
 ## Key Features
 
 - **Tensor Core** — N-dimensional `float32` arrays with NumPy-style broadcasting, zero-copy strided views, and reference-counted storage
-- **Autograd Engine** — Dynamic reverse-mode automatic differentiation over 23 differentiable operations with stale-graph detection
+- **Autograd Engine** — Dynamic reverse-mode automatic differentiation over 24 differentiable operations with stale-graph detection
 - **Neural Network Modules** — Composable module hierarchy with Linear, Embedding, LayerNorm, Dropout, Multi-head Causal Self-Attention, MLP, and full GPT-style Decoder
 - **Loss Functions** — Cross-entropy (numerically stable), Softmax, LogSoftmax
 - **Optimizers** — SGD and AdamW (decoupled weight decay, bias correction, gradient clipping)
@@ -68,7 +68,7 @@ graph TB
     end
 
     subgraph AG["Autograd Engine"]
-        G1["23 Differentiable Ops"]
+        G1["24 Differentiable Ops"]
         G2["Graph Construction"]
         G3["Backward Pass"]
         G4["Broadcast Gradient Reduction"]
@@ -122,10 +122,11 @@ Comprehensive documentation is available for each component:
 | Document | Description |
 |----------|-------------|
 | [**Tensor Mechanics**](docs/tensor_mechanics.md) | Storage model, strided views, broadcasting, AVX2 matmul kernel, API reference |
-| [**Autograd Engine**](docs/autograd_engine.md) | Computation graph, 23 differentiable ops, backward pass algorithm, gradient reduction |
+| [**Autograd Engine**](docs/autograd_engine.md) | Computation graph, 24 differentiable ops, backward pass algorithm, gradient reduction |
 | [**Neural Network Modules**](docs/neural_network_modules.md) | Module system, all layers, loss functions, optimizers, checkpointing |
 | [**Decoder Implementation**](docs/decoder_implementation.md) | GPT-style decoder stack, multi-head attention, causal masking, training guide |
-| [**Performance**](docs/performance.md) | Reproducible benchmarks, reporting guidance, optimization roadmap |
+| [**Benchmark Guide**](docs/benchmarks.md) | Suites, timing methodology, CSV schema, comparisons, and reproducible reporting |
+| [**Performance Notes**](docs/performance.md) | Measurement boundaries, interpretation, and optimization guidance |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and change
 guidelines.
@@ -358,13 +359,19 @@ make test
 
 ## Performance
 
-### Matmul Benchmarks
-
-Compare TensorLib's blocked AVX2 kernel against OpenBLAS:
+The benchmark suite covers tensor kernels, autograd, neural-network modules,
+end-to-end training steps, and OpenMP scaling. Run the quick profile with:
 
 ```sh
-make benchmark-compare
+make benchmark-quick BUILD_DIR=build-bench
 ```
+
+Optional OpenBLAS and PyTorch workload comparisons are available through
+`make benchmark-compare`. See the [benchmark guide](docs/benchmarks.md) for
+profiles, suite selection, thread controls, CSV fields, and fair-comparison
+requirements.
+
+### Matmul implementation
 
 The matmul kernel uses a tile-based blocked algorithm:
 
@@ -428,15 +435,23 @@ tensorlib/
 │   ├── tiny_lm/                  #   Byte-level decoder LM (~1.9M params)
 │   └── mnist/                    #   MNIST MLP classifier
 │
-├── benchmarks/                   # Performance benchmarks
-│   └── matmul/                   #   Matmul vs OpenBLAS
+├── benchmarks/                   # Benchmark harness and suite implementations
+│   ├── bench_tensorlib.c         #   Native benchmark CLI
+│   ├── bench_kernels.c           #   Tensor-kernel workloads
+│   ├── bench_autograd.c          #   Autograd lifecycle workloads
+│   ├── bench_nn.c                #   Layer and model workloads
+│   ├── bench_scaling.c           #   OpenMP scaling workloads
+│   ├── bench_openblas.c          #   Optional matched matmul baseline
+│   └── bench_pytorch.py          #   Optional eager CPU reference
+├── scripts/run_benchmarks.py     # Benchmark runner and host metadata capture
 │
 └── docs/                         # Detailed documentation
     ├── tensor_mechanics.md       #   Tensor layer reference
     ├── autograd_engine.md        #   Autograd engine reference
     ├── neural_network_modules.md #   NN modules reference
     ├── decoder_implementation.md #   Decoder implementation reference
-    └── performance.md            #   Reproducible benchmark guide
+    ├── benchmarks.md             #   Reproducible benchmark guide
+    └── performance.md            #   Performance interpretation notes
 ```
 
 ---
