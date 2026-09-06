@@ -135,6 +135,45 @@ TEST(test_t_matmul_accepts_transposed_views) {
     t_free(a_base);
 }
 
+TEST(test_t_matmul_transposed_2d_uneven_rows_and_columns) {
+    int a_dims[] = {5, 3};
+    int b_dims[] = {4, 3};
+    tensor* a = t_alloc(2, a_dims);
+    tensor* b_base = t_alloc(2, b_dims);
+    tensor* b = NULL;
+    tensor* actual = NULL;
+
+    ASSERT_NOT_NULL(a);
+    ASSERT_NOT_NULL(b_base);
+    for (int i = 0; i < tensor_numel(a); ++i) {
+        a->storage->data[i] = (float)(i + 1);
+    }
+    for (int i = 0; i < tensor_numel(b_base); ++i) {
+        b_base->storage->data[i] = (float)(i - 3);
+    }
+    b = t_transpose(b_base, 0, 1);
+    actual = t_matmul(a, b);
+    ASSERT_NOT_NULL(b);
+    ASSERT_NOT_NULL(actual);
+    ASSERT_EQ_INT(actual->ndim, 2);
+    ASSERT_EQ_INT(actual->dims[0], 5);
+    ASSERT_EQ_INT(actual->dims[1], 4);
+    for (int row = 0; row < 5; ++row) {
+        for (int column = 0; column < 4; ++column) {
+            float expected = 0.0f;
+            for (int inner = 0; inner < 3; ++inner) {
+                expected += a->storage->data[row * 3 + inner] *
+                            b_base->storage->data[column * 3 + inner];
+            }
+            ASSERT_EQ_FLOAT(actual->storage->data[row * 4 + column], expected);
+        }
+    }
+    t_free(actual);
+    t_free(b);
+    t_free(b_base);
+    t_free(a);
+}
+
 TEST(test_t_matmul_vector_cases) {
     int vector_dims[1] = {3};
     int matrix_dims[2] = {2, 3};
@@ -479,6 +518,7 @@ int main(void) {
     RUN_TEST(test_t_matmul_batched_3d);
     RUN_TEST(test_t_matmul_broadcasts_batch_dimensions);
     RUN_TEST(test_t_matmul_accepts_transposed_views);
+    RUN_TEST(test_t_matmul_transposed_2d_uneven_rows_and_columns);
     RUN_TEST(test_t_matmul_vector_cases);
     RUN_TEST(test_packed_rhs_snapshots_transposed_view);
     RUN_TEST(test_packed_rhs_handles_transposed_slices_and_kernel_tails);
