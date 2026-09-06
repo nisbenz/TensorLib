@@ -24,4 +24,10 @@ ag_tensor* ag_layer_norm(const ag_tensor* input,
                          const ag_tensor* bias,
                          float epsilon);
 
+ag_tensor* ag_softmax_last_dim(const ag_tensor* input,
+                               int log_softmax,
+                               int causal);
+
+ag_tensor* ag_cross_entropy(const ag_tensor* logits, const tensor* targets);
+
 #endif

@@ -49,7 +49,10 @@ typedef enum {
     AG_OP_GATHER_ROWS,
     AG_OP_MUL_SCALAR,
     AG_OP_DIV_SCALAR,
-    AG_OP_LAYER_NORM
+    AG_OP_LAYER_NORM,
+    AG_OP_SOFTMAX,
+    AG_OP_LOG_SOFTMAX,
+    AG_OP_CROSS_ENTROPY
 } ag_op;
 
 
