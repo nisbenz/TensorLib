@@ -166,7 +166,12 @@ static int try_contiguous_broadcast(tensor* a, tensor* b,
     const float* a_data = a->storage->data + a->offset;
     const float* b_data = b->storage->data + b->offset;
     float* c_data = c->storage->data + c->offset;
+    int threads = tensorlib_parallel_threads(
+        (long long)outer * block, TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, outer);
 
+#ifdef _OPENMP
+#pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
+#endif
     for (int r = 0; r < outer; ++r) {
         /* Row-major decomposition of r over the outer axes 0..s. */
         int remaining = r;
