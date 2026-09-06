@@ -66,6 +66,9 @@ static int backward_cross_entropy(const ag_node* node,
     int threads = tensorlib_parallel_threads(
         (long long)context->rows * context->classes,
         TENSORLIB_CROSS_ENTROPY_MIN_PARALLEL_ELEMENTS, context->rows);
+#ifndef _OPENMP
+    (void)threads;
+#endif
 #ifdef _OPENMP
 #pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
 #endif

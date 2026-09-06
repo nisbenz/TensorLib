@@ -50,6 +50,9 @@ static int backward_softmax(const ag_node* node,
     int threads = tensorlib_parallel_threads(
         (long long)context->rows * context->width,
         TENSORLIB_SOFTMAX_MIN_PARALLEL_ELEMENTS, context->rows);
+#ifndef _OPENMP
+    (void)threads;
+#endif
 #ifdef _OPENMP
 #pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
 #endif

@@ -415,6 +415,9 @@ static int backward_gelu(const ag_node* node,
     int count = tensor_numel(input);
     int threads = tensorlib_parallel_threads(
         count, TENSORLIB_GELU_MIN_PARALLEL_ELEMENTS, 0);
+#ifndef _OPENMP
+    (void)threads;
+#endif
     if (is_contiguous(input) && is_contiguous((tensor*)output_gradient)) {
         const float* input_data = input->storage->data + input->offset;
         const float* upstream_data = output_gradient->storage->data +

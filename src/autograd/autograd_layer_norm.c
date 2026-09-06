@@ -80,6 +80,9 @@ static int backward_layer_norm(const ag_node* node,
     int threads = tensorlib_parallel_threads(
         (long long)context->rows * width,
         TENSORLIB_LAYER_NORM_MIN_PARALLEL_ELEMENTS, context->rows);
+#ifndef _OPENMP
+    (void)threads;
+#endif
     if (threads > 1 && weight_gradient != NULL) {
         weight_partials = (float*)calloc((size_t)threads * (size_t)width,
                                          sizeof(*weight_partials));
