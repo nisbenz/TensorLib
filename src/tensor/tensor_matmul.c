@@ -926,6 +926,35 @@ int broadcast_batch_shape(const tensor* a,
     return 1;
 }
 
+static tensor* try_contiguous_linear_rhs_gradient(
+    const tensor* lhs, const tensor* output_gradient, const tensor* rhs)
+{
+    if (rhs->ndim != 2 || lhs->ndim < 2 ||
+        lhs->ndim != output_gradient->ndim ||
+        !is_contiguous((tensor*)lhs) ||
+        !is_contiguous((tensor*)output_gradient)) return NULL;
+    for (int axis = 0; axis < lhs->ndim - 1; ++axis) {
+        if (lhs->dims[axis] != output_gradient->dims[axis]) return NULL;
+    }
+    int inner = lhs->dims[lhs->ndim - 1];
+    int columns = output_gradient->dims[output_gradient->ndim - 1];
+    if (rhs->dims[0] != inner || rhs->dims[1] != columns) return NULL;
+    int rows = tensor_numel((tensor*)lhs) / inner;
+    int lhs_dims[2] = {rows, inner};
+    int gradient_dims[2] = {rows, columns};
+    tensor* lhs_matrix = t_reshape((tensor*)lhs, 2, lhs_dims);
+    tensor* gradient_matrix =
+        t_reshape((tensor*)output_gradient, 2, gradient_dims);
+    tensor* lhs_transpose = lhs_matrix == NULL ? NULL :
+        t_transpose(lhs_matrix, 0, 1);
+    tensor* result = lhs_transpose == NULL || gradient_matrix == NULL ? NULL :
+        t_matmul(lhs_transpose, gradient_matrix);
+    t_free(lhs_transpose);
+    t_free(gradient_matrix);
+    t_free(lhs_matrix);
+    return result;
+}
+
 tensor* tensor_matmul_backward_rhs(const tensor* lhs,
                                    const tensor* output_gradient,
                                    const tensor* rhs)
@@ -935,6 +964,9 @@ tensor* tensor_matmul_backward_rhs(const tensor* lhs,
         !tensor_has_valid_metadata(rhs) || lhs->ndim == 0 || rhs->ndim == 0) {
         return NULL;
     }
+    tensor* linear_result =
+        try_contiguous_linear_rhs_gradient(lhs, output_gradient, rhs);
+    if (linear_result != NULL) return linear_result;
     matmul_operand_info lhs_info = {
         lhs->ndim == 1, lhs->ndim > 1 ? lhs->ndim - 2 : 0,
         lhs->ndim == 1 ? 1 : lhs->dims[lhs->ndim - 2],

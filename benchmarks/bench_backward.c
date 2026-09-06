@@ -4,10 +4,12 @@
 #include <string.h>
 
 #include <tensorlib/tensor.h>
+#include "../src/tensor/tensor_matmul_internal.h"
 
 typedef enum {
     LINEAR_DINPUT,
     LINEAR_DWEIGHT,
+    LINEAR_DWEIGHT_DIRECT,
     LINEAR_DBIAS,
     LINEAR_PACK
 } linear_gradient_kind;
@@ -89,6 +91,10 @@ static int linear_gradient_operation(void* opaque, double* checksum)
         second = first == NULL ? NULL :
                  t_matmul(first, context->output_gradient);
         output = second == NULL ? NULL : t_sum(second, 0);
+    } else if (context->kind == LINEAR_DWEIGHT_DIRECT) {
+        first = t_transpose(context->weight, 0, 1);
+        output = first == NULL ? NULL : tensor_matmul_backward_rhs(
+            context->input, context->output_gradient, first);
     } else if (context->kind == LINEAR_DBIAS) {
         first = t_sum(context->output_gradient, 0);
         output = first == NULL ? NULL : t_sum(first, 0);
@@ -244,6 +250,9 @@ int bench_run_backward_matrix_suite(const bench_options* options, FILE* csv)
         status |= run_linear_gradient(options, csv, &shapes[index],
                                       LINEAR_DWEIGHT, "dweight",
                                       "batched-matmul+reduce");
+        status |= run_linear_gradient(options, csv, &shapes[index],
+                                      LINEAR_DWEIGHT_DIRECT, "dweight_direct",
+                                      "flattened-transpose-left");
         status |= run_linear_gradient(options, csv, &shapes[index],
                                       LINEAR_DBIAS, "dbias",
                                       "two-axis-reduce");
