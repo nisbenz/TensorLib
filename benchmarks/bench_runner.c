@@ -45,30 +45,20 @@ static void write_skipped(FILE* csv,
 }
 #endif
 
-int bench_execute_case(const bench_options* options,
-                       FILE* csv,
-                       const bench_case* benchmark,
-                       int requested_threads,
-                       bench_measurement* result)
+int bench_record_measurement(const bench_options* options,
+                             FILE* csv,
+                             const bench_case* benchmark,
+                             int requested_threads,
+                             const bench_measurement* result)
 {
     double value;
     int threads;
 
-    if (options == NULL || benchmark == NULL || result == NULL) return 1;
-#ifndef _OPENMP
-    if (requested_threads > 1) {
-        write_skipped(csv, options, benchmark, requested_threads);
-        return 2;
-    }
-#endif
+    if (options == NULL || benchmark == NULL || result == NULL ||
+        !isfinite(result->median_seconds) ||
+        !isfinite(result->p95_seconds) ||
+        !isfinite(result->checksum)) return 1;
     threads = actual_threads(requested_threads);
-    if (bench_measure(benchmark->operation, benchmark->context,
-                      &options->profile, result) != 0 ||
-        !isfinite(result->checksum)) {
-        fprintf(stderr, "Benchmark failed: %s/%s\n",
-                benchmark->suite, benchmark->name);
-        return 1;
-    }
     value = benchmark->units_per_call > 0.0
           ? benchmark->units_per_call / result->median_seconds
           : result->median_seconds * 1000.0;
@@ -85,6 +75,30 @@ int bench_execute_case(const bench_options* options,
                 result->iterations_per_sample, result->checksum);
     }
     return 0;
+}
+
+int bench_execute_case(const bench_options* options,
+                       FILE* csv,
+                       const bench_case* benchmark,
+                       int requested_threads,
+                       bench_measurement* result)
+{
+    if (options == NULL || benchmark == NULL || result == NULL) return 1;
+#ifndef _OPENMP
+    if (requested_threads > 1) {
+        write_skipped(csv, options, benchmark, requested_threads);
+        return 2;
+    }
+#endif
+    if (bench_measure(benchmark->operation, benchmark->context,
+                      &options->profile, result) != 0 ||
+        !isfinite(result->checksum)) {
+        fprintf(stderr, "Benchmark failed: %s/%s\n",
+                benchmark->suite, benchmark->name);
+        return 1;
+    }
+    return bench_record_measurement(options, csv, benchmark,
+                                    requested_threads, result);
 }
 
 static int suite_selected(const char* requested, const char* suite)

@@ -16,7 +16,19 @@ typedef struct {
     nn_adamw* adamw;
     nn_rng rng;
     int train;
+    double phase_seconds[6];
+    long phase_calls;
 } nn_bench_context;
+
+enum {
+    PHASE_ZERO_GRAD,
+    PHASE_FORWARD,
+    PHASE_LOSS,
+    PHASE_BACKWARD,
+    PHASE_ADAMW,
+    PHASE_GRAPH_RELEASE,
+    PHASE_COUNT
+};
 
 static ag_tensor* make_input(int ndim, const int* dims, int token_ids)
 {
@@ -44,23 +56,49 @@ static tensor* make_targets(int count, int classes)
 static int nn_operation(void* opaque, double* checksum)
 {
     nn_bench_context* context = (nn_bench_context*)opaque;
-    ag_tensor* output = context->forward(context->model, context->input);
+    ag_tensor* output;
     ag_tensor* loss = NULL;
     int status = 1;
+    double started;
 
+    if (context->train) {
+        started = bench_now_seconds();
+        if (context->sgd != NULL) {
+            nn_sgd_zero_grad(context->sgd);
+        } else if (context->adamw != NULL) {
+            nn_adamw_zero_grad(context->adamw);
+        }
+        context->phase_seconds[PHASE_ZERO_GRAD] +=
+            bench_now_seconds() - started;
+    }
+
+    started = bench_now_seconds();
+    output = context->forward(context->model, context->input);
+    if (context->train) {
+        context->phase_seconds[PHASE_FORWARD] +=
+            bench_now_seconds() - started;
+    }
     if (output == NULL) goto cleanup;
     if (context->train) {
+        started = bench_now_seconds();
         loss = nn_cross_entropy(output, context->targets);
-        if (loss == NULL || ag_backward(loss) != 0) goto cleanup;
+        context->phase_seconds[PHASE_LOSS] +=
+            bench_now_seconds() - started;
+        if (loss == NULL) goto cleanup;
+        started = bench_now_seconds();
+        if (ag_backward(loss) != 0) goto cleanup;
+        context->phase_seconds[PHASE_BACKWARD] +=
+            bench_now_seconds() - started;
+        started = bench_now_seconds();
         if (context->sgd != NULL) {
             if (nn_sgd_step(context->sgd) != 0) goto cleanup;
-            nn_sgd_zero_grad(context->sgd);
         } else {
             if (context->adamw == NULL || nn_adamw_step(context->adamw) != 0) {
                 goto cleanup;
             }
-            nn_adamw_zero_grad(context->adamw);
         }
+        context->phase_seconds[PHASE_ADAMW] +=
+            bench_now_seconds() - started;
         *checksum += loss->value->storage->data[loss->value->offset];
     } else {
         *checksum += output->value->storage->data[output->value->offset];
@@ -68,9 +106,42 @@ static int nn_operation(void* opaque, double* checksum)
     status = 0;
 
 cleanup:
+    if (context->train) started = bench_now_seconds();
     ag_tensor_release(loss);
     ag_tensor_release(output);
+    if (context->train) {
+        context->phase_seconds[PHASE_GRAPH_RELEASE] +=
+            bench_now_seconds() - started;
+        ++context->phase_calls;
+    }
     return status;
+}
+
+static void report_training_phases(const bench_options* options,
+                                   FILE* csv,
+                                   int requested_threads,
+                                   nn_bench_context* context)
+{
+    static const char* names[PHASE_COUNT] = {
+        "tiny_lm_zero_grad", "tiny_lm_forward_phase", "tiny_lm_loss",
+        "tiny_lm_backward", "tiny_lm_adamw", "tiny_lm_graph_release"
+    };
+    if (context->phase_calls <= 0) return;
+    for (int phase = 0; phase < PHASE_COUNT; ++phase) {
+        bench_case benchmark = {
+            "nn_phase", names[phase], "[Bx128]->[Bx128x256]",
+            "isolated-phase", "ms/call", 0.0, 0, NULL, NULL
+        };
+        bench_measurement result;
+        result.median_seconds = context->phase_seconds[phase] /
+                                (double)context->phase_calls;
+        result.p95_seconds = result.median_seconds;
+        result.checksum = result.median_seconds;
+        result.iterations_per_sample = 1;
+        benchmark.context = context;
+        bench_record_measurement(options, csv, &benchmark,
+                                 requested_threads, &result);
+    }
 }
 
 static int run_nn_case(const bench_options* options,
@@ -319,6 +390,9 @@ static int run_decoder_case(const bench_options* options,
         "[Bx128]->[Bx128x256]",
         train ? "forward+loss+backward+adamw" : "forward;graph-build",
         "tokens/s", (double)(batch * time), threads, &context, result);
+    if (status == 0 && train && strcmp(suite, "nn") == 0) {
+        report_training_phases(options, csv, threads, &context);
+    }
     destroy_context(&context);
     return status;
 }

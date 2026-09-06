@@ -33,4 +33,11 @@ int bench_execute_case(const bench_options* options,
                        int requested_threads,
                        bench_measurement* result);
 
+/* Writes a measurement already collected by a custom benchmark. */
+int bench_record_measurement(const bench_options* options,
+                             FILE* csv,
+                             const bench_case* benchmark,
+                             int requested_threads,
+                             const bench_measurement* result);
+
 #endif
