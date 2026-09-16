@@ -81,6 +81,31 @@ TEST(test_slice_backward_copies_contiguous_middle_axis_blocks) {
     ag_tensor_release(output); ag_tensor_release(input);
 }
 
+TEST(test_slice_backward_reads_noncontiguous_offset_gradient) {
+    int input_dims[2] = {2, 3};
+    int upstream_dims[2] = {3, 2};
+    float input_values[6] = {0};
+    ag_tensor* input = make_ag(2, input_dims, input_values);
+    ag_tensor* output = ag_slice(input, 1, 1, 3);
+    tensor* base = sequential_gradient(2, upstream_dims);
+    tensor* transposed = t_transpose(base, 0, 1);
+    tensor* upstream = t_slice(transposed, 1, 1, 3);
+    tensor* gradients[1] = {NULL};
+
+    ASSERT_NOT_NULL(upstream);
+    ASSERT_TRUE(!is_contiguous(upstream));
+    ASSERT_TRUE(upstream->offset != 0);
+    ASSERT_EQ_INT(output->creator->backward(output->creator, upstream,
+                                            gradients), 0);
+    float expected[6] = {0.0f, 3.0f, 5.0f, 0.0f, 4.0f, 6.0f};
+    for (int i = 0; i < 6; ++i) {
+        ASSERT_EQ_FLOAT(gradients[0]->storage->data[i], expected[i]);
+    }
+
+    t_free(gradients[0]); t_free(upstream); t_free(transposed); t_free(base);
+    ag_tensor_release(output); ag_tensor_release(input);
+}
+
 TEST(test_expand_backward_emits_output_shaped_contribution) {
     int input_dims[2] = {1, 3}, output_dims[3] = {2, 4, 3};
     float values[3] = {1,2,3};
@@ -111,6 +136,7 @@ int main(void) {
     RUN_TEST(test_transpose_backward_applies_inverse_transpose);
     RUN_TEST(test_slice_backward_scatters_and_zero_fills);
     RUN_TEST(test_slice_backward_copies_contiguous_middle_axis_blocks);
+    RUN_TEST(test_slice_backward_reads_noncontiguous_offset_gradient);
     RUN_TEST(test_expand_backward_emits_output_shaped_contribution);
     RUN_TEST(test_view_wrappers_reject_invalid_arguments);
     TEST_SUITE_SUMMARY();
