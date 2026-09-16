@@ -3,6 +3,10 @@
 
 #include <tensorlib/nn.h>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 static int failures;
 
 #define CHECK(condition) do { \
@@ -21,6 +25,37 @@ static tensor* gradient(int ndim, const int* dims, const float* values)
         result->storage->data[i] = values[i];
     }
     return result;
+}
+
+static tensor* constant_gradient(const tensor* value, float fill)
+{
+    tensor* result = t_alloc(value->ndim, value->dims);
+
+    if (result == NULL) return NULL;
+    for (int i = 0; i < tensor_numel(result); ++i) {
+        result->storage->data[i] = fill;
+    }
+    return result;
+}
+
+static nn_linear* two_parameter_model(const char* name)
+{
+    nn_linear* root = nn_linear_create(
+        name, 192, 192, 0, NN_INIT_ZERO, NN_INIT_ZERO, NULL);
+    nn_linear* child = nn_linear_create(
+        "adam_child", 192, 192, 0, NN_INIT_ZERO, NN_INIT_ZERO, NULL);
+
+    if (root == NULL || child == NULL ||
+        nn_module_register_child(&root->base, &child->base) != 0) {
+        nn_linear_destroy(root);
+        nn_linear_destroy(child);
+        return NULL;
+    }
+    root->weight->value->grad = constant_gradient(
+        root->weight->value->value, 0.5f);
+    child->weight->value->grad = constant_gradient(
+        child->weight->value->value, -0.25f);
+    return root;
 }
 
 static void test_exact_first_step_and_zero(void)
@@ -146,6 +181,51 @@ static void test_linear_converges(void)
     nn_linear_destroy(layer);
 }
 
+static void test_parallel_matches_serial_with_clipping(void)
+{
+    nn_linear* serial = two_parameter_model("serial");
+    nn_linear* parallel = two_parameter_model("parallel");
+    nn_adamw_config config = nn_adamw_default_config();
+    nn_adamw* serial_optimizer;
+    nn_adamw* parallel_optimizer;
+
+    config.max_grad_norm = 1.0f;
+    config.weight_decay = 0.02f;
+    serial_optimizer = nn_adamw_create(&serial->base, &config);
+    parallel_optimizer = nn_adamw_create(&parallel->base, &config);
+    CHECK(serial_optimizer != NULL && parallel_optimizer != NULL);
+    for (int step = 0; step < 3; ++step) {
+#ifdef _OPENMP
+        omp_set_dynamic(0);
+        omp_set_num_threads(1);
+#endif
+        CHECK(nn_adamw_step(serial_optimizer) == 0);
+#ifdef _OPENMP
+        omp_set_num_threads(4);
+#endif
+        CHECK(nn_adamw_step(parallel_optimizer) == 0);
+    }
+    for (size_t parameter = 0; parameter < 2; ++parameter) {
+        tensor* serial_value = serial_optimizer->parameters[parameter]->value->value;
+        tensor* parallel_value = parallel_optimizer->parameters[parameter]->value->value;
+        CHECK(serial_optimizer->steps[parameter] == 3);
+        CHECK(parallel_optimizer->steps[parameter] == 3);
+        for (int element = 0; element < tensor_numel(serial_value); ++element) {
+            CHECK(serial_value->storage->data[element] ==
+                  parallel_value->storage->data[element]);
+            CHECK(serial_optimizer->first_moments[parameter]->storage->data[element] ==
+                  parallel_optimizer->first_moments[parameter]->storage->data[element]);
+            CHECK(serial_optimizer->second_moments[parameter]->storage->data[element] ==
+                  parallel_optimizer->second_moments[parameter]->storage->data[element]);
+        }
+    }
+
+    nn_adamw_destroy(parallel_optimizer);
+    nn_adamw_destroy(serial_optimizer);
+    nn_linear_destroy(parallel);
+    nn_linear_destroy(serial);
+}
+
 static void test_invalid(void)
 {
     nn_module empty = {0};
@@ -177,6 +257,7 @@ int main(void)
     test_global_clipping();
     test_transactional_failure_and_topology();
     test_linear_converges();
+    test_parallel_matches_serial_with_clipping();
     test_invalid();
     if (failures != 0) {
         fprintf(stderr, "%d AdamW checks failed\n", failures);
