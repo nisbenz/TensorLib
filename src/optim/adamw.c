@@ -287,13 +287,33 @@ int nn_adamw_step(nn_adamw* optimizer)
             }
             next_steps[i] = step;
             int count = tensor_numel(value);
-            for (int element = 0; element < count; ++element) {
-                int value_index = tensor_flat_index(value, element);
-                int first_index = tensor_flat_index(optimizer->first_moments[i], element);
-                int second_index = tensor_flat_index(optimizer->second_moments[i], element);
-                if (!isfinite(value->storage->data[value_index]) ||
-                    !isfinite(optimizer->first_moments[i]->storage->data[first_index]) ||
-                    !isfinite(optimizer->second_moments[i]->storage->data[second_index])) {
+            tensor* first_moment = optimizer->first_moments[i];
+            tensor* second_moment = optimizer->second_moments[i];
+            if (is_contiguous(value) && is_contiguous(first_moment) &&
+                is_contiguous(second_moment)) {
+                const float* value_data = value->storage->data + value->offset;
+                const float* first_data = first_moment->storage->data +
+                                          first_moment->offset;
+                const float* second_data = second_moment->storage->data +
+                                           second_moment->offset;
+                for (int element = 0; element < count; ++element) {
+                    if (!isfinite(value_data[element]) ||
+                        !isfinite(first_data[element]) ||
+                        !isfinite(second_data[element])) {
+                        free(correction2s); free(correction1s); free(next_steps);
+                        return -1;
+                    }
+                }
+            } else {
+                for (int element = 0; element < count; ++element) {
+                    int value_index = tensor_flat_index(value, element);
+                    int first_index = tensor_flat_index(first_moment, element);
+                    int second_index = tensor_flat_index(second_moment, element);
+                    if (isfinite(value->storage->data[value_index]) &&
+                        isfinite(first_moment->storage->data[first_index]) &&
+                        isfinite(second_moment->storage->data[second_index])) {
+                        continue;
+                    }
                     free(correction2s); free(correction1s); free(next_steps);
                     return -1;
                 }
