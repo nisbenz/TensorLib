@@ -314,6 +314,7 @@ static void test_parallel_validation_layout_paths(void)
     nn_linear_destroy(model);
 }
 
+#ifdef _OPENMP
 static void check_unmodified_optimizer_state(const nn_adamw* optimizer)
 {
     for (size_t parameter = 0; parameter < 2; ++parameter) {
@@ -354,6 +355,7 @@ static void test_parallel_validation_is_transactional(void)
     nn_adamw_destroy(optimizer);
     nn_linear_destroy(model);
 }
+#endif
 
 static void test_invalid(void)
 {
@@ -388,7 +390,9 @@ int main(void)
     test_linear_converges();
     test_parallel_matches_serial_with_clipping();
     test_parallel_validation_layout_paths();
+#ifdef _OPENMP
     test_parallel_validation_is_transactional();
+#endif
     test_invalid();
     if (failures != 0) {
         fprintf(stderr, "%d AdamW checks failed\n", failures);
