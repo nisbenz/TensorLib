@@ -1,6 +1,12 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include "./../../include/tensorlib/autograd_internal.h"
 
@@ -21,7 +27,19 @@ static ag_backward_stats backward_stats;
 
 static double backward_now(void)
 {
-    return (double)clock() / (double)CLOCKS_PER_SEC;
+#ifdef _WIN32
+    LARGE_INTEGER counter;
+    LARGE_INTEGER frequency;
+
+    QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&counter);
+    return (double)counter.QuadPart / (double)frequency.QuadPart;
+#else
+    struct timespec value;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &value) != 0) return 0.0;
+    return (double)value.tv_sec + (double)value.tv_nsec * 1.0e-9;
+#endif
 }
 
 static double backward_elapsed(double started)
