@@ -58,6 +58,42 @@ static nn_linear* two_parameter_model(const char* name)
     return root;
 }
 
+static tensor* offset_matrix(const tensor* shape, float fill)
+{
+    int base_dims[2] = {shape->dims[0] + 1, shape->dims[1]};
+    tensor* base = t_alloc(2, base_dims);
+    tensor* view;
+
+    if (base == NULL) return NULL;
+    view = t_slice(base, 0, 1, base_dims[0]);
+    t_free(base);
+    if (view == NULL) return NULL;
+    for (int i = 0; i < tensor_numel(view); ++i) {
+        view->storage->data[view->offset + i] = fill;
+    }
+    return view;
+}
+
+static tensor* strided_matrix(const tensor* shape, float fill)
+{
+    tensor* base = t_alloc(shape->ndim, shape->dims);
+    tensor* view;
+
+    if (base == NULL) return NULL;
+    for (int i = 0; i < tensor_numel(base); ++i) {
+        base->storage->data[i] = fill;
+    }
+    view = t_transpose(base, 0, 1);
+    t_free(base);
+    return view;
+}
+
+static void replace_tensor(tensor** destination, tensor* replacement)
+{
+    t_free(*destination);
+    *destination = replacement;
+}
+
 static void test_exact_first_step_and_zero(void)
 {
     nn_linear* layer = nn_linear_create(
@@ -226,6 +262,58 @@ static void test_parallel_matches_serial_with_clipping(void)
     nn_linear_destroy(serial);
 }
 
+static void test_parallel_validation_layout_paths(void)
+{
+    nn_linear* model = two_parameter_model("layouts");
+    nn_adamw_config config = nn_adamw_default_config();
+    nn_adamw* optimizer = nn_adamw_create(&model->base, &config);
+    tensor* first_shape = optimizer->parameters[0]->value->value;
+    tensor* second_shape = optimizer->parameters[1]->value->value;
+    tensor* offset_value = offset_matrix(first_shape, 2.0f);
+    tensor* offset_gradient = offset_matrix(first_shape, 0.5f);
+    tensor* offset_first = offset_matrix(first_shape, 0.0f);
+    tensor* offset_second = offset_matrix(first_shape, 0.0f);
+    tensor* strided_value = strided_matrix(second_shape, -1.0f);
+    tensor* strided_gradient = strided_matrix(second_shape, -0.25f);
+    tensor* strided_first = strided_matrix(second_shape, 0.0f);
+    tensor* strided_second = strided_matrix(second_shape, 0.0f);
+
+    replace_tensor(&optimizer->parameters[0]->value->value,
+                   offset_value);
+    replace_tensor(&optimizer->parameters[0]->value->grad,
+                   offset_gradient);
+    replace_tensor(&optimizer->first_moments[0], offset_first);
+    replace_tensor(&optimizer->second_moments[0], offset_second);
+    replace_tensor(&optimizer->parameters[1]->value->value,
+                   strided_value);
+    replace_tensor(&optimizer->parameters[1]->value->grad,
+                   strided_gradient);
+    replace_tensor(&optimizer->first_moments[1], strided_first);
+    replace_tensor(&optimizer->second_moments[1], strided_second);
+
+    CHECK(optimizer->parameters[0]->value->value->offset != 0);
+    CHECK(is_contiguous(optimizer->parameters[0]->value->value));
+    CHECK(!is_contiguous(optimizer->parameters[1]->value->value));
+#ifdef _OPENMP
+    omp_set_dynamic(0);
+    omp_set_num_threads(4);
+#endif
+    CHECK(nn_adamw_step(optimizer) == 0);
+    for (size_t parameter = 0; parameter < 2; ++parameter) {
+        tensor* value = optimizer->parameters[parameter]->value->value;
+        int index = value->offset;
+        CHECK(optimizer->steps[parameter] == 1);
+        CHECK(value->storage->version == 1);
+        CHECK(optimizer->first_moments[parameter]->storage->version == 1);
+        CHECK(optimizer->second_moments[parameter]->storage->version == 1);
+        CHECK(value->storage->data[index] != (parameter == 0 ? 2.0f : -1.0f));
+    }
+    CHECK(optimizer->parameters[0]->value->value->storage->data[0] == 0.0f);
+
+    nn_adamw_destroy(optimizer);
+    nn_linear_destroy(model);
+}
+
 static void test_invalid(void)
 {
     nn_module empty = {0};
@@ -258,6 +346,7 @@ int main(void)
     test_transactional_failure_and_topology();
     test_linear_converges();
     test_parallel_matches_serial_with_clipping();
+    test_parallel_validation_layout_paths();
     test_invalid();
     if (failures != 0) {
         fprintf(stderr, "%d AdamW checks failed\n", failures);
