@@ -314,6 +314,47 @@ static void test_parallel_validation_layout_paths(void)
     nn_linear_destroy(model);
 }
 
+static void check_unmodified_optimizer_state(const nn_adamw* optimizer)
+{
+    for (size_t parameter = 0; parameter < 2; ++parameter) {
+        CHECK(optimizer->steps[parameter] == 0);
+        CHECK(optimizer->parameters[parameter]->value->value->storage->version == 0);
+        CHECK(optimizer->first_moments[parameter]->storage->version == 0);
+        CHECK(optimizer->second_moments[parameter]->storage->version == 0);
+    }
+    CHECK(optimizer->parameters[0]->value->value->storage->data[0] == 0.0f);
+    CHECK(optimizer->first_moments[0]->storage->data[0] == 0.0f);
+    CHECK(optimizer->second_moments[0]->storage->data[0] == 0.0f);
+}
+
+static void test_parallel_validation_is_transactional(void)
+{
+    nn_linear* model = two_parameter_model("transactional_parallel");
+    nn_adamw_config config = nn_adamw_default_config();
+    nn_adamw* optimizer = nn_adamw_create(&model->base, &config);
+    tensor* later_value = optimizer->parameters[1]->value->value;
+    tensor* later_second = optimizer->second_moments[1];
+
+#ifdef _OPENMP
+    omp_set_dynamic(0);
+    omp_set_num_threads(4);
+#endif
+    later_value->storage->data[13] = NAN;
+    CHECK(nn_adamw_step(optimizer) != 0);
+    CHECK(isnan(later_value->storage->data[13]));
+    check_unmodified_optimizer_state(optimizer);
+
+    later_value->storage->data[13] = 0.0f;
+    later_second->storage->data[23] = INFINITY;
+    CHECK(nn_adamw_step(optimizer) != 0);
+    CHECK(isinf(later_second->storage->data[23]));
+    CHECK(later_value->storage->data[13] == 0.0f);
+    check_unmodified_optimizer_state(optimizer);
+
+    nn_adamw_destroy(optimizer);
+    nn_linear_destroy(model);
+}
+
 static void test_invalid(void)
 {
     nn_module empty = {0};
@@ -347,6 +388,7 @@ int main(void)
     test_linear_converges();
     test_parallel_matches_serial_with_clipping();
     test_parallel_validation_layout_paths();
+    test_parallel_validation_is_transactional();
     test_invalid();
     if (failures != 0) {
         fprintf(stderr, "%d AdamW checks failed\n", failures);
