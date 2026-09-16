@@ -136,7 +136,8 @@ nn_adamw* nn_adamw_create(nn_module* module,
             free(optimizer);
             return NULL;
         }
-        for (int element = 0; element < tensor_numel(value); ++element) {
+        int element_count = tensor_numel(value);
+        for (int element = 0; element < element_count; ++element) {
             optimizer->first_moments[i]->storage->data[element] = 0.0f;
             optimizer->second_moments[i]->storage->data[element] = 0.0f;
         }
@@ -366,7 +367,8 @@ int nn_adamw_step(nn_adamw* optimizer)
                 value_data[element] = (float)updated;
             }
         } else {
-        for (int element = 0; element < tensor_numel(value); ++element) {
+        int element_count = tensor_numel(value);
+        for (int element = 0; element < element_count; ++element) {
             int value_index = tensor_flat_index(value, element);
             int grad_index = tensor_flat_index(gradient, element);
             int first_index =

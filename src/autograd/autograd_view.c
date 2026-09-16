@@ -75,7 +75,8 @@ static int backward_slice(const ag_node* node,
         return 1;
     }
 
-    for (int i = 0; i < tensor_numel((tensor*)output_gradient); ++i) {
+    int output_count = tensor_numel((tensor*)output_gradient);
+    for (int i = 0; i < output_count; ++i) {
         for (int axis = 0; axis < input->ndim; ++axis) input_coords[axis] = output_coords[axis];
         input_coords[context->dim] += context->start;
         int source = get_flat_index_nd((tensor*)output_gradient, output_coords);

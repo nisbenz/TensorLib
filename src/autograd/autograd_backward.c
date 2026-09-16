@@ -207,7 +207,8 @@ static tensor* reduce_to_shape(tensor* contribution, const tensor* target,
         t_free(contribution);
         return NULL;
     }
-    for (int index = 0; index < tensor_numel(reduced); ++index) {
+    int reduced_count = tensor_numel(reduced);
+    for (int index = 0; index < reduced_count; ++index) {
         reduced->storage->data[reduced->offset + index] = 0.0f;
     }
 
@@ -216,7 +217,6 @@ static tensor* reduce_to_shape(tensor* contribution, const tensor* target,
         int contribution_axis = contribution->ndim - target->ndim + axis;
         suffix_matches = target->dims[axis] == contribution->dims[contribution_axis];
     }
-    int reduced_count = tensor_numel(reduced);
     if (suffix_matches && reduced_count > 0) {
         int outer_count = tensor_numel(contribution) / reduced_count;
         const float* source = contribution->storage->data + contribution->offset;

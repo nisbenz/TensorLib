@@ -154,7 +154,8 @@ tensor* ag_full_like(const tensor* reference, float value) {
     if (!tensor_has_valid_metadata(reference)) return NULL;
     tensor* result = t_alloc(reference->ndim, reference->dims);
     if (result == NULL) return NULL;
-    for (int i = 0; i < tensor_numel(result); ++i) {
+    int count = tensor_numel(result);
+    for (int i = 0; i < count; ++i) {
         result->storage->data[i] = value;
     }
     return result;
