@@ -65,6 +65,9 @@ static tensor* offset_matrix(const tensor* shape, float fill)
     tensor* view;
 
     if (base == NULL) return NULL;
+    for (int i = 0; i < tensor_numel(base); ++i) {
+        base->storage->data[i] = 0.0f;
+    }
     view = t_slice(base, 0, 1, base_dims[0]);
     t_free(base);
     if (view == NULL) return NULL;
