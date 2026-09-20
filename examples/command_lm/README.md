@@ -62,5 +62,6 @@ python3 scripts/audit_command_corpus.py command.txt
 
 For a quick pipeline check, use `--steps 0 --generate 0`, or use a few updates
 with `--steps 1 --eval-interval 1`. Checkpoints include model, AdamW, and RNG
-state. Resuming is explicit with `--resume`; a compatible checkpoint is never
-loaded silently.
+state and are atomically replaced at the validation interval (500 steps by
+default). Resuming is explicit with `--resume`; a compatible checkpoint is
+never loaded silently.

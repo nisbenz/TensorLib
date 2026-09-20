@@ -50,7 +50,7 @@ static void usage(const char* program)
            "  --steps N              updates (default: 50000)\n"
            "  --batch-size N         sequences per update (default: 16)\n"
            "  --threads N            OpenMP threads (default: 16)\n"
-           "  --eval-interval N      validation interval (default: 1000)\n"
+           "  --eval-interval N      validation/checkpoint interval (default: 500)\n"
            "  --eval-batches N       validation batches (default: 8)\n"
            "  --log-interval N      throughput log interval (default: 10)\n"
            "  --learning-rate X      AdamW rate (default: 0.0003)\n"
@@ -120,7 +120,7 @@ static int parse_options(int argc, char** argv, command_options* options)
     options->steps = 50000;
     options->batch_size = 16;
     options->threads = 16;
-    options->eval_interval = 1000;
+    options->eval_interval = 500;
     options->eval_batches = 8;
     options->log_interval = 10;
     options->generate_count = 64;
