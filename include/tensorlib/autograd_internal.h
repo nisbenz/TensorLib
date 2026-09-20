@@ -14,11 +14,16 @@ typedef struct {
     double merge_seconds;
     unsigned long graph_tensors;
     unsigned long graph_nodes;
+    unsigned long matmul_packed_dinput;
+    unsigned long matmul_generic_dinput;
+    unsigned long matmul_fast_dweight;
+    unsigned long matmul_fallback_dweight;
 } ag_backward_stats;
 
 void ag_backward_stats_enable(int enabled);
 void ag_backward_stats_reset(void);
 void ag_backward_stats_read(ag_backward_stats* output);
+void ag_backward_stats_record_matmul(int packed_dinput, int fast_dweight);
 
 ag_tensor* ag_make_result(tensor* output,
                           ag_op operation,

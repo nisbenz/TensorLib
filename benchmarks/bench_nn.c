@@ -229,6 +229,19 @@ static void report_backward_stats(const bench_options* options,
     bench_record_scalar(options, csv, "nn_backward", "backward_graph_nodes",
         "[Bx128]->[Bx128x256]", "profiled-single-call", "count",
         requested_threads, measured_threads, (double)stats->graph_nodes);
+    static const char* matmul_names[] = {
+        "matmul_packed_dinput", "matmul_generic_dinput",
+        "matmul_fast_dweight", "matmul_fallback_dweight"
+    };
+    const unsigned long matmul_counts[] = {
+        stats->matmul_packed_dinput, stats->matmul_generic_dinput,
+        stats->matmul_fast_dweight, stats->matmul_fallback_dweight
+    };
+    for (int index = 0; index < 4; ++index) {
+        bench_record_scalar(options, csv, "nn_backward", matmul_names[index],
+            "[Bx128]->[Bx128x256]", "profiled-single-call", "calls/backward",
+            requested_threads, measured_threads, (double)matmul_counts[index]);
+    }
 }
 
 static int compare_double(const void* left, const void* right)

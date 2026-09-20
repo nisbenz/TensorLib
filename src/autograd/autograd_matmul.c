@@ -63,10 +63,12 @@ static int backward_matmul(const ag_node* node,
 
     matmul_context* context = (matmul_context*)node->context;
     if (node->inputs[0]->requires_grad) {
-        input_gradients[0] = context != NULL && context->backward_rhs != NULL
+        int packed = context != NULL && context->backward_rhs != NULL;
+        input_gradients[0] = packed
                             ? t_matmul_packed_rhs(promoted_gradient,
                                                   context->backward_rhs)
                             : t_matmul(promoted_gradient, transposed_b);
+        ag_backward_stats_record_matmul(packed, -1);
         if (input_gradients[0] == NULL) goto fail;
         if (a_vector) {
             input_gradients[0] = remove_vector_dimension(input_gradients[0], 1);
@@ -77,6 +79,7 @@ static int backward_matmul(const ag_node* node,
         input_gradients[1] = tensor_matmul_backward_rhs_fast(a,
                                                              output_gradient,
                                                              b);
+        ag_backward_stats_record_matmul(-1, input_gradients[1] != NULL);
         if (input_gradients[1] == NULL) {
             input_gradients[1] = t_matmul(transposed_a, promoted_gradient);
         }

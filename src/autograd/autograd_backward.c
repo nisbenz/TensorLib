@@ -108,6 +108,19 @@ void ag_backward_stats_read(ag_backward_stats* output)
     if (output != NULL) *output = backward_stats;
 }
 
+void ag_backward_stats_record_matmul(int packed_dinput, int fast_dweight)
+{
+    if (!backward_stats_enabled) return;
+    if (packed_dinput >= 0) {
+        if (packed_dinput) ++backward_stats.matmul_packed_dinput;
+        else ++backward_stats.matmul_generic_dinput;
+    }
+    if (fast_dweight >= 0) {
+        if (fast_dweight) ++backward_stats.matmul_fast_dweight;
+        else ++backward_stats.matmul_fallback_dweight;
+    }
+}
+
 static int append_tensor(tensor_list* list, ag_tensor* value) {
     if (list->count == list->capacity) {
         int capacity = list->capacity == 0 ? 16 : list->capacity * 2;
