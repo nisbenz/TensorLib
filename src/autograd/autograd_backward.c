@@ -75,6 +75,24 @@ static void sum_contiguous_suffix(const float* source,
     }
 }
 
+static int has_contiguous_reduction_suffix(const tensor* source,
+                                           const tensor* target)
+{
+    if (!is_contiguous((tensor*)source)) return 0;
+    int source_axis = source->ndim - 1;
+    int target_axis = target->ndim - 1;
+    while (target_axis >= 0 && source_axis >= 0 &&
+           target->dims[target_axis] == source->dims[source_axis]) {
+        --target_axis;
+        --source_axis;
+    }
+    while (target_axis >= 0) {
+        if (target->dims[target_axis] != 1) return 0;
+        --target_axis;
+    }
+    return 1;
+}
+
 void ag_backward_stats_enable(int enabled)
 {
     backward_stats_enabled = enabled != 0;
@@ -170,12 +188,7 @@ tensor* ag_sum_to_shape(const tensor* source, const tensor* target, float scale)
         result->storage->data[result->offset + index] = 0.0f;
     }
 
-    int suffix_matches = is_contiguous((tensor*)source);
-    for (int axis = 0; axis < target->ndim && suffix_matches; ++axis) {
-        int source_axis = source->ndim - target->ndim + axis;
-        suffix_matches = target->dims[axis] == source->dims[source_axis];
-    }
-    if (suffix_matches && result_count > 0) {
+    if (has_contiguous_reduction_suffix(source, target) && result_count > 0) {
         int outer_count = tensor_numel((tensor*)source) / result_count;
         const float* values = source->storage->data + source->offset;
         float* destination = result->storage->data + result->offset;
@@ -236,12 +249,8 @@ static tensor* reduce_to_shape(tensor* contribution, const tensor* target,
         reduced->storage->data[reduced->offset + index] = 0.0f;
     }
 
-    int suffix_matches = is_contiguous(contribution);
-    for (int axis = 0; axis < target->ndim && suffix_matches; ++axis) {
-        int contribution_axis = contribution->ndim - target->ndim + axis;
-        suffix_matches = target->dims[axis] == contribution->dims[contribution_axis];
-    }
-    if (suffix_matches && reduced_count > 0) {
+    if (has_contiguous_reduction_suffix(contribution, target) &&
+        reduced_count > 0) {
         int outer_count = tensor_numel(contribution) / reduced_count;
         const float* source = contribution->storage->data + contribution->offset;
         float* destination = reduced->storage->data + reduced->offset;
