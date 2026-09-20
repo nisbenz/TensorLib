@@ -242,6 +242,21 @@ static void report_backward_stats(const bench_options* options,
             "[Bx128]->[Bx128x256]", "profiled-single-call", "calls/backward",
             requested_threads, measured_threads, (double)matmul_counts[index]);
     }
+    const char* reduction_names[] = {
+        "reduction_fast_calls", "reduction_generic_calls",
+        "reduction_fast_elements", "reduction_generic_elements"
+    };
+    const double reduction_values[] = {
+        (double)stats->reduction_fast_calls,
+        (double)stats->reduction_generic_calls,
+        (double)stats->reduction_fast_elements,
+        (double)stats->reduction_generic_elements
+    };
+    for (int index = 0; index < 4; ++index) {
+        bench_record_scalar(options, csv, "nn_backward", reduction_names[index],
+            "[Bx128]->[Bx128x256]", "profiled-single-call", "count",
+            requested_threads, measured_threads, reduction_values[index]);
+    }
 }
 
 static int compare_double(const void* left, const void* right)
