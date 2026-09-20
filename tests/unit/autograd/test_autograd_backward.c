@@ -88,6 +88,36 @@ TEST(test_repeated_backward_accumulates_without_reusing_stale_intermediates) {
     ag_tensor_release(square); ag_tensor_release(x);
 }
 
+TEST(test_leaf_retention_skips_intermediate_gradients) {
+    int dims[1] = {3};
+    float values[3] = {1.0f, 2.0f, 3.0f};
+    ag_tensor* input = make_ag(1, dims, values, 1);
+    ag_tensor* square = ag_mul(input, input);
+    ag_tensor* loss = ag_sum(square, 0, 0);
+    ag_backward_options options = ag_backward_default_options();
+    options.retention = AG_GRAD_RETAIN_LEAVES;
+
+    ASSERT_EQ_INT(ag_backward_ex(loss, &options), 0);
+    ASSERT_NOT_NULL(input->grad);
+    ASSERT_NULL(square->grad);
+    ASSERT_NULL(loss->grad);
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_EQ_FLOAT(input->grad->storage->data[i], 2.0f * values[i]);
+    }
+
+    ASSERT_EQ_INT(ag_backward_ex(loss, &options), 0);
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_EQ_FLOAT(input->grad->storage->data[i], 4.0f * values[i]);
+    }
+    options.retention = (ag_grad_retention)99;
+    ASSERT_EQ_INT(ag_backward_ex(loss, &options), 1);
+    ASSERT_EQ_INT(ag_backward_ex(loss, NULL), 1);
+
+    ag_tensor_release(loss);
+    ag_tensor_release(square);
+    ag_tensor_release(input);
+}
+
 TEST(test_backward_validation_leaves_existing_gradients_unchanged) {
     int dims[1]={2}, bad_dims[1]={3}; float values[2]={1,2}, bad_values[3]={1,1,1};
     ag_tensor* x=make_ag(1,dims,values,1), *output=ag_add(x,x);
@@ -195,6 +225,7 @@ int main(void) {
     RUN_TEST(test_backward_unbroadcasts_gradient_to_operand_shape);
     RUN_TEST(test_seeded_backward_supports_non_scalar_output);
     RUN_TEST(test_repeated_backward_accumulates_without_reusing_stale_intermediates);
+    RUN_TEST(test_leaf_retention_skips_intermediate_gradients);
     RUN_TEST(test_backward_validation_leaves_existing_gradients_unchanged);
     RUN_TEST(test_batched_matmul_reduces_broadcast_weight_gradient);
     RUN_TEST(test_zero_grad_single_and_entire_graph);
