@@ -55,6 +55,15 @@ typedef enum {
     AG_OP_CROSS_ENTROPY
 } ag_op;
 
+typedef enum {
+    AG_GRAD_RETAIN_ALL,
+    AG_GRAD_RETAIN_LEAVES
+} ag_grad_retention;
+
+typedef struct {
+    ag_grad_retention retention;
+} ag_backward_options;
+
 
 /*
  * Local backward rules allocate one owned contribution per differentiable
@@ -163,6 +172,11 @@ ag_tensor* ag_matmul(const ag_tensor* a, const ag_tensor* b);
 /* Scalar outputs are seeded with one; non-scalars require an explicit seed. */
 int ag_backward(ag_tensor* loss);
 int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient);
+ag_backward_options ag_backward_default_options(void);
+int ag_backward_ex(ag_tensor* loss, const ag_backward_options* options);
+int ag_backward_with_grad_ex(ag_tensor* output,
+                             const tensor* output_gradient,
+                             const ag_backward_options* options);
 /* Gradients are owned tensors; zeroing releases them and stores NULL. */
 void ag_zero_grad(ag_tensor* value);
 void ag_zero_grad_all(ag_tensor* root);

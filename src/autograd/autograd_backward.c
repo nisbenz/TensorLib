@@ -346,9 +346,11 @@ static int accumulate_pass_gradient(tensor** destination,
 
 static int merge_persistent_gradients(const tensor_list* tensors,
                                       tensor** pass_gradients,
-                                      tensor** merged) {
+                                      tensor** merged,
+                                      ag_grad_retention retention) {
     for (int i = 0; i < tensors->count; ++i) {
         ag_tensor* value = tensors->values[i];
+        if (retention == AG_GRAD_RETAIN_LEAVES && value->creator != NULL) continue;
         if (!value->requires_grad || pass_gradients[i] == NULL) continue;
         if (value->grad == NULL && is_contiguous(pass_gradients[i]) &&
             pass_gradients[i]->offset == 0) {
@@ -383,7 +385,18 @@ static void free_contributions(tensor** contributions, int count)
     }
 }
 
-int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
+ag_backward_options ag_backward_default_options(void)
+{
+    ag_backward_options options = {AG_GRAD_RETAIN_ALL};
+    return options;
+}
+
+int ag_backward_with_grad_ex(ag_tensor* output,
+                             const tensor* output_gradient,
+                             const ag_backward_options* options) {
+    if (options == NULL ||
+        (options->retention != AG_GRAD_RETAIN_ALL &&
+         options->retention != AG_GRAD_RETAIN_LEAVES)) return 1;
     if (output == NULL || !output->requires_grad ||
         !tensor_has_valid_metadata(output->value) ||
         !tensor_has_valid_metadata(output_gradient) ||
@@ -481,7 +494,7 @@ int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient) {
 
     started = backward_stats_enabled ? backward_now() : 0.0;
     status = merge_persistent_gradients(&tensors, pass_gradients,
-                                        merged_gradients);
+                                        merged_gradients, options->retention);
     if (backward_stats_enabled) {
         backward_stats.merge_seconds += backward_elapsed(started);
     }
@@ -498,13 +511,24 @@ cleanup:
     return status;
 }
 
-int ag_backward(ag_tensor* loss) {
+int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient)
+{
+    ag_backward_options options = ag_backward_default_options();
+    return ag_backward_with_grad_ex(output, output_gradient, &options);
+}
+
+int ag_backward_ex(ag_tensor* loss, const ag_backward_options* options) {
     if (loss == NULL || loss->value == NULL || loss->value->ndim != 0) return 1;
     tensor* seed = ag_full_like(loss->value, 1.0f);
     if (seed == NULL) return 1;
-    int status = ag_backward_with_grad(loss, seed);
+    int status = ag_backward_with_grad_ex(loss, seed, options);
     t_free(seed);
     return status;
+}
+
+int ag_backward(ag_tensor* loss) {
+    ag_backward_options options = ag_backward_default_options();
+    return ag_backward_ex(loss, &options);
 }
 
 void ag_zero_grad(ag_tensor* value) {
