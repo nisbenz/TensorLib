@@ -215,15 +215,19 @@ static int make_batch(const token_stream* stream, int training, int batch_size,
                       int batch_index, nn_rng* rng, ag_tensor** inputs,
                       tensor** targets)
 {
-    size_t region_start = training ? 0 : stream->train_length;
-    size_t region_length = training ? stream->train_length
-                                    : stream->length - stream->train_length;
-    size_t available = region_length - COMMAND_CONTEXT - 1;
+    size_t region_start;
+    size_t region_length;
+    size_t available;
     int dims[2] = {batch_size, COMMAND_CONTEXT};
     tensor* input_values = NULL;
     tensor* target_values = NULL;
     if (stream == NULL || inputs == NULL || targets == NULL ||
-        batch_size <= 0 || available == 0) return -1;
+        batch_size <= 0) return -1;
+    region_start = training ? 0 : stream->train_length;
+    region_length = training ? stream->train_length
+                             : stream->length - stream->train_length;
+    if (region_length <= COMMAND_CONTEXT + 1) return -1;
+    available = region_length - COMMAND_CONTEXT - 1;
     *inputs = NULL;
     *targets = NULL;
     input_values = t_alloc(2, dims);
