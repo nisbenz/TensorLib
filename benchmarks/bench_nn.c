@@ -88,12 +88,14 @@ static int nn_operation(void* opaque, double* checksum)
     }
     if (output == NULL) goto cleanup;
     if (context->train) {
+        ag_backward_options backward_options = ag_backward_default_options();
+        backward_options.retention = AG_GRAD_RETAIN_LEAVES;
         started = bench_now_seconds();
         loss = nn_cross_entropy(output, context->targets);
         phase_times[PHASE_LOSS] = bench_now_seconds() - started;
         if (loss == NULL) goto cleanup;
         started = bench_now_seconds();
-        if (ag_backward(loss) != 0) goto cleanup;
+        if (ag_backward_ex(loss, &backward_options) != 0) goto cleanup;
         phase_times[PHASE_BACKWARD] = bench_now_seconds() - started;
         started = bench_now_seconds();
         if (context->sgd != NULL) {

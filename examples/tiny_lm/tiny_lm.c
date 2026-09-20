@@ -528,6 +528,7 @@ int main(int argc, char** argv)
            options.checkpoint_path, options.resume ? " (resumed)" : "");
 
     for (int step = 1; step <= options.steps; ++step) {
+        ag_backward_options backward_options = ag_backward_default_options();
         ag_tensor* inputs = NULL;
         tensor* targets = NULL;
         ag_tensor* loss = NULL;
@@ -536,6 +537,7 @@ int main(int argc, char** argv)
         double seconds;
         double tokens_per_second;
 
+        backward_options.retention = AG_GRAD_RETAIN_LEAVES;
         nn_adamw_zero_grad(optimizer);
         if (make_batch(&corpus, 1, options.batch_size, step, &rng,
                        &inputs, &targets) != 0) {
@@ -543,7 +545,7 @@ int main(int argc, char** argv)
             goto cleanup;
         }
         loss = nn_decoder_loss(model, inputs, targets);
-        if (loss == NULL || ag_backward(loss) != 0 ||
+        if (loss == NULL || ag_backward_ex(loss, &backward_options) != 0 ||
             nn_adamw_step(optimizer) != 0) {
             fprintf(stderr, "Training failed at step %d.\n", step);
             ag_tensor_release(loss);
