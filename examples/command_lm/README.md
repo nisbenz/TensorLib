@@ -43,6 +43,17 @@ next to the corpus. Each record has a `REQUEST:` section and a raw Bash
 `COMMAND:` section. Inference rejects shell metacharacters and a conservative
 dangerous-command list; generated commands are never executed.
 
+For the larger CLI-1M source, install `pyarrow` in the preparation environment
+and run:
+
+```sh
+PYTHONPATH=/tmp/cli-1m-python python3 scripts/import_cli1m.py \
+  /path/to/cli-1m /tmp/cli1m.safe.txt
+```
+
+Pass `--language all` to include the larger multilingual Bash subset; requests
+receive an explicit language tag while commands remain Bash.
+
 Before training, audit an existing corpus with:
 
 ```sh

@@ -312,7 +312,12 @@ static int safe_command_text(const unsigned char* text, size_t length)
 {
     static const char* denied[] = {"rm", "rmdir", "mv", "cp", "chmod", "chown",
         "dd", "mkfs", "shred", "kill", "sudo", "su", "ssh", "scp", "curl",
-        "wget", "nc", "bash", "sh", "python", "perl", "ruby", "eval", "exec"};
+        "wget", "nc", "bash", "sh", "python", "perl", "ruby", "eval", "exec",
+        "install", "uninstall", "remove", "delete", "destroy", "purge", "erase",
+        "wipe", "format", "push", "reset", "rebase", "checkout", "clone", "commit",
+        "merge", "pull", "apply", "upgrade", "update", "start", "stop", "restart",
+        "enable", "disable", "deploy", "create", "drop", "truncate", "terminate",
+        "revoke", "grant", "upload", "download"};
     const unsigned char marker[] = "COMMAND: ";
     const unsigned char* start = NULL;
     for (size_t index = 0; index + sizeof(marker) - 1 <= length; ++index) {

@@ -16,6 +16,13 @@ DENY = {
     "php", "node", "eval", "exec", "source", "systemctl", "shutdown",
     "reboot", "init", "iptables", "route",
 }
+DANGEROUS_WORDS = {
+    "install", "uninstall", "remove", "delete", "destroy", "purge", "erase",
+    "wipe", "format", "push", "reset", "rebase", "checkout", "clone",
+    "commit", "merge", "pull", "apply", "upgrade", "update", "start", "stop",
+    "restart", "enable", "disable", "deploy", "create", "drop", "truncate",
+    "terminate", "revoke", "grant", "upload", "download",
+}
 FORBIDDEN = set(";&$`<>()[\n\r")
 
 
@@ -32,7 +39,7 @@ def safe_command(command):
         if token == "|":
             continue
         name = token.rsplit("/", 1)[-1].lower()
-        if name in DENY:
+        if name in DENY or name.lstrip("-") in DANGEROUS_WORDS:
             return False
     return True
 
