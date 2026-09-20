@@ -169,3 +169,117 @@ static size_t parameter_count(const nn_module* module)
     }
     return total;
 }
+
+typedef struct {
+    uint16_t* ids;
+    size_t length;
+    size_t train_length;
+} token_stream;
+
+static int tokenize_corpus(const command_corpus* corpus,
+                           const command_tokenizer* tokenizer,
+                           token_stream* stream)
+{
+    size_t capacity;
+    if (corpus == NULL || tokenizer == NULL || stream == NULL) return -1;
+    memset(stream, 0, sizeof(*stream));
+    capacity = corpus->size == 0 ? 1 : corpus->size;
+    stream->ids = (uint16_t*)malloc(capacity * sizeof(*stream->ids));
+    if (stream->ids == NULL || command_tokenizer_encode(
+            tokenizer, corpus->bytes, corpus->size, stream->ids, capacity,
+            &stream->length) != 0) {
+        free(stream->ids);
+        memset(stream, 0, sizeof(*stream));
+        return -1;
+    }
+    stream->train_length = stream->length * 9 / 10;
+    return stream->train_length > COMMAND_CONTEXT + 1 &&
+           stream->length - stream->train_length > COMMAND_CONTEXT + 1 ? 0 : -1;
+}
+
+static void destroy_tokens(token_stream* stream)
+{
+    if (stream == NULL) return;
+    free(stream->ids);
+    memset(stream, 0, sizeof(*stream));
+}
+
+static size_t random_start(nn_rng* rng, size_t available)
+{
+    double sample = nn_rng_uniform(rng, 0.0f, 1.0f);
+    size_t result = (size_t)(sample * (double)available);
+    return result < available ? result : available - 1;
+}
+
+static int make_batch(const token_stream* stream, int training, int batch_size,
+                      int batch_index, nn_rng* rng, ag_tensor** inputs,
+                      tensor** targets)
+{
+    size_t region_start = training ? 0 : stream->train_length;
+    size_t region_length = training ? stream->train_length
+                                    : stream->length - stream->train_length;
+    size_t available = region_length - COMMAND_CONTEXT - 1;
+    int dims[2] = {batch_size, COMMAND_CONTEXT};
+    tensor* input_values = NULL;
+    tensor* target_values = NULL;
+    if (stream == NULL || inputs == NULL || targets == NULL ||
+        batch_size <= 0 || available == 0) return -1;
+    *inputs = NULL;
+    *targets = NULL;
+    input_values = t_alloc(2, dims);
+    target_values = t_alloc(2, dims);
+    if (input_values == NULL || target_values == NULL) goto fail;
+    for (int row = 0; row < batch_size; ++row) {
+        size_t start = training
+            ? random_start(rng, available)
+            : ((size_t)batch_index * (size_t)batch_size + (size_t)row) % available;
+        start += region_start;
+        for (int column = 0; column < COMMAND_CONTEXT; ++column) {
+            size_t offset = (size_t)row * COMMAND_CONTEXT + (size_t)column;
+            input_values->storage->data[offset] = (float)stream->ids[start + (size_t)column];
+            target_values->storage->data[offset] = (float)stream->ids[start + (size_t)column + 1];
+        }
+    }
+    *inputs = ag_from_owned_tensor(input_values, 0);
+    input_values = NULL;
+    *targets = target_values;
+    return *inputs == NULL ? -1 : 0;
+fail:
+    t_free(input_values);
+    t_free(target_values);
+    return -1;
+}
+
+static int evaluate(nn_decoder* model, const token_stream* stream,
+                    int batch_size, int batches, float* result)
+{
+    double total = 0.0;
+    ag_tensor* inputs = NULL;
+    tensor* targets = NULL;
+    ag_tensor* loss = NULL;
+    nn_module_set_training(&model->base, 0);
+    for (int batch = 0; batch < batches; ++batch) {
+        inputs = NULL;
+        targets = NULL;
+        loss = NULL;
+        if (make_batch(stream, 0, batch_size, batch, NULL, &inputs, &targets) != 0) goto fail;
+        loss = nn_decoder_loss(model, inputs, targets);
+        if (loss == NULL) goto fail;
+        total += loss->value->storage->data[loss->value->offset];
+        ag_tensor_release(loss);
+        ag_tensor_release(inputs);
+        t_free(targets);
+        loss = NULL;
+        inputs = NULL;
+        targets = NULL;
+    }
+    nn_module_set_training(&model->base, 1);
+    *result = (float)(total / (double)batches);
+    return 0;
+fail:
+    ag_tensor_release(loss);
+    ag_tensor_release(inputs);
+    t_free(targets);
+    nn_module_set_training(&model->base, 1);
+    return -1;
+}
