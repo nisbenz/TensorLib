@@ -36,6 +36,13 @@ file-list operations. Each record has a `REQUEST:` section and a structured
 `COMMAND:` section. Validation reports language-model loss; inference also
 reports whether the decoded text matches the allowlist.
 
+Before training, audit an existing corpus with:
+
+```sh
+python3 scripts/audit_command_corpus.py command.txt
+```
+
 For a quick pipeline check, use `--steps 0 --generate 0`, or use a few updates
 with `--steps 1 --eval-interval 1`. Checkpoints include model, AdamW, and RNG
-state and can be resumed by rerunning the same command.
+state. Resuming is explicit with `--resume`; a compatible checkpoint is never
+loaded silently.

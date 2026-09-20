@@ -56,6 +56,8 @@ int command_corpus_generate(command_corpus* corpus, size_t examples,
     size_t capacity = 0;
     uint64_t state = seed == 0 ? UINT64_C(1) : seed;
     char line[512];
+    char repository_target[128];
+    char file_target[128];
     if (corpus == NULL || examples == 0) return -1;
     memset(corpus, 0, sizeof(*corpus));
     for (size_t index = 0; index < examples; ++index) {
@@ -63,7 +65,11 @@ int command_corpus_generate(command_corpus* corpus, size_t examples,
         size_t repository = next_random(&state) % (sizeof(repositories) / sizeof(repositories[0]));
         size_t file = next_random(&state) % (sizeof(files) / sizeof(files[0]));
         size_t request = next_random(&state) % (sizeof(requests) / sizeof(requests[0]));
-        const char* target = action >= 7 ? files[file] : repositories[repository];
+        (void)snprintf(repository_target, sizeof(repository_target), "%s-%06zu",
+                       repositories[repository], index);
+        (void)snprintf(file_target, sizeof(file_target), "%s-%06zu",
+                       files[file], index);
+        const char* target = action == 7 ? file_target : repository_target;
         (void)snprintf(line, sizeof(line), "REQUEST: ");
         if (append_text(corpus, &capacity, line) != 0) goto fail;
         (void)snprintf(line, sizeof(line), requests[request], actions[action][0], target);
@@ -71,14 +77,14 @@ int command_corpus_generate(command_corpus* corpus, size_t examples,
             append_text(corpus, &capacity, "\nCOMMAND: TOOL ") != 0) goto fail;
         if (action < 4) {
             (void)snprintf(line, sizeof(line), "git ACTION %s TARGET %s\n\n",
-                           actions[action][1], repositories[repository]);
+                           actions[action][1], repository_target);
         } else if (action < 7) {
             (void)snprintf(line, sizeof(line), "cmake ACTION %s TARGET %s\n\n",
-                           actions[action][1], repositories[repository]);
+                           actions[action][1], repository_target);
         } else if (action == 7) {
             (void)snprintf(line, sizeof(line), "grep ACTION search TARGET %s\n\n", file ? "TODO" : "FIXME");
         } else {
-            (void)snprintf(line, sizeof(line), "files ACTION list TARGET %s\n\n", repositories[repository]);
+            (void)snprintf(line, sizeof(line), "files ACTION list TARGET %s\n\n", repository_target);
         }
         if (append_text(corpus, &capacity, line) != 0) goto fail;
     }

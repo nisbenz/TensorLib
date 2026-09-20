@@ -33,6 +33,7 @@ typedef struct {
     int log_interval;
     int generate_count;
     int threads;
+    int resume;
     uint64_t seed;
     float learning_rate;
 } command_options;
@@ -45,6 +46,7 @@ static void usage(const char* program)
            "  --generate-corpus N    create N synthetic records if missing\n"
            "  --tokenizer PATH       tokenizer file (default: command.tok)\n"
            "  --checkpoint PATH      checkpoint file (default: command.chk)\n"
+           "  --resume               explicitly resume a compatible checkpoint\n"
            "  --steps N              updates (default: 50000)\n"
            "  --batch-size N         sequences per update (default: 16)\n"
            "  --threads N            OpenMP threads (default: 16)\n"
@@ -134,6 +136,8 @@ static int parse_options(int argc, char** argv, command_options* options)
             if (next_value(argc, argv, &index, &options->tokenizer_path) != 0) return -1;
         } else if (strcmp(argument, "--checkpoint") == 0) {
             if (next_value(argc, argv, &index, &options->checkpoint_path) != 0) return -1;
+        } else if (strcmp(argument, "--resume") == 0) {
+            options->resume = 1;
         } else if (strcmp(argument, "--steps") == 0) {
             if (next_value(argc, argv, &index, &value) != 0 ||
                 parse_int(value, 0, &options->steps) != 0) return -1;
@@ -251,7 +255,8 @@ static int make_batch(const token_stream* stream, int training, int batch_size,
     for (int row = 0; row < batch_size; ++row) {
         size_t start = training
             ? random_start(rng, available)
-            : ((size_t)batch_index * (size_t)batch_size + (size_t)row) % available;
+            : (((size_t)batch_index * (size_t)batch_size + (size_t)row) *
+               COMMAND_CONTEXT) % available;
         start += region_start;
         for (int column = 0; column < COMMAND_CONTEXT; ++column) {
             size_t offset = (size_t)row * COMMAND_CONTEXT + (size_t)column;
@@ -375,9 +380,9 @@ fail:
 int main(int argc, char** argv)
 {
     command_options options;
-    command_corpus corpus;
-    command_tokenizer tokenizer;
-    token_stream stream;
+    command_corpus corpus = {0};
+    command_tokenizer tokenizer = {0};
+    token_stream stream = {0};
     nn_decoder_config model_config;
     nn_adamw_config optimizer_config;
     nn_rng rng;
@@ -407,8 +412,13 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
     }
     command_tokenizer_init(&tokenizer);
-    if (command_tokenizer_load(&tokenizer, options.tokenizer_path) != 0) {
-        if (command_tokenizer_train(&tokenizer, corpus.bytes, corpus.size,
+    if (command_tokenizer_load(&tokenizer, options.tokenizer_path) == 0 &&
+        !options.resume) {
+        fprintf(stderr, "Tokenizer exists; use --resume or a new path.\n");
+        goto cleanup;
+    }
+    if (tokenizer.merge_count == 0) {
+        if (command_tokenizer_train(&tokenizer, corpus.bytes, corpus.train_size,
                                     COMMAND_TOKENIZER_VOCAB) != 0 ||
             command_tokenizer_save(&tokenizer, options.tokenizer_path) != 0) {
             fprintf(stderr, "Could not prepare tokenizer '%s'.\n", options.tokenizer_path);
@@ -437,9 +447,22 @@ int main(int argc, char** argv)
         fprintf(stderr, "Could not allocate command model.\n");
         goto cleanup;
     }
-    if (nn_checkpoint_load(options.checkpoint_path, &model->base,
-                           optimizer, &rng) != 0) {
-        printf("Starting a new model; no compatible checkpoint was loaded.\n");
+    if (options.resume) {
+        if (nn_checkpoint_load(options.checkpoint_path, &model->base,
+                               optimizer, &rng) != 0) {
+            fprintf(stderr, "Could not resume checkpoint '%s'.\n",
+                    options.checkpoint_path);
+            goto cleanup;
+        }
+        printf("Resumed checkpoint: %s\n", options.checkpoint_path);
+    } else {
+        FILE* existing = fopen(options.checkpoint_path, "rb");
+        if (existing != NULL) {
+            fclose(existing);
+            fprintf(stderr, "Checkpoint exists; use --resume or a new path.\n");
+            goto cleanup;
+        }
+        printf("Starting a new model.\n");
     }
     printf("Corpus: %zu bytes, %zu tokens; model parameters: %zu (%.2fM)\n",
            corpus.size, stream.length, parameter_count(&model->base),
