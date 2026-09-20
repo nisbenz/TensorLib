@@ -115,22 +115,51 @@ static void sum_contiguous_suffix(const float* source,
 #endif
 }
 
-static int has_contiguous_reduction_suffix(const tensor* source,
-                                           const tensor* target)
+static int contiguous_reduction_layout(const tensor* source,
+                                       const tensor* target,
+                                       int* prefix_count,
+                                       int* reduction_count,
+                                       int* suffix_count)
 {
     if (!is_contiguous((tensor*)source)) return 0;
-    int source_axis = source->ndim - 1;
-    int target_axis = target->ndim - 1;
-    while (target_axis >= 0 && source_axis >= 0 &&
-           target->dims[target_axis] == source->dims[source_axis]) {
-        --target_axis;
-        --source_axis;
+    int rank_offset = source->ndim - target->ndim;
+    int phase = 0;
+    *prefix_count = 1;
+    *reduction_count = 1;
+    *suffix_count = 1;
+    for (int axis = 0; axis < source->ndim; ++axis) {
+        int target_axis = axis - rank_offset;
+        int preserved = target_axis >= 0 &&
+            target->dims[target_axis] == source->dims[axis];
+        int reduced = target_axis < 0 || target->dims[target_axis] == 1;
+        if (!preserved && !reduced) return 0;
+        if (preserved) {
+            if (phase == 1) phase = 2;
+            if (phase == 0) *prefix_count *= source->dims[axis];
+            else *suffix_count *= source->dims[axis];
+        } else {
+            if (phase == 2) return 0;
+            phase = 1;
+            *reduction_count *= source->dims[axis];
+        }
     }
-    while (target_axis >= 0) {
-        if (target->dims[target_axis] != 1) return 0;
-        --target_axis;
+    return *reduction_count > 1;
+}
+
+static void sum_contiguous_reduction(const float* source,
+                                     float* destination,
+                                     int prefix_count,
+                                     int reduction_count,
+                                     int suffix_count,
+                                     float scale)
+{
+    for (int prefix = 0; prefix < prefix_count; ++prefix) {
+        sum_contiguous_suffix(
+            source + (size_t)prefix * (size_t)reduction_count *
+                (size_t)suffix_count,
+            destination + (size_t)prefix * (size_t)suffix_count,
+            reduction_count, suffix_count, scale);
     }
-    return 1;
 }
 
 void ag_backward_stats_enable(int enabled)
@@ -241,17 +270,30 @@ tensor* ag_sum_to_shape(const tensor* source, const tensor* target, float scale)
         result->storage->data[result->offset + index] = 0.0f;
     }
 
-    if (has_contiguous_reduction_suffix(source, target) && result_count > 0) {
-        int outer_count = tensor_numel((tensor*)source) / result_count;
+    int prefix_count;
+    int reduction_count;
+    int suffix_count;
+    if (result_count > 0 && contiguous_reduction_layout(
+            source, target, &prefix_count, &reduction_count, &suffix_count)) {
+        if (backward_stats_enabled) {
+            ++backward_stats.reduction_fast_calls;
+            backward_stats.reduction_fast_elements +=
+                (unsigned long long)tensor_numel((tensor*)source);
+        }
         const float* values = source->storage->data + source->offset;
         float* destination = result->storage->data + result->offset;
-        sum_contiguous_suffix(values, destination, outer_count, result_count,
-                              scale);
+        sum_contiguous_reduction(values, destination, prefix_count,
+                                 reduction_count, suffix_count, scale);
         return result;
     }
 
     int* coords = source->ndim > 0
                 ? (int*)calloc((size_t)source->ndim, sizeof(*coords)) : NULL;
+    if (backward_stats_enabled) {
+        ++backward_stats.reduction_generic_calls;
+        backward_stats.reduction_generic_elements +=
+            (unsigned long long)tensor_numel((tensor*)source);
+    }
     if (source->ndim > 0 && coords == NULL) {
         t_free(result);
         return NULL;
@@ -302,13 +344,21 @@ static tensor* reduce_to_shape(tensor* contribution, const tensor* target,
         reduced->storage->data[reduced->offset + index] = 0.0f;
     }
 
-    if (has_contiguous_reduction_suffix(contribution, target) &&
-        reduced_count > 0) {
-        int outer_count = tensor_numel(contribution) / reduced_count;
+    int prefix_count;
+    int reduction_count;
+    int suffix_count;
+    if (reduced_count > 0 && contiguous_reduction_layout(
+            contribution, target, &prefix_count, &reduction_count,
+            &suffix_count)) {
+        if (backward_stats_enabled) {
+            ++backward_stats.reduction_fast_calls;
+            backward_stats.reduction_fast_elements +=
+                (unsigned long long)tensor_numel(contribution);
+        }
         const float* source = contribution->storage->data + contribution->offset;
         float* destination = reduced->storage->data + reduced->offset;
-        sum_contiguous_suffix(source, destination, outer_count, reduced_count,
-                              1.0f);
+        sum_contiguous_reduction(source, destination, prefix_count,
+                                 reduction_count, suffix_count, 1.0f);
         t_free(contribution);
         return reduced;
     }
@@ -320,6 +370,11 @@ static tensor* reduce_to_shape(tensor* contribution, const tensor* target,
         return NULL;
     }
     memset(coords, 0, (size_t)contribution->ndim * sizeof(*coords));
+    if (backward_stats_enabled) {
+        ++backward_stats.reduction_generic_calls;
+        backward_stats.reduction_generic_elements +=
+            (unsigned long long)tensor_numel(contribution);
+    }
 
     int contribution_count = tensor_numel(contribution);
     for (int index = 0; index < contribution_count; ++index) {

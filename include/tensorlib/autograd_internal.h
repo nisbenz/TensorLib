@@ -18,6 +18,10 @@ typedef struct {
     unsigned long matmul_generic_dinput;
     unsigned long matmul_fast_dweight;
     unsigned long matmul_fallback_dweight;
+    unsigned long reduction_fast_calls;
+    unsigned long reduction_generic_calls;
+    unsigned long long reduction_fast_elements;
+    unsigned long long reduction_generic_elements;
 } ag_backward_stats;
 
 void ag_backward_stats_enable(int enabled);
