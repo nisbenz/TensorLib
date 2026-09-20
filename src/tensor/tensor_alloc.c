@@ -2,6 +2,9 @@
 #include <string.h>
 #include "../../include/tensorlib/tensor.h"
 #include "tensor_alloc_internal.h"
+#include "parallel.h"
+
+#define TENSORLIB_CLONE_MIN_PARALLEL_ELEMENTS (1 << 16)
 
 static int stats_enabled;
 static volatile unsigned long long stats_allocations;
@@ -205,8 +208,26 @@ tensor* t_clone(tensor* t) {
 
     /* Contiguous clones are plain memory copies. */
     if (is_contiguous(t)) {
-        memcpy(a->storage->data, t->storage->data + t->offset,
-               (size_t)total_elements * sizeof(float));
+        const float* source = t->storage->data + t->offset;
+        float* destination = a->storage->data;
+        int threads = tensorlib_parallel_threads(
+            total_elements, TENSORLIB_CLONE_MIN_PARALLEL_ELEMENTS, 0);
+#ifndef _OPENMP
+        (void)threads;
+#endif
+#ifdef _OPENMP
+#pragma omp parallel if(threads > 1) num_threads(threads)
+        {
+            int thread = omp_get_thread_num();
+            int team = omp_get_num_threads();
+            int begin = (int)(((long long)thread * total_elements) / team);
+            int end = (int)(((long long)(thread + 1) * total_elements) / team);
+            memcpy(destination + begin, source + begin,
+                   (size_t)(end - begin) * sizeof(float));
+        }
+#else
+        memcpy(destination, source, (size_t)total_elements * sizeof(float));
+#endif
         return a;
     }
 
