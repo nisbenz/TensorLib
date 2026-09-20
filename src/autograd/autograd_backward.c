@@ -9,6 +9,9 @@
 #endif
 
 #include "./../../include/tensorlib/autograd_internal.h"
+#include "../tensor/parallel.h"
+
+#define AG_REDUCTION_MIN_PARALLEL_ELEMENTS (1 << 16)
 
 typedef struct {
     ag_tensor** values;
@@ -46,6 +49,30 @@ static double backward_elapsed(double started)
 {
     double elapsed = backward_now() - started;
     return elapsed > 0.0 ? elapsed : 0.0;
+}
+
+static void sum_contiguous_suffix(const float* source,
+                                  float* destination,
+                                  int outer_count,
+                                  int result_count,
+                                  float scale)
+{
+    int threads = tensorlib_parallel_threads(
+        (long long)outer_count * result_count,
+        AG_REDUCTION_MIN_PARALLEL_ELEMENTS, result_count);
+#ifndef _OPENMP
+    (void)threads;
+#endif
+#ifdef _OPENMP
+#pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
+#endif
+    for (int index = 0; index < result_count; ++index) {
+        float sum = 0.0f;
+        for (int outer = 0; outer < outer_count; ++outer) {
+            sum += source[outer * result_count + index];
+        }
+        destination[index] = scale * sum;
+    }
 }
 
 void ag_backward_stats_enable(int enabled)
@@ -152,11 +179,8 @@ tensor* ag_sum_to_shape(const tensor* source, const tensor* target, float scale)
         int outer_count = tensor_numel((tensor*)source) / result_count;
         const float* values = source->storage->data + source->offset;
         float* destination = result->storage->data + result->offset;
-        for (int outer = 0; outer < outer_count; ++outer) {
-            for (int index = 0; index < result_count; ++index) {
-                destination[index] += scale * values[outer * result_count + index];
-            }
-        }
+        sum_contiguous_suffix(values, destination, outer_count, result_count,
+                              scale);
         return result;
     }
 
@@ -221,11 +245,8 @@ static tensor* reduce_to_shape(tensor* contribution, const tensor* target,
         int outer_count = tensor_numel(contribution) / reduced_count;
         const float* source = contribution->storage->data + contribution->offset;
         float* destination = reduced->storage->data + reduced->offset;
-        for (int outer = 0; outer < outer_count; ++outer) {
-            for (int index = 0; index < reduced_count; ++index) {
-                destination[index] += source[outer * reduced_count + index];
-            }
-        }
+        sum_contiguous_suffix(source, destination, outer_count, reduced_count,
+                              1.0f);
         t_free(contribution);
         return reduced;
     }
