@@ -214,6 +214,17 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/tiny_lm/tiny_lm.c")
         add_test(NAME test_tiny_lm_help COMMAND tiny_lm --help)
     endif()
 endif()
+
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/command_lm/command_lm.c")
+    add_executable(command_lm
+        examples/command_lm/command_lm.c
+        examples/command_lm/command_dataset.c
+        examples/command_lm/command_tokenizer.c)
+    target_link_libraries(command_lm PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
+    if (TENSORLIB_BUILD_TESTS)
+        add_test(NAME test_command_lm_help COMMAND command_lm --help)
+    endif()
+endif()
 endif()
 
 if (TENSORLIB_BUILD_BENCHMARKS)
