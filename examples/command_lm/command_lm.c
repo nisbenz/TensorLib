@@ -30,6 +30,7 @@ typedef struct {
     int batch_size;
     int eval_interval;
     int eval_batches;
+    int log_interval;
     int generate_count;
     int threads;
     uint64_t seed;
@@ -49,6 +50,7 @@ static void usage(const char* program)
            "  --threads N            OpenMP threads (default: 16)\n"
            "  --eval-interval N      validation interval (default: 1000)\n"
            "  --eval-batches N       validation batches (default: 8)\n"
+           "  --log-interval N      throughput log interval (default: 10)\n"
            "  --learning-rate X      AdamW rate (default: 0.0003)\n"
            "  --prompt TEXT          request to translate\n"
            "  --generate N            output tokens after training (default: 64)\n"
@@ -98,6 +100,15 @@ static int next_value(int argc, char** argv, int* index, const char** value)
     return 0;
 }
 
+static double wall_seconds(void)
+{
+#ifdef _OPENMP
+    return omp_get_wtime();
+#else
+    return (double)clock() / (double)CLOCKS_PER_SEC;
+#endif
+}
+
 static int parse_options(int argc, char** argv, command_options* options)
 {
     const char* value;
@@ -109,6 +120,7 @@ static int parse_options(int argc, char** argv, command_options* options)
     options->threads = 16;
     options->eval_interval = 1000;
     options->eval_batches = 8;
+    options->log_interval = 10;
     options->generate_count = 64;
     options->learning_rate = 3e-4f;
     options->seed = UINT64_C(20260920);
@@ -137,6 +149,9 @@ static int parse_options(int argc, char** argv, command_options* options)
         } else if (strcmp(argument, "--eval-batches") == 0) {
             if (next_value(argc, argv, &index, &value) != 0 ||
                 parse_int(value, 1, &options->eval_batches) != 0) return -1;
+        } else if (strcmp(argument, "--log-interval") == 0) {
+            if (next_value(argc, argv, &index, &value) != 0 ||
+                parse_int(value, 1, &options->log_interval) != 0) return -1;
         } else if (strcmp(argument, "--learning-rate") == 0) {
             if (next_value(argc, argv, &index, &value) != 0 ||
                 parse_float(value, &options->learning_rate) != 0) return -1;
@@ -438,6 +453,7 @@ int main(int argc, char** argv)
         tensor* targets = NULL;
         ag_tensor* loss = NULL;
         float value;
+        double started = wall_seconds();
         nn_adamw_zero_grad(optimizer);
         backward_options.retention = AG_GRAD_RETAIN_LEAVES;
         if (make_batch(&stream, 1, options.batch_size, step, &rng,
@@ -451,6 +467,16 @@ int main(int argc, char** argv)
         }
         value = loss->value->storage->data[loss->value->offset];
         ag_tensor_release(loss); ag_tensor_release(inputs); t_free(targets);
+        {
+            double seconds = wall_seconds() - started;
+            double tokens_per_second = seconds > 0.0
+                ? (double)options.batch_size * COMMAND_CONTEXT / seconds : 0.0;
+            if (step == 1 || step % options.log_interval == 0) {
+                printf("step %d/%d train_loss=%.5f step_time=%.3fs tokens/s=%.1f\n",
+                       step, options.steps, (double)value, seconds,
+                       tokens_per_second);
+            }
+        }
         if (step == 1 || step % options.eval_interval == 0) {
             float validation;
             if (evaluate(model, &stream, options.batch_size,
