@@ -12,6 +12,8 @@ typedef struct {
     double reduction_seconds;
     double accumulation_seconds;
     double merge_seconds;
+    unsigned long graph_tensors;
+    unsigned long graph_nodes;
 } ag_backward_stats;
 
 void ag_backward_stats_enable(int enabled);

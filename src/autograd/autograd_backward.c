@@ -429,6 +429,8 @@ int ag_backward_with_grad_ex(ag_tensor* output,
     if (!graph_versions_match(&nodes)) goto cleanup;
     if (backward_stats_enabled) {
         backward_stats.traversal_seconds += backward_elapsed(started);
+        backward_stats.graph_tensors = (unsigned long)tensors.count;
+        backward_stats.graph_nodes = (unsigned long)nodes.count;
     }
 
     for (int index = 0; index < tensors.count; ++index) {

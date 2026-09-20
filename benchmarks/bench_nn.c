@@ -197,6 +197,17 @@ static void report_backward_stats(const bench_options* options,
             "[Bx128]->[Bx128x256]", "profiled-single-call", "ms/call",
             requested_threads, measured_threads,
             stats->operation_seconds[operation] * 1000.0);
+        snprintf(name, sizeof(name), "backward_op_%s_calls", names[operation]);
+        bench_record_scalar(options, csv, "nn_backward", name,
+            "[Bx128]->[Bx128x256]", "profiled-single-call", "calls/backward",
+            requested_threads, measured_threads,
+            (double)stats->operation_calls[operation]);
+        snprintf(name, sizeof(name), "backward_op_%s_mean", names[operation]);
+        bench_record_scalar(options, csv, "nn_backward", name,
+            "[Bx128]->[Bx128x256]", "profiled-single-call", "ms/op",
+            requested_threads, measured_threads,
+            stats->operation_seconds[operation] * 1000.0 /
+                (double)stats->operation_calls[operation]);
     }
     static const char* engine_names[] = {
         "backward_graph_traversal", "backward_shape_reduction",
@@ -212,6 +223,12 @@ static void report_backward_stats(const bench_options* options,
             requested_threads, measured_threads,
             engine_values[index] * 1000.0);
     }
+    bench_record_scalar(options, csv, "nn_backward", "backward_graph_tensors",
+        "[Bx128]->[Bx128x256]", "profiled-single-call", "count",
+        requested_threads, measured_threads, (double)stats->graph_tensors);
+    bench_record_scalar(options, csv, "nn_backward", "backward_graph_nodes",
+        "[Bx128]->[Bx128x256]", "profiled-single-call", "count",
+        requested_threads, measured_threads, (double)stats->graph_nodes);
 }
 
 static int compare_double(const void* left, const void* right)
