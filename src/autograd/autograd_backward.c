@@ -176,7 +176,7 @@ tensor* ag_sum_to_shape(const tensor* source, const tensor* target, float scale)
     }
     if (source->ndim == target->ndim &&
         same_shape((tensor*)source, (tensor*)target)) {
-        if (scale == 1.0f) return t_clone((tensor*)source);
+        if (scale == 1.0f) return t_contiguous((tensor*)source);
         if (scale == -1.0f) return t_neg((tensor*)source);
         return t_mul_scalar((tensor*)source, scale);
     }
@@ -291,7 +291,8 @@ static int add_in_place(tensor* destination, const tensor* source,
     if (!tensor_has_valid_metadata(destination) ||
         !tensor_has_valid_metadata(source) ||
         !same_shape(destination, (tensor*)source) ||
-        destination->storage == source->storage) return 1;
+        destination->storage == source->storage ||
+        destination->storage->ref_count != 1) return 1;
 
     int count = tensor_numel(destination);
     if (is_contiguous(destination) && is_contiguous((tensor*)source) &&
@@ -361,7 +362,8 @@ static int merge_persistent_gradients(const tensor_list* tensors,
         ag_tensor* value = tensors->values[i];
         if (retention == AG_GRAD_RETAIN_LEAVES && value->creator != NULL) continue;
         if (!value->requires_grad || pass_gradients[i] == NULL) continue;
-        if (value->grad == NULL && is_contiguous(pass_gradients[i]) &&
+        if (value->grad == NULL && pass_gradients[i]->storage->ref_count == 1 &&
+            is_contiguous(pass_gradients[i]) &&
             pass_gradients[i]->offset == 0) {
             merged[i] = pass_gradients[i];
             pass_gradients[i] = NULL;
