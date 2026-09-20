@@ -226,6 +226,15 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/command_lm/command_lm.c")
         add_test(NAME test_command_lm_help COMMAND command_lm --help)
     endif()
 endif()
+if (TENSORLIB_BUILD_TESTS AND EXISTS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/command/test_command_tokenizer.c")
+    add_executable(test_command_tokenizer
+        tests/unit/command/test_command_tokenizer.c
+        examples/command_lm/command_tokenizer.c)
+    target_include_directories(test_command_tokenizer PRIVATE examples/command_lm)
+    target_link_libraries(test_command_tokenizer PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
+    add_test(NAME test_command_tokenizer COMMAND test_command_tokenizer)
+endif()
 endif()
 
 if (TENSORLIB_BUILD_BENCHMARKS)
