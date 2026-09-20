@@ -22,3 +22,4 @@ benchmark-results*.csv
 __pycache__/
 build-bench/
 *.txt
+build-profile/
