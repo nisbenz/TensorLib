@@ -172,6 +172,11 @@ ag_tensor* ag_matmul(const ag_tensor* a, const ag_tensor* b);
 /* Scalar outputs are seeded with one; non-scalars require an explicit seed. */
 int ag_backward(ag_tensor* loss);
 int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient);
+/*
+ * Extended entry points can retain gradients only on graph leaves. This is
+ * useful for training, where intermediate gradients are temporary. The
+ * default retains every gradient for backward compatibility and inspection.
+ */
 ag_backward_options ag_backward_default_options(void);
 int ag_backward_ex(ag_tensor* loss, const ag_backward_options* options);
 int ag_backward_with_grad_ex(ag_tensor* output,

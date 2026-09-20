@@ -390,9 +390,19 @@ The backward pass is implemented in `src/autograd/autograd_backward.c`.
 ```c
 int ag_backward(ag_tensor* loss);                              // scalar seed = 1.0
 int ag_backward_with_grad(ag_tensor* output, const tensor* output_gradient);
+int ag_backward_ex(ag_tensor* loss, const ag_backward_options* options);
+int ag_backward_with_grad_ex(ag_tensor* output,
+                             const tensor* output_gradient,
+                             const ag_backward_options* options);
 ```
 
 `ag_backward` requires `loss` to be a scalar (ndim == 0) and seeds with `ag_full_like(loss->value, 1.0f)`. `ag_backward_with_grad` allows non-scalar outputs with a user-supplied upstream gradient.
+
+The `_ex` variants accept a gradient-retention policy. The default
+`AG_GRAD_RETAIN_ALL` behavior stores gradients on leaves and intermediates.
+`AG_GRAD_RETAIN_LEAVES` keeps the same temporary gradients during propagation
+but commits only leaf gradients, reducing training allocations and copies.
+Existing non-leaf gradients are left unchanged.
 
 ### Algorithm step by step
 
