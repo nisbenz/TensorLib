@@ -31,10 +31,17 @@ OMP_NUM_THREADS=16 OMP_DYNAMIC=FALSE ./build/command_lm command.txt \
   --threads 16
 ```
 
-The corpus contains paraphrased requests for safe `git`, `cmake`, `grep`, and
-file-list operations. Each record has a `REQUEST:` section and a structured
-`COMMAND:` section. Validation reports language-model loss; inference also
-reports whether the decoded text matches the allowlist.
+To import the MIT-licensed NL2Bash corpus into the same record format, run:
+
+```sh
+python3 scripts/import_nl2bash.py /path/to/nl2bash/data/bash nl2bash.safe.txt
+```
+
+The importer keeps only non-destructive commands and simple pipelines, removes
+ambiguous requests, shuffles deterministically, and writes provenance metadata
+next to the corpus. Each record has a `REQUEST:` section and a raw Bash
+`COMMAND:` section. Inference rejects shell metacharacters and a conservative
+dangerous-command list; generated commands are never executed.
 
 Before training, audit an existing corpus with:
 

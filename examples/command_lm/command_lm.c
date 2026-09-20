@@ -310,20 +310,31 @@ fail:
 
 static int safe_command_text(const unsigned char* text, size_t length)
 {
-    static const char* tools[] = {"TOOL git ACTION ", "TOOL cmake ACTION ",
-                                  "TOOL grep ACTION ", "TOOL files ACTION "};
-    int tool_found = 0;
-    for (size_t index = 0; index + 1 < length; ++index) {
-        if (text[index] == ';' || text[index] == '|' || text[index] == '&' ||
-            text[index] == '$' || text[index] == '`') return 0;
-    }
-    for (size_t tool = 0; tool < sizeof(tools) / sizeof(tools[0]); ++tool) {
-        size_t width = strlen(tools[tool]);
-        for (size_t index = 0; index + width <= length; ++index) {
-            if (memcmp(text + index, tools[tool], width) == 0) tool_found = 1;
+    static const char* denied[] = {"rm", "rmdir", "mv", "cp", "chmod", "chown",
+        "dd", "mkfs", "shred", "kill", "sudo", "su", "ssh", "scp", "curl",
+        "wget", "nc", "bash", "sh", "python", "perl", "ruby", "eval", "exec"};
+    const unsigned char marker[] = "COMMAND: ";
+    const unsigned char* start = NULL;
+    for (size_t index = 0; index + sizeof(marker) - 1 <= length; ++index) {
+        if (memcmp(text + index, marker, sizeof(marker) - 1) == 0) {
+            start = text + index + sizeof(marker) - 1;
+            break;
         }
     }
-    return tool_found;
+    if (start == NULL) return 0;
+    for (const unsigned char* cursor = start; cursor < text + length; ++cursor) {
+        if (*cursor == ';' || *cursor == '&' || *cursor == '$' || *cursor == '`' ||
+            *cursor == '<' || *cursor == '>' || *cursor == '(' || *cursor == ')') return 0;
+    }
+    for (size_t item = 0; item < sizeof(denied) / sizeof(denied[0]); ++item) {
+        size_t width = strlen(denied[item]);
+        for (const unsigned char* cursor = start; cursor + width <= text + length; ++cursor) {
+            if ((cursor == start || cursor[-1] == ' ' || cursor[-1] == '|') &&
+                memcmp(cursor, denied[item], width) == 0 &&
+                (cursor + width == text + length || cursor[width] == ' ' || cursor[width] == '|')) return 0;
+        }
+    }
+    return start < text + length && *start > ' ';
 }
 
 static int generate_output(nn_decoder* model, const command_tokenizer* tokenizer,
@@ -511,7 +522,7 @@ int main(int argc, char** argv)
         }
     }
     if (options.prompt == NULL) {
-        options.prompt = "REQUEST: please show the current status in the tensorlib repository\nCOMMAND: TOOL ";
+        options.prompt = "REQUEST: describe a safe command\nCOMMAND: ";
     }
     if (options.generate_count > 0 &&
         generate_output(model, &tokenizer, options.prompt,
