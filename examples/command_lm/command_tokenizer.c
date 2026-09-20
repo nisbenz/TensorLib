@@ -10,6 +10,8 @@ typedef struct {
     uint32_t count;
 } candidate;
 
+static unsigned long hash_bytes(const unsigned char* data, size_t length);
+
 static char* copy_bytes(const unsigned char* data, size_t length)
 {
     char* result = (char*)malloc(length + 1);
@@ -23,10 +25,34 @@ void command_tokenizer_init(command_tokenizer* tokenizer)
 {
     if (tokenizer == NULL) return;
     memset(tokenizer, 0, sizeof(*tokenizer));
+    for (size_t index = 0; index < COMMAND_TOKENIZER_LOOKUP_SLOTS; ++index) {
+        tokenizer->lookup[index] = UINT16_MAX;
+    }
     for (size_t index = 0; index < COMMAND_TOKENIZER_BASE; ++index) {
         unsigned char value = (unsigned char)index;
         tokenizer->tokens[index] = copy_bytes(&value, 1);
         tokenizer->lengths[index] = 1;
+    }
+}
+
+void command_tokenizer_reindex(command_tokenizer* tokenizer)
+{
+    if (tokenizer == NULL) return;
+    for (size_t index = 0; index < COMMAND_TOKENIZER_LOOKUP_SLOTS; ++index) {
+        tokenizer->lookup[index] = UINT16_MAX;
+    }
+    for (size_t token = COMMAND_TOKENIZER_BASE;
+         token < COMMAND_TOKENIZER_BASE + tokenizer->merge_count; ++token) {
+        size_t slot = (size_t)(hash_bytes(
+            (const unsigned char*)tokenizer->tokens[token],
+            tokenizer->lengths[token]) % COMMAND_TOKENIZER_LOOKUP_SLOTS);
+        for (size_t probe = 0; probe < COMMAND_TOKENIZER_LOOKUP_SLOTS; ++probe) {
+            if (tokenizer->lookup[slot] == UINT16_MAX) {
+                tokenizer->lookup[slot] = (uint16_t)token;
+                break;
+            }
+            slot = (slot + 1) % COMMAND_TOKENIZER_LOOKUP_SLOTS;
+        }
     }
 }
 
@@ -147,6 +173,7 @@ int command_tokenizer_train(command_tokenizer* tokenizer,
         free(candidates[index].text);
     }
     free(candidates);
+    command_tokenizer_reindex(tokenizer);
     return 0;
 
 fail:

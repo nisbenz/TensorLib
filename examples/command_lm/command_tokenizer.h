@@ -7,7 +7,8 @@
 enum {
     COMMAND_TOKENIZER_BASE = 256,
     COMMAND_TOKENIZER_VOCAB = 1024,
-    COMMAND_TOKENIZER_MAX_TOKEN_BYTES = 32
+    COMMAND_TOKENIZER_MAX_TOKEN_BYTES = 32,
+    COMMAND_TOKENIZER_LOOKUP_SLOTS = 2048
 };
 
 typedef struct {
@@ -21,10 +22,12 @@ typedef struct {
     size_t lengths[COMMAND_TOKENIZER_VOCAB];
     command_merge merges[COMMAND_TOKENIZER_VOCAB - COMMAND_TOKENIZER_BASE];
     size_t merge_count;
+    uint16_t lookup[COMMAND_TOKENIZER_LOOKUP_SLOTS];
 } command_tokenizer;
 
 void command_tokenizer_init(command_tokenizer* tokenizer);
 void command_tokenizer_destroy(command_tokenizer* tokenizer);
+void command_tokenizer_reindex(command_tokenizer* tokenizer);
 
 int command_tokenizer_train(command_tokenizer* tokenizer,
                             const unsigned char* text,

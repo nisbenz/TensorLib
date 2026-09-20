@@ -4,19 +4,46 @@
 #include <stdlib.h>
 #include <string.h>
 
+static unsigned long token_hash(const unsigned char* data, size_t length)
+{
+    unsigned long hash = 2166136261u;
+    for (size_t index = 0; index < length; ++index) {
+        hash ^= data[index];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint16_t find_token(const command_tokenizer* tokenizer,
+                           const unsigned char* data, size_t length)
+{
+    size_t slot = (size_t)(token_hash(data, length) % COMMAND_TOKENIZER_LOOKUP_SLOTS);
+    for (size_t probe = 0; probe < COMMAND_TOKENIZER_LOOKUP_SLOTS; ++probe) {
+        uint16_t token = tokenizer->lookup[slot];
+        if (token == UINT16_MAX) return UINT16_MAX;
+        if (tokenizer->lengths[token] == length &&
+            memcmp(tokenizer->tokens[token], data, length) == 0) return token;
+        slot = (slot + 1) % COMMAND_TOKENIZER_LOOKUP_SLOTS;
+    }
+    return UINT16_MAX;
+}
+
 static size_t longest_token(const command_tokenizer* tokenizer,
                             const unsigned char* text, size_t length,
                             size_t position, uint16_t* token)
 {
     size_t best = 1;
     uint16_t best_token = text[position];
-    for (size_t index = COMMAND_TOKENIZER_BASE;
-         index < COMMAND_TOKENIZER_BASE + tokenizer->merge_count; ++index) {
-        size_t width = tokenizer->lengths[index];
-        if (width <= best || width > length - position) continue;
-        if (memcmp(tokenizer->tokens[index], text + position, width) == 0) {
+    size_t maximum = length - position;
+    if (maximum > COMMAND_TOKENIZER_MAX_TOKEN_BYTES) {
+        maximum = COMMAND_TOKENIZER_MAX_TOKEN_BYTES;
+    }
+    for (size_t width = maximum; width > 1; --width) {
+        uint16_t token = find_token(tokenizer, text + position, width);
+        if (token != UINT16_MAX) {
             best = width;
-            best_token = (uint16_t)index;
+            best_token = token;
+            break;
         }
     }
     *token = best_token;
@@ -132,5 +159,6 @@ int command_tokenizer_load(command_tokenizer* tokenizer, const char* path)
         }
     }
     fclose(file);
+    command_tokenizer_reindex(tokenizer);
     return 0;
 }
