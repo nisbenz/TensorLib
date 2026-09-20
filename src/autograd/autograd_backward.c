@@ -11,7 +11,7 @@
 #include "./../../include/tensorlib/autograd_internal.h"
 #include "../tensor/parallel.h"
 
-#define AG_REDUCTION_MIN_PARALLEL_ELEMENTS (1 << 16)
+#define AG_REDUCTION_MIN_PARALLEL_ELEMENTS (1 << 20)
 
 typedef struct {
     ag_tensor** values;
@@ -57,15 +57,54 @@ static void sum_contiguous_suffix(const float* source,
                                   int result_count,
                                   float scale)
 {
+    int tasks = outer_count > result_count ? outer_count : result_count;
     int threads = tensorlib_parallel_threads(
         (long long)outer_count * result_count,
-        AG_REDUCTION_MIN_PARALLEL_ELEMENTS, result_count);
+        AG_REDUCTION_MIN_PARALLEL_ELEMENTS, tasks);
 #ifndef _OPENMP
     (void)threads;
 #endif
+    if (threads <= 1) {
+        for (int outer = 0; outer < outer_count; ++outer) {
+            for (int index = 0; index < result_count; ++index) {
+                destination[index] +=
+                    scale * source[outer * result_count + index];
+            }
+        }
+        return;
+    }
 #ifdef _OPENMP
+    if (outer_count >= threads * 4 && result_count <= (1 << 14)) {
+        float* partials = (float*)calloc(
+            (size_t)threads * (size_t)result_count, sizeof(float));
+        if (partials != NULL) {
+#pragma omp parallel num_threads(threads)
+            {
+                int thread = omp_get_thread_num();
+                float* partial = partials +
+                    (size_t)thread * (size_t)result_count;
+#pragma omp for schedule(static)
+                for (int outer = 0; outer < outer_count; ++outer) {
+                    for (int index = 0; index < result_count; ++index) {
+                        partial[index] +=
+                            source[outer * result_count + index];
+                    }
+                }
+#pragma omp for schedule(static)
+                for (int index = 0; index < result_count; ++index) {
+                    float sum = 0.0f;
+                    for (int owner = 0; owner < threads; ++owner) {
+                        sum += partials[(size_t)owner * (size_t)result_count +
+                                        (size_t)index];
+                    }
+                    destination[index] = scale * sum;
+                }
+            }
+            free(partials);
+            return;
+        }
+    }
 #pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
-#endif
     for (int index = 0; index < result_count; ++index) {
         float sum = 0.0f;
         for (int outer = 0; outer < outer_count; ++outer) {
@@ -73,6 +112,7 @@ static void sum_contiguous_suffix(const float* source,
         }
         destination[index] = scale * sum;
     }
+#endif
 }
 
 static int has_contiguous_reduction_suffix(const tensor* source,
