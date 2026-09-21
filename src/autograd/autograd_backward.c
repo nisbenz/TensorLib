@@ -470,9 +470,11 @@ static int merge_persistent_gradients(const tensor_list* tensors,
         ag_tensor* value = tensors->values[i];
         if (retention == AG_GRAD_RETAIN_LEAVES && value->creator != NULL) continue;
         if (!value->requires_grad || pass_gradients[i] == NULL) continue;
-        if (value->grad == NULL && pass_gradients[i]->storage->ref_count == 1 &&
+        if (value->grad == NULL &&
             is_contiguous(pass_gradients[i]) &&
-            pass_gradients[i]->offset == 0) {
+            pass_gradients[i]->offset == 0 &&
+            (pass_gradients[i]->storage->ref_count == 1 ||
+             pass_gradients[i]->storage->size == tensor_numel(pass_gradients[i]))) {
             merged[i] = pass_gradients[i];
             pass_gradients[i] = NULL;
         } else {
