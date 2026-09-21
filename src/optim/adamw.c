@@ -170,7 +170,11 @@ static int topology_valid(const nn_adamw* optimizer)
 static int gradient_scale(const nn_adamw* optimizer, double* result)
 {
     double squared_norm = 0.0;
+    long long work = 0;
+    int invalid = 0;
 
+    /* Validate all state before entering the parallel reduction so failure
+     * remains transactional. */
     for (size_t i = 0; i < optimizer->parameter_count; ++i) {
         nn_parameter* parameter = optimizer->parameters[i];
         tensor* value;
@@ -195,23 +199,44 @@ static int gradient_scale(const nn_adamw* optimizer, double* result)
             return -1;
         }
         int count = tensor_numel(gradient);
+        work = work > LLONG_MAX - count ? LLONG_MAX : work + count;
+    }
+
+    int threads = tensorlib_parallel_threads(
+        work, TENSORLIB_ADAMW_MIN_PARALLEL_ELEMENTS,
+        optimizer->parameter_count > (size_t)INT_MAX
+            ? 1 : (int)optimizer->parameter_count);
+#ifndef _OPENMP
+    (void)threads;
+#endif
+#ifdef _OPENMP
+#pragma omp parallel for if(threads > 1) schedule(dynamic, 1) \
+    num_threads(threads) reduction(+:squared_norm) reduction(|:invalid)
+#endif
+    for (long long index = 0;
+         index < (long long)optimizer->parameter_count; ++index) {
+        nn_parameter* parameter = optimizer->parameters[index];
+        tensor* gradient;
+        if (!parameter->trainable || parameter->value->grad == NULL) continue;
+        gradient = parameter->value->grad;
+        int count = tensor_numel(gradient);
         if (is_contiguous(gradient) && gradient->offset == 0) {
             const float* data = gradient->storage->data;
             for (int element = 0; element < count; ++element) {
                 double grad = data[element];
-                if (!isfinite(grad)) return -1;
+                if (!isfinite(grad)) invalid = 1;
                 squared_norm += grad * grad;
             }
         } else {
             for (int element = 0; element < count; ++element) {
                 double grad = gradient->storage->data[
                     tensor_flat_index(gradient, element)];
-                if (!isfinite(grad)) return -1;
+                if (!isfinite(grad)) invalid = 1;
                 squared_norm += grad * grad;
             }
         }
     }
-    if (!isfinite(squared_norm)) return -1;
+    if (invalid || !isfinite(squared_norm)) return -1;
     *result = 1.0;
     if (optimizer->config.max_grad_norm > 0.0f && squared_norm > 0.0) {
         double norm = sqrt(squared_norm);
