@@ -110,6 +110,14 @@ int bench_run_scaling_suite(const bench_options* options, FILE* csv)
     int size = smoke ? 32 : (full ? 1536 : 768);
     int vector_dims[1] = {elements};
     int matrix_dims[2] = {size, size};
+    int command_batch1_a[2] = {256, 512};
+    int command_batch1_b[2] = {512, 1536};
+    int command_batch16_a[2] = {4096, 512};
+    int command_batch16_b[2] = {512, 1536};
+    int command_dweight_a[2] = {512, 4096};
+    int command_dweight_b[2] = {4096, 2048};
+    int command_attention_a[3] = {128, 256, 64};
+    int command_attention_b[3] = {128, 64, 256};
     int status = 0;
     int bench_run_decoder_scaling(const bench_options*, FILE*);
 
@@ -123,6 +131,24 @@ int bench_run_scaling_suite(const bench_options* options, FILE* csv)
     status |= run_scaling_case(options, csv, SCALE_MATMUL, "matmul_square",
         "[MxK]x[KxN]", "GFLOP/s", 2.0 * size * size * size / 1e9,
         2, matrix_dims, 2, matrix_dims);
+    if (full) {
+        status |= run_scaling_case(options, csv, SCALE_MATMUL,
+            "command_qkv_batch1", "[256x512]x[512x1536]", "GFLOP/s",
+            2.0 * 256 * 512 * 1536 / 1e9,
+            2, command_batch1_a, 2, command_batch1_b);
+        status |= run_scaling_case(options, csv, SCALE_MATMUL,
+            "command_qkv_batch16", "[4096x512]x[512x1536]", "GFLOP/s",
+            2.0 * 4096 * 512 * 1536 / 1e9,
+            2, command_batch16_a, 2, command_batch16_b);
+        status |= run_scaling_case(options, csv, SCALE_MATMUL,
+            "command_mlp_dweight", "[512x4096]x[4096x2048]", "GFLOP/s",
+            2.0 * 512 * 4096 * 2048 / 1e9,
+            2, command_dweight_a, 2, command_dweight_b);
+        status |= run_scaling_case(options, csv, SCALE_MATMUL,
+            "command_attention", "[128x256x64]x[128x64x256]", "GFLOP/s",
+            2.0 * 128 * 256 * 64 * 256 / 1e9,
+            3, command_attention_a, 3, command_attention_b);
+    }
     status |= bench_run_decoder_scaling(options, csv);
     printf("\n");
     return status;

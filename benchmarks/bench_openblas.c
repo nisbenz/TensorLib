@@ -132,6 +132,20 @@ int main(int argc, char** argv)
                        "[BHxTxD]x[BHxDxT]", threads,
                        smoke ? 2 : 12, smoke ? 16 : 128,
                        smoke ? 8 : 64, smoke ? 16 : 128);
+    if (full) {
+        status |= run_case(&profile, csv, "command_qkv_batch1",
+                           "[256x512]x[512x1536]", threads,
+                           1, 256, 512, 1536);
+        status |= run_case(&profile, csv, "command_qkv_batch16",
+                           "[4096x512]x[512x1536]", threads,
+                           1, 4096, 512, 1536);
+        status |= run_case(&profile, csv, "command_mlp_dweight",
+                           "[512x4096]x[4096x2048]", threads,
+                           1, 512, 4096, 2048);
+        status |= run_case(&profile, csv, "command_attention",
+                           "[128x256x64]x[128x64x256]", threads,
+                           128, 256, 64, 256);
+    }
     if (csv != NULL && fclose(csv) != 0) status = 1;
     return status == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
