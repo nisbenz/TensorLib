@@ -231,6 +231,34 @@ tensor* t_clone(tensor* t) {
         return a;
     }
 
+    /* Transposed N-D tensors commonly retain contiguous rows on their final
+     * axis. Copy a row at a time instead of rebuilding coordinates per value. */
+    if (t->ndim > 1 && t->strides[t->ndim - 1] == 1) {
+        int inner = t->dims[t->ndim - 1];
+        int outer = total_elements / inner;
+        int threads = tensorlib_parallel_threads(
+            total_elements, TENSORLIB_CLONE_MIN_PARALLEL_ELEMENTS, outer);
+#ifndef _OPENMP
+        (void)threads;
+#endif
+#ifdef _OPENMP
+#pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
+#endif
+        for (int row = 0; row < outer; ++row) {
+            int remaining = row;
+            int source = t->offset;
+            for (int axis = t->ndim - 2; axis >= 0; --axis) {
+                int coordinate = remaining % t->dims[axis];
+                remaining /= t->dims[axis];
+                source += coordinate * t->strides[axis];
+            }
+            memcpy(a->storage->data + (size_t)row * (size_t)inner,
+                   t->storage->data + source,
+                   (size_t)inner * sizeof(float));
+        }
+        return a;
+    }
+
     if (t->ndim == 2 && t->strides[0] == 1 &&
         t->strides[1] >= t->dims[0]) {
         const int tile = 32;
