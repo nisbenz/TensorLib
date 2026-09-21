@@ -4,6 +4,11 @@ CommandLM is a standalone structured-command example built on TensorLib's
 configurable GPT-style decoder. It translates natural-language developer
 requests into an allowlisted command record; it never executes generated text.
 
+> [!WARNING]
+> CommandLM is an experimental example, not a production command generator.
+> Output quality depends heavily on corpus quality and training, and generated
+> commands must be inspected rather than trusted or executed.
+
 The default model has 9 decoder blocks, width 512, 8 attention heads, context
 256, and a 1,024-token deterministic BPE-style tokenizer. It contains about
 29.6M trainable parameters. The tokenizer includes byte fallback tokens and a

@@ -2,6 +2,59 @@
 
 All notable changes to TensorLib are documented in this file.
 
+## [0.3.0] - 2026-09-21
+
+TensorLib 0.3.0 improves CPU training performance and introduces CommandLM as
+an experimental end-to-end language-model example. CommandLM demonstrates the
+pipeline and safety boundaries; its generated-command quality is not yet
+production-ready.
+
+### Training and autograd performance
+
+- Added leaf-only gradient retention so training can discard intermediate
+  gradients while preserving the existing retain-all behavior by default.
+- Fused sibling slice-gradient accumulation and added fast paths for leading
+  and middle-axis reductions, same-shape contributions, and persistent
+  gradient merges.
+- Parallelized large autograd fills, contiguous gradient reductions,
+  million-element tensor operations, row-contiguous and transposed clones,
+  large right-hand-side packing, and AdamW validation and gradient norms.
+- Improved packed-matrix scheduling by splitting columns adaptively and reduced
+  avoidable storage-sized leaf-gradient copies.
+
+On the documented i5-13400F benchmark host at 16 threads, these changes reduced
+the approximately 30-million-parameter CommandLM training step by 29.1% at
+batch 1 and 20.4% at batch 16. AdamW time fell from about 74.5 ms to 36.1 ms.
+These results are workload- and machine-specific; the full methodology and
+phase breakdown are in `docs/commandlm_cpu_optimization.md`.
+
+### Experimental CommandLM example
+
+- Added a configurable 29.6-million-parameter structured-command model with
+  training, validation, inference, explicit resume support, and atomic
+  checkpoints containing model, AdamW, and RNG state.
+- Added a deterministic 1,024-token BPE-style tokenizer with byte fallback,
+  versioned vocabulary persistence, and round-trip tests.
+- Added deterministic corpus generation plus import and audit tooling for the
+  NL2Bash and CLI-1M datasets.
+- Added conservative output validation: the example emits allowlisted command
+  records, rejects shell metacharacters and dangerous commands, and never
+  executes generated text.
+- Added CommandLM-specific benchmark shapes and labeled training-phase metrics.
+
+CommandLM is released as an experimental example. Its current model outputs may
+be poor without a carefully curated corpus, sufficient training, and separate
+quality evaluation, so generated commands should be inspected rather than
+trusted or executed.
+
+### Quality
+
+- Expanded tests for leaf-only gradient retention, fused slice gradients,
+  tensor layouts, parallel AdamW validation and rollback, and tokenizer
+  persistence.
+- Hardened corpus parsing, batch validation, checkpoint compatibility checks,
+  and explicit checkpoint resume behavior.
+
 ## [0.2.0] - 2026-09-06
 
 TensorLib 0.2.0 is a performance-focused release. It substantially reduces
@@ -102,5 +155,6 @@ needed to reproduce and interpret them.
 - Initial release of the tensor core, reverse-mode autograd engine, neural-network
   modules, optimizers, checkpointing, and TinyLM example.
 
+[0.3.0]: https://github.com/nisbenz/tensorlib/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/nisbenz/tensorlib/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/nisbenz/tensorlib/releases/tag/v0.1.0

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
-project(tensorlib VERSION 0.2.0 LANGUAGES C)
+project(tensorlib VERSION 0.3.0 LANGUAGES C)
 
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
