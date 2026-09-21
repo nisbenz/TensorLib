@@ -1,7 +1,11 @@
 #include <stdlib.h>
+#include <string.h>
 
 #include "../../include/tensorlib/autograd.h"
 #include "./../../include/tensorlib/autograd_internal.h"
+#include "../tensor/parallel.h"
+
+#define AG_FILL_MIN_PARALLEL_ELEMENTS (1 << 20)
 
 ag_tensor* ag_from_owned_tensor(tensor* value, int requires_grad) {
     if (!tensor_has_valid_metadata(value)) {
@@ -155,6 +159,14 @@ tensor* ag_full_like(const tensor* reference, float value) {
     tensor* result = t_alloc(reference->ndim, reference->dims);
     if (result == NULL) return NULL;
     int count = tensor_numel(result);
+    int threads = tensorlib_parallel_threads(
+        count, AG_FILL_MIN_PARALLEL_ELEMENTS, 0);
+#ifndef _OPENMP
+    (void)threads;
+#endif
+#ifdef _OPENMP
+#pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
+#endif
     for (int i = 0; i < count; ++i) {
         result->storage->data[i] = value;
     }
