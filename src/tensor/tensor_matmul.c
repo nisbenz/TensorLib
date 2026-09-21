@@ -38,6 +38,7 @@ enum {
 #ifndef TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS
 #define TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS 8388608LL
 #endif
+#define TENSORLIB_PACK_MIN_PARALLEL_ELEMENTS (1 << 18)
 
 struct tensor_matmul_packed_rhs {
     int ref_count;
@@ -98,26 +99,23 @@ static int packed_rhs_batch_offset(const tensor* rhs, size_t batch_index,
     return 1;
 }
 
-static void pack_rhs_batch(const tensor* rhs, int rhs_base,
+static void pack_rhs_panel(const tensor* rhs, int rhs_base,
                            float* packed_data, int inner, int columns,
-                           int panel_count) {
+                           int panel) {
     int inner_stride = rhs->strides[rhs->ndim - 2];
     int column_stride = rhs->strides[rhs->ndim - 1];
 
-    for (int panel = 0; panel < panel_count; ++panel) {
-        int column_start = panel * TENSORLIB_MATMUL_NR;
-        float* panel_data = packed_data +
-            (size_t)panel * (size_t)inner * TENSORLIB_MATMUL_NR;
-
-        for (int k = 0; k < inner; ++k) {
-            for (int column = 0; column < TENSORLIB_MATMUL_NR; ++column) {
-                int source_column = column_start + column;
-                panel_data[k * TENSORLIB_MATMUL_NR + column] =
-                    (source_column < columns)
-                        ? rhs->storage->data[rhs_base + k * inner_stride +
-                                             source_column * column_stride]
-                        : 0.0f;
-            }
+    int column_start = panel * TENSORLIB_MATMUL_NR;
+    float* panel_data = packed_data +
+        (size_t)panel * (size_t)inner * TENSORLIB_MATMUL_NR;
+    for (int k = 0; k < inner; ++k) {
+        for (int column = 0; column < TENSORLIB_MATMUL_NR; ++column) {
+            int source_column = column_start + column;
+            panel_data[k * TENSORLIB_MATMUL_NR + column] =
+                (source_column < columns)
+                    ? rhs->storage->data[rhs_base + k * inner_stride +
+                                         source_column * column_stride]
+                    : 0.0f;
         }
     }
 }
@@ -186,12 +184,25 @@ tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs) {
         return NULL;
     }
 
-    for (size_t batch = 0; batch < packed->batch_count; ++batch) {
+    size_t task_count = packed->batch_count * (size_t)packed->panel_count;
+    int threads = tensorlib_parallel_threads(
+        (long long)(total_values / sizeof(float)),
+        TENSORLIB_PACK_MIN_PARALLEL_ELEMENTS,
+        task_count > (size_t)INT_MAX ? 1 : (int)task_count);
+#ifndef _OPENMP
+    (void)threads;
+#endif
+#ifdef _OPENMP
+#pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
+#endif
+    for (long long task = 0; task < (long long)task_count; ++task) {
+        size_t batch = (size_t)task / (size_t)packed->panel_count;
+        int panel = (int)((size_t)task % (size_t)packed->panel_count);
         int rhs_base;
         packed_rhs_batch_offset(rhs, batch, batch_rank, &rhs_base);
-        pack_rhs_batch(rhs, rhs_base,
+        pack_rhs_panel(rhs, rhs_base,
                        packed->data + batch * packed->values_per_batch,
-                       packed->inner, packed->columns, packed->panel_count);
+                       packed->inner, packed->columns, panel);
     }
 
     return packed;
