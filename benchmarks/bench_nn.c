@@ -518,8 +518,11 @@ static int setup_decoder(nn_bench_context* context,
                          int layers,
                          int train)
 {
+    int command_model = time == 256 && channels == 512 && layers == 9;
     nn_decoder_config config = {
-        256, time, channels, 6, layers, train ? 0.1f : 0.0f, 1e-5f
+        command_model ? 1024 : 256, time, channels,
+        command_model ? 8 : 6, layers,
+        train ? 0.1f : 0.0f, 1e-5f
     };
     int input_dims[2] = {batch, time};
     nn_decoder* model;
@@ -535,7 +538,8 @@ static int setup_decoder(nn_bench_context* context,
     if (train) {
         nn_adamw_config optimizer_config = nn_adamw_default_config();
         optimizer_config.max_grad_norm = 1.0f;
-        context->targets = make_token_targets(batch, time, 256);
+        context->targets = make_token_targets(
+            batch, time, command_model ? 1024 : 256);
         context->adamw = model == NULL ? NULL :
             nn_adamw_create(&model->base, &optimizer_config);
     }
@@ -579,12 +583,17 @@ static int run_decoder_case(const bench_options* options,
             context.allocation_stats.live_bytes;
         tensor_alloc_stats_reset_counters();
     }
+    int command_model = strcmp(suite, "command") == 0;
     int status = run_nn_case(options, csv, suite,
-        train ? "tiny_lm_train_step" : "tiny_lm_forward",
-        "[Bx128]->[Bx128x256]",
+        train ? (command_model ? "command_lm_train_step" :
+                               "tiny_lm_train_step")
+              : (command_model ? "command_lm_forward" : "tiny_lm_forward"),
+        command_model ? "[Bx256]->[Bx256x1024]" :
+                        "[Bx128]->[Bx128x256]",
         train ? "forward+loss+backward+adamw" : "forward;graph-build",
         "tokens/s", (double)(batch * time), threads, &context, result);
-    if (status == 0 && train && strcmp(suite, "nn") == 0) {
+    if (status == 0 && train &&
+        (strcmp(suite, "nn") == 0 || command_model)) {
         int measured_threads = bench_configure_threads(threads);
         tensor_alloc_stats_read(&context.allocation_stats);
         report_training_phases(options, csv, threads, measured_threads, &context);
@@ -689,6 +698,27 @@ int bench_run_nn_suite(const bench_options* options, FILE* csv)
     status |= run_mlp(options, csv, smoke ? 2 : 64, 0);
     status |= run_mlp(options, csv, smoke ? 2 : 64, 1);
     status |= run_decoder_cases(options, csv, batch);
+    printf("\n");
+    return status;
+}
+
+int bench_run_command_suite(const bench_options* options, FILE* csv)
+{
+    int smoke = strcmp(options->profile.profile, "smoke") == 0;
+    int time = smoke ? 8 : 256;
+    int channels = smoke ? 24 : 512;
+    int layers = smoke ? 1 : 9;
+    int status = 0;
+    printf("CommandLM suite (29.55M parameters, eager float32)\n");
+    for (int index = 0; index < options->thread_count; ++index) {
+        int threads = options->threads[index];
+        status |= run_decoder_case(options, csv, "command", 1, time,
+                                   channels, layers, 1, threads, NULL) == 1;
+        if (!smoke) {
+            status |= run_decoder_case(options, csv, "command", 16, time,
+                                       channels, layers, 1, threads, NULL) == 1;
+        }
+    }
     printf("\n");
     return status;
 }
