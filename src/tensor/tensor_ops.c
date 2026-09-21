@@ -9,7 +9,7 @@
  * this element count a single thread is already at peak and forking only adds
  * overhead, so the op stays serial for small tensors. */
 #ifndef TENSORLIB_OP_MIN_PARALLEL_ELEMENTS
-#define TENSORLIB_OP_MIN_PARALLEL_ELEMENTS (1 << 22)
+#define TENSORLIB_OP_MIN_PARALLEL_ELEMENTS (1 << 20)
 #endif
 
 typedef float (*binary_fn)(float, float);
