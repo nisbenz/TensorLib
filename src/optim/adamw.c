@@ -259,6 +259,7 @@ int nn_adamw_step(nn_adamw* optimizer)
     int parameter_count;
     int eligible_count = 0;
     int threads;
+    int validation_failed = 0;
     int update_failed = 0;
 
     if (!topology_valid(optimizer) ||
@@ -296,6 +297,10 @@ int nn_adamw_step(nn_adamw* optimizer)
         }
         /* Validate every value and precompute all step-dependent factors before
          * any parameter or optimizer state is modified. */
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(threads) \
+    reduction(|:validation_failed)
+#endif
         for (int i = 0; i < parameter_count; ++i) {
             nn_parameter* parameter = optimizer->parameters[i];
             tensor* value;
@@ -307,8 +312,8 @@ int nn_adamw_step(nn_adamw* optimizer)
             correction2s[i] = 1.0 - pow((double)config->beta2, (double)step);
             if (!(correction1s[i] > 0.0) || !(correction2s[i] > 0.0) ||
                 optimizer->steps[i] == UINT64_MAX) {
-                free(correction2s); free(correction1s); free(next_steps);
-                return -1;
+                validation_failed = 1;
+                continue;
             }
             next_steps[i] = step;
             int count = tensor_numel(value);
@@ -325,8 +330,8 @@ int nn_adamw_step(nn_adamw* optimizer)
                     if (!isfinite(value_data[element]) ||
                         !isfinite(first_data[element]) ||
                         !isfinite(second_data[element])) {
-                        free(correction2s); free(correction1s); free(next_steps);
-                        return -1;
+                        validation_failed = 1;
+                        break;
                     }
                 }
             } else {
@@ -339,14 +344,18 @@ int nn_adamw_step(nn_adamw* optimizer)
                         isfinite(second_moment->storage->data[second_index])) {
                         continue;
                     }
-                    free(correction2s); free(correction1s); free(next_steps);
-                    return -1;
+                    validation_failed = 1;
+                    break;
                 }
             }
         }
+        if (validation_failed) {
+            free(correction2s); free(correction1s); free(next_steps);
+            return -1;
+        }
     }
 #ifdef _OPENMP
-#pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
+#pragma omp parallel for if(threads > 1) schedule(dynamic, 1) num_threads(threads)
 #endif
     for (int i = 0; i < parameter_count; ++i) {
         nn_parameter* parameter = optimizer->parameters[i];
