@@ -191,6 +191,30 @@ TEST(test_t_clone_materializes_strided_view_contiguously) {
     t_free(a);
 }
 
+TEST(test_t_clone_parallelizes_large_transposed_matrix) {
+    int dims[2] = {1024, 1024};
+    tensor* base = t_alloc(2, dims);
+    ASSERT_NOT_NULL(base);
+    for (int row = 0; row < dims[0]; ++row) {
+        for (int column = 0; column < dims[1]; ++column) {
+            base->storage->data[row * dims[1] + column] =
+                (float)(row * dims[1] + column);
+        }
+    }
+    tensor* view = t_transpose(base, 0, 1);
+    tensor* clone = t_clone(view);
+    ASSERT_NOT_NULL(view);
+    ASSERT_NOT_NULL(clone);
+    ASSERT_TRUE(is_contiguous(clone));
+    for (int row = 0; row < dims[0]; row += 127) {
+        for (int column = 0; column < dims[1]; column += 113) {
+            ASSERT_EQ_FLOAT(clone->storage->data[row * dims[1] + column],
+                            base->storage->data[column * dims[1] + row]);
+        }
+    }
+    t_free(clone); t_free(view); t_free(base);
+}
+
 TEST(test_t_clone_materializes_transposed_nd_rows) {
     int dims[4] = {2, 3, 2, 5};
     tensor* base = t_alloc(4, dims);
@@ -301,6 +325,7 @@ int main(void) {
     RUN_TEST(test_init_t_null_args_returns_error);
     RUN_TEST(test_t_clone_deep_copies_data);
     RUN_TEST(test_t_clone_materializes_strided_view_contiguously);
+    RUN_TEST(test_t_clone_parallelizes_large_transposed_matrix);
     RUN_TEST(test_t_clone_materializes_transposed_nd_rows);
     RUN_TEST(test_storage_versions_are_shared_by_views_and_independent_in_clones);
     RUN_TEST(test_add_ref_count_links_storage_and_bumps_count);

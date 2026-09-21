@@ -262,12 +262,23 @@ tensor* t_clone(tensor* t) {
     if (t->ndim == 2 && t->strides[0] == 1 &&
         t->strides[1] >= t->dims[0]) {
         const int tile = 32;
+        int row_blocks = (t->dims[0] + tile - 1) / tile;
+        int column_blocks = (t->dims[1] + tile - 1) / tile;
+        int threads = tensorlib_parallel_threads(
+            total_elements, TENSORLIB_CLONE_MIN_PARALLEL_ELEMENTS,
+            row_blocks * column_blocks);
+#ifndef _OPENMP
+        (void)threads;
+#endif
+#ifdef _OPENMP
+#pragma omp parallel for collapse(2) if(threads > 1) schedule(static) num_threads(threads)
+#endif
         for (int row_block = 0; row_block < t->dims[0]; row_block += tile) {
-            int row_end = row_block + tile;
-            if (row_end > t->dims[0]) row_end = t->dims[0];
             for (int column_block = 0; column_block < t->dims[1];
                  column_block += tile) {
+                int row_end = row_block + tile;
                 int column_end = column_block + tile;
+                if (row_end > t->dims[0]) row_end = t->dims[0];
                 if (column_end > t->dims[1]) column_end = t->dims[1];
                 for (int row = row_block; row < row_end; ++row) {
                     for (int column = column_block; column < column_end; ++column) {
