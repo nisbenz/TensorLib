@@ -26,6 +26,8 @@ typedef struct {
     tensor_alloc_stats allocation_stats;
     ag_backward_stats backward_stats;
     size_t allocation_baseline_bytes;
+    const char* metric_prefix;
+    const char* metric_shape;
 } nn_bench_context;
 
 enum {
@@ -155,19 +157,23 @@ static void report_allocation_stats(const bench_options* options,
                                     int measured_threads,
                                     const nn_bench_context* context)
 {
+    char name[64];
     double calls = context->phase_sample_count > 0
                  ? (double)context->phase_sample_count : 1.0;
     const tensor_alloc_stats* stats = &context->allocation_stats;
-    bench_record_scalar(options, csv, "nn_phase", "tiny_lm_allocations",
-                        "[Bx128]->[Bx128x256]", "isolated-phase",
+    snprintf(name, sizeof(name), "%s_allocations", context->metric_prefix);
+    bench_record_scalar(options, csv, "nn_phase", name,
+                        context->metric_shape, "isolated-phase",
                         "alloc/call", requested_threads, measured_threads,
                         (double)stats->allocations / calls);
-    bench_record_scalar(options, csv, "nn_phase", "tiny_lm_allocated_bytes",
-                        "[Bx128]->[Bx128x256]", "isolated-phase",
+    snprintf(name, sizeof(name), "%s_allocated_bytes", context->metric_prefix);
+    bench_record_scalar(options, csv, "nn_phase", name,
+                        context->metric_shape, "isolated-phase",
                         "bytes/call", requested_threads, measured_threads,
                         (double)stats->allocated_bytes / calls);
-    bench_record_scalar(options, csv, "nn_phase", "tiny_lm_peak_live_bytes",
-                        "[Bx128]->[Bx128x256]", "isolated-phase",
+    snprintf(name, sizeof(name), "%s_peak_live_bytes", context->metric_prefix);
+    bench_record_scalar(options, csv, "nn_phase", name,
+                        context->metric_shape, "isolated-phase",
                         "bytes", requested_threads, measured_threads,
                         (double)(stats->peak_live_bytes >=
                                  context->allocation_baseline_bytes
@@ -194,17 +200,17 @@ static void report_backward_stats(const bench_options* options,
         char name[64];
         snprintf(name, sizeof(name), "backward_op_%s", names[operation]);
         bench_record_scalar(options, csv, "nn_backward", name,
-            "[Bx128]->[Bx128x256]", "profiled-single-call", "ms/call",
+            context->metric_shape, "profiled-single-call", "ms/call",
             requested_threads, measured_threads,
             stats->operation_seconds[operation] * 1000.0);
         snprintf(name, sizeof(name), "backward_op_%s_calls", names[operation]);
         bench_record_scalar(options, csv, "nn_backward", name,
-            "[Bx128]->[Bx128x256]", "profiled-single-call", "calls/backward",
+            context->metric_shape, "profiled-single-call", "calls/backward",
             requested_threads, measured_threads,
             (double)stats->operation_calls[operation]);
         snprintf(name, sizeof(name), "backward_op_%s_mean", names[operation]);
         bench_record_scalar(options, csv, "nn_backward", name,
-            "[Bx128]->[Bx128x256]", "profiled-single-call", "ms/op",
+            context->metric_shape, "profiled-single-call", "ms/op",
             requested_threads, measured_threads,
             stats->operation_seconds[operation] * 1000.0 /
                 (double)stats->operation_calls[operation]);
@@ -219,15 +225,15 @@ static void report_backward_stats(const bench_options* options,
     };
     for (int index = 0; index < 4; ++index) {
         bench_record_scalar(options, csv, "nn_backward", engine_names[index],
-            "[Bx128]->[Bx128x256]", "profiled-single-call", "ms/call",
+            context->metric_shape, "profiled-single-call", "ms/call",
             requested_threads, measured_threads,
             engine_values[index] * 1000.0);
     }
     bench_record_scalar(options, csv, "nn_backward", "backward_graph_tensors",
-        "[Bx128]->[Bx128x256]", "profiled-single-call", "count",
+        context->metric_shape, "profiled-single-call", "count",
         requested_threads, measured_threads, (double)stats->graph_tensors);
     bench_record_scalar(options, csv, "nn_backward", "backward_graph_nodes",
-        "[Bx128]->[Bx128x256]", "profiled-single-call", "count",
+        context->metric_shape, "profiled-single-call", "count",
         requested_threads, measured_threads, (double)stats->graph_nodes);
     static const char* matmul_names[] = {
         "matmul_packed_dinput", "matmul_generic_dinput",
@@ -239,7 +245,7 @@ static void report_backward_stats(const bench_options* options,
     };
     for (int index = 0; index < 4; ++index) {
         bench_record_scalar(options, csv, "nn_backward", matmul_names[index],
-            "[Bx128]->[Bx128x256]", "profiled-single-call", "calls/backward",
+            context->metric_shape, "profiled-single-call", "calls/backward",
             requested_threads, measured_threads, (double)matmul_counts[index]);
     }
     const char* reduction_names[] = {
@@ -254,7 +260,7 @@ static void report_backward_stats(const bench_options* options,
     };
     for (int index = 0; index < 4; ++index) {
         bench_record_scalar(options, csv, "nn_backward", reduction_names[index],
-            "[Bx128]->[Bx128x256]", "profiled-single-call", "count",
+            context->metric_shape, "profiled-single-call", "count",
             requested_threads, measured_threads, reduction_values[index]);
     }
 }
@@ -272,14 +278,17 @@ static void report_training_phases(const bench_options* options,
                                    int measured_threads,
                                    nn_bench_context* context)
 {
-    static const char* names[PHASE_COUNT] = {
-        "tiny_lm_zero_grad", "tiny_lm_forward_phase", "tiny_lm_loss",
-        "tiny_lm_backward", "tiny_lm_adamw", "tiny_lm_graph_release"
+    static const char* suffixes[PHASE_COUNT] = {
+        "zero_grad", "forward_phase", "loss", "backward", "adamw",
+        "graph_release"
     };
     if (context->phase_sample_count <= 0) return;
     for (int phase = 0; phase < PHASE_COUNT; ++phase) {
+        char name[64];
+        snprintf(name, sizeof(name), "%s_%s", context->metric_prefix,
+                 suffixes[phase]);
         bench_case benchmark = {
-            "nn_phase", names[phase], "[Bx128]->[Bx128x256]",
+            "nn_phase", name, context->metric_shape,
             "isolated-phase", "ms/call", 0.0, 0, NULL, NULL
         };
         bench_measurement result;
@@ -584,12 +593,22 @@ static int run_decoder_case(const bench_options* options,
         tensor_alloc_stats_reset_counters();
     }
     int command_model = strcmp(suite, "command") == 0;
+    int command_shape = time == 256 && channels == 512 && layers == 9;
+    char case_name[64];
+    char shape[64];
+    snprintf(case_name, sizeof(case_name), "%s%s",
+             command_model ? (batch == 1 ? "command_lm_batch1" :
+                                           "command_lm_batch16") : "tiny_lm",
+             train ? "_train_step" : "_forward");
+    snprintf(shape, sizeof(shape), "[%dx%d]->[%dx%dx%d]",
+             batch, time, batch, time, command_shape ? 1024 : 256);
+    context.metric_prefix = command_model
+                          ? (batch == 1 ? "command_lm_batch1" :
+                                          "command_lm_batch16")
+                          : "tiny_lm";
+    context.metric_shape = shape;
     int status = run_nn_case(options, csv, suite,
-        train ? (command_model ? "command_lm_train_step" :
-                               "tiny_lm_train_step")
-              : (command_model ? "command_lm_forward" : "tiny_lm_forward"),
-        command_model ? "[Bx256]->[Bx256x1024]" :
-                        "[Bx128]->[Bx128x256]",
+        case_name, shape,
         train ? "forward+loss+backward+adamw" : "forward;graph-build",
         "tokens/s", (double)(batch * time), threads, &context, result);
     if (status == 0 && train &&
