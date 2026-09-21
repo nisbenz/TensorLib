@@ -60,6 +60,35 @@ TEST(test_shared_dag_accumulates_each_branch_once) {
     ag_tensor_release(loss); ag_tensor_release(joined); ag_tensor_release(square); ag_tensor_release(x);
 }
 
+TEST(test_sibling_slices_accumulate_into_their_source) {
+    int dims[2] = {2, 6};
+    float values[12] = {0};
+    float first_weight_values[4] = {1, 2, 3, 4};
+    float second_weight_values[4] = {5, 6, 7, 8};
+    int weight_dims[2] = {2, 2};
+    ag_tensor* input = make_ag(2, dims, values, 1);
+    ag_tensor* first = ag_slice(input, 1, 0, 2);
+    ag_tensor* second = ag_slice(input, 1, 4, 6);
+    ag_tensor* first_weight = make_ag(2, weight_dims, first_weight_values, 0);
+    ag_tensor* second_weight = make_ag(2, weight_dims, second_weight_values, 0);
+    ag_tensor* weighted_first = ag_mul(first, first_weight);
+    ag_tensor* weighted_second = ag_mul(second, second_weight);
+    ag_tensor* joined = ag_add(weighted_first, weighted_second);
+    ag_tensor* rows = ag_sum(joined, 1, 0);
+    ag_tensor* loss = ag_sum(rows, 0, 0);
+
+    ASSERT_EQ_INT(ag_backward(loss), 0);
+    float expected[12] = {1, 2, 0, 0, 5, 6, 3, 4, 0, 0, 7, 8};
+    for (int index = 0; index < 12; ++index) {
+        ASSERT_EQ_FLOAT(input->grad->storage->data[index], expected[index]);
+    }
+
+    ag_tensor_release(loss); ag_tensor_release(rows); ag_tensor_release(joined);
+    ag_tensor_release(weighted_second); ag_tensor_release(weighted_first);
+    ag_tensor_release(second_weight); ag_tensor_release(first_weight);
+    ag_tensor_release(second); ag_tensor_release(first); ag_tensor_release(input);
+}
+
 TEST(test_backward_unbroadcasts_gradient_to_operand_shape) {
     int adims[2]={2,3}, bdims[1]={3}; float av[6]={1,2,3,4,5,6}, bv[3]={10,20,30};
     ag_tensor* a=make_ag(2,adims,av,1), *b=make_ag(1,bdims,bv,1);
@@ -245,6 +274,7 @@ int main(void) {
     RUN_TEST(test_backward_chain_computes_weight_gradients);
     RUN_TEST(test_backward_stats_are_disabled_by_default_and_resettable);
     RUN_TEST(test_shared_dag_accumulates_each_branch_once);
+    RUN_TEST(test_sibling_slices_accumulate_into_their_source);
     RUN_TEST(test_backward_unbroadcasts_gradient_to_operand_shape);
     RUN_TEST(test_seeded_backward_supports_non_scalar_output);
     RUN_TEST(test_repeated_backward_accumulates_without_reusing_stale_intermediates);

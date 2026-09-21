@@ -2,6 +2,9 @@
 #include <string.h>
 
 #include "./../../include/tensorlib/autograd_internal.h"
+#include "../tensor/parallel.h"
+
+#define AG_SLICE_MIN_PARALLEL_ELEMENTS (1 << 20)
 
 typedef struct {
     int dim0;
@@ -87,6 +90,67 @@ static int backward_slice(const ag_node* node,
     free(output_coords);
     free(input_coords);
     input_gradients[0] = gradient;
+    return 0;
+}
+
+int ag_accumulate_slice_gradient(const ag_node* node,
+                                 const tensor* output_gradient,
+                                 tensor** destination) {
+    if (node == NULL || node->operation != AG_OP_SLICE ||
+        node->input_count != 1 || node->context == NULL ||
+        destination == NULL || !tensor_has_valid_metadata(output_gradient) ||
+        !is_contiguous((tensor*)output_gradient)) return 1;
+
+    tensor* input = node->inputs[0]->value;
+    tensor* gradient = *destination;
+    int fresh = gradient == NULL;
+    if (fresh) {
+        gradient = ag_full_like(input, 0.0f);
+        if (gradient == NULL) return 1;
+    } else if (!same_shape(gradient, input) || !is_contiguous(gradient) ||
+               gradient->offset != 0 || gradient->storage->ref_count != 1 ||
+               gradient->storage == output_gradient->storage) {
+        return 1;
+    }
+
+    slice_context* context = (slice_context*)node->context;
+    size_t outer = 1;
+    size_t inner = 1;
+    for (int axis = 0; axis < context->dim; ++axis) {
+        outer *= (size_t)input->dims[axis];
+    }
+    for (int axis = context->dim + 1; axis < input->ndim; ++axis) {
+        inner *= (size_t)input->dims[axis];
+    }
+    size_t slice = (size_t)output_gradient->dims[context->dim];
+    size_t copied = outer * slice * inner;
+    int threads = tensorlib_parallel_threads((long long)copied,
+                                              AG_SLICE_MIN_PARALLEL_ELEMENTS,
+                                              (int)outer);
+#ifndef _OPENMP
+    (void)threads;
+#endif
+#ifdef _OPENMP
+#pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
+#endif
+    for (size_t block = 0; block < outer; ++block) {
+        size_t source = (size_t)output_gradient->offset +
+                        block * slice * inner;
+        size_t target = block * (size_t)input->dims[context->dim] * inner +
+                        (size_t)context->start * inner;
+        size_t count = slice * inner;
+        if (fresh) {
+            memcpy(gradient->storage->data + target,
+                   output_gradient->storage->data + source,
+                   count * sizeof(float));
+        } else {
+            for (size_t index = 0; index < count; ++index) {
+                gradient->storage->data[target + index] +=
+                    output_gradient->storage->data[source + index];
+            }
+        }
+    }
+    *destination = gradient;
     return 0;
 }
 

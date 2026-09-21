@@ -39,6 +39,9 @@ ag_tensor* ag_make_result(tensor* output,
 
 tensor* ag_full_like(const tensor* reference, float value);
 tensor* ag_sum_to_shape(const tensor* source, const tensor* target, float scale);
+int ag_accumulate_slice_gradient(const ag_node* node,
+                                 const tensor* output_gradient,
+                                 tensor** destination);
 
 ag_tensor* ag_matmul_packed_rhs(
     const ag_tensor* a,

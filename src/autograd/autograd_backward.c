@@ -574,6 +574,23 @@ int ag_backward_with_grad_ex(ag_tensor* output,
         int gradient_index = node->output->graph_index;
         if (gradient_index < 0 || pass_gradients[gradient_index] == NULL) goto cleanup;
 
+        if (node->operation == AG_OP_SLICE && node->input_count == 1 &&
+            node->inputs[0]->requires_grad) {
+            int destination = node->inputs[0]->graph_index;
+            started = backward_stats_enabled ? backward_now() : 0.0;
+            if (destination >= 0 &&
+                ag_accumulate_slice_gradient(
+                    node, pass_gradients[gradient_index],
+                    &pass_gradients[destination]) == 0) {
+                if (backward_stats_enabled) {
+                    backward_stats.operation_seconds[AG_OP_SLICE] +=
+                        backward_elapsed(started);
+                    ++backward_stats.operation_calls[AG_OP_SLICE];
+                }
+                continue;
+            }
+        }
+
         for (int input_index = 0; input_index < node->input_count; ++input_index) {
             contributions[input_index] = NULL;
         }
