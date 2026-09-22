@@ -16,8 +16,8 @@ static void free_gradients(tensor** gradients, int count) {
 static int backward_add(const ag_node* node,
                         const tensor* output_gradient,
                         tensor** input_gradients) {
-    if (node == NULL || node->input_count != 2 ||
-        !tensor_has_valid_metadata(output_gradient) || input_gradients == NULL) return 1;
+    if (!ag_backward_call_valid(node, 2, 0, output_gradient,
+                                input_gradients)) return 1;
     for (int i = 0; i < 2; ++i) {
         if (node->inputs[i]->requires_grad) {
             input_gradients[i] = ag_sum_to_shape(
@@ -34,8 +34,8 @@ static int backward_add(const ag_node* node,
 static int backward_sub(const ag_node* node,
                         const tensor* output_gradient,
                         tensor** input_gradients) {
-    if (node == NULL || node->input_count != 2 ||
-        !tensor_has_valid_metadata(output_gradient) || input_gradients == NULL) return 1;
+    if (!ag_backward_call_valid(node, 2, 0, output_gradient,
+                                input_gradients)) return 1;
     if (node->inputs[0]->requires_grad) {
         input_gradients[0] = ag_sum_to_shape(
             output_gradient, node->inputs[0]->value, 1.0f);
@@ -55,8 +55,8 @@ static int backward_sub(const ag_node* node,
 static int backward_mul(const ag_node* node,
                         const tensor* output_gradient,
                         tensor** input_gradients) {
-    if (node == NULL || node->input_count != 2 ||
-        !tensor_has_valid_metadata(output_gradient) || input_gradients == NULL) return 1;
+    if (!ag_backward_call_valid(node, 2, 0, output_gradient,
+                                input_gradients)) return 1;
     if (node->inputs[0]->requires_grad) {
         input_gradients[0] = t_mul((tensor*)output_gradient, node->inputs[1]->value);
         if (input_gradients[0] == NULL) return 1;
@@ -74,8 +74,8 @@ static int backward_mul(const ag_node* node,
 static int backward_div(const ag_node* node,
                         const tensor* output_gradient,
                         tensor** input_gradients) {
-    if (node == NULL || node->input_count != 2 ||
-        !tensor_has_valid_metadata(output_gradient) || input_gradients == NULL) return 1;
+    if (!ag_backward_call_valid(node, 2, 0, output_gradient,
+                                input_gradients)) return 1;
     if (node->inputs[0]->requires_grad) {
         input_gradients[0] = t_div((tensor*)output_gradient, node->inputs[1]->value);
         if (input_gradients[0] == NULL) return 1;
@@ -135,9 +135,8 @@ typedef tensor* (*scalar_forward_fn)(tensor*, float);
 static int backward_mul_scalar(const ag_node* node,
                                const tensor* output_gradient,
                                tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || node->context == NULL ||
-        input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 1, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     input_gradients[0] = t_mul_scalar(
         (tensor*)output_gradient, ((scalar_context*)node->context)->scalar);
@@ -147,9 +146,8 @@ static int backward_mul_scalar(const ag_node* node,
 static int backward_div_scalar(const ag_node* node,
                                const tensor* output_gradient,
                                tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || node->context == NULL ||
-        input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 1, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     input_gradients[0] = t_div_scalar(
         (tensor*)output_gradient, ((scalar_context*)node->context)->scalar);
@@ -192,8 +190,8 @@ ag_tensor* ag_div_scalar(const ag_tensor* value, float scalar) {
 static int backward_neg(const ag_node* node,
                         const tensor* output_gradient,
                         tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 0, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     input_gradients[0] = t_neg((tensor*)output_gradient);
     return input_gradients[0] == NULL;
@@ -202,8 +200,8 @@ static int backward_neg(const ag_node* node,
 static int backward_exp(const ag_node* node,
                         const tensor* output_gradient,
                         tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 0, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     input_gradients[0] = t_mul((tensor*)output_gradient, node->output->value);
     return input_gradients[0] == NULL;
@@ -212,8 +210,8 @@ static int backward_exp(const ag_node* node,
 static int backward_log(const ag_node* node,
                         const tensor* output_gradient,
                         tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 0, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     input_gradients[0] = t_div((tensor*)output_gradient, node->inputs[0]->value);
     return input_gradients[0] == NULL;
@@ -250,8 +248,8 @@ typedef struct {
 static int backward_pow(const ag_node* node,
                         const tensor* output_gradient,
                         tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || node->context == NULL ||
-        input_gradients == NULL || !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 1, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     float exponent = ((pow_context*)node->context)->exponent;
     if (exponent == 0.0f) {
@@ -290,8 +288,8 @@ ag_tensor* ag_pow(const ag_tensor* value, float exponent) {
 static int backward_sqrt(const ag_node* node,
                          const tensor* output_gradient,
                          tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 0, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     tensor* denominator = t_mul_scalar(node->output->value, 2.0f);
     input_gradients[0] = denominator != NULL
@@ -341,8 +339,8 @@ static float derivative_relu(float input, float output) {
 static int backward_relu(const ag_node* node,
                          const tensor* output_gradient,
                          tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 0, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     input_gradients[0] = apply_unary_derivative(node, output_gradient,
                                                 derivative_relu);
@@ -361,8 +359,8 @@ static float derivative_sigmoid(float input, float output) {
 static int backward_sigmoid(const ag_node* node,
                             const tensor* output_gradient,
                             tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 0, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     input_gradients[0] = apply_unary_derivative(node, output_gradient,
                                                 derivative_sigmoid);
@@ -381,8 +379,8 @@ static float derivative_tanh(float input, float output) {
 static int backward_tanh(const ag_node* node,
                          const tensor* output_gradient,
                          tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 0, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     input_gradients[0] = apply_unary_derivative(node, output_gradient,
                                                 derivative_tanh);
@@ -409,8 +407,8 @@ static float derivative_gelu(float input, float output) {
 static int backward_gelu(const ag_node* node,
                          const tensor* output_gradient,
                          tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 0, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     tensor* input = node->inputs[0]->value;
     tensor* result = t_alloc(input->ndim, input->dims);

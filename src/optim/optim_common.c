@@ -1,43 +1,14 @@
 #include <math.h>
 
 #include "../../include/tensorlib/nn.h"
-
-static int tensor_flat_index(const tensor* value, int flat)
-{
-    int index = value->offset;
-    int remaining = flat;
-
-    for (int dim = value->ndim - 1; dim >= 0; --dim) {
-        int coordinate = remaining % value->dims[dim];
-        remaining /= value->dims[dim];
-        index += coordinate * value->strides[dim];
-    }
-    return index;
-}
-
-static int module_valid(const nn_module* module)
-{
-    if (module == NULL ||
-        module->parameter_count > module->parameter_capacity ||
-        module->child_count > module->child_capacity ||
-        (module->parameter_count > 0 && module->parameters == NULL) ||
-        (module->child_count > 0 && module->children == NULL)) {
-        return 0;
-    }
-    for (size_t i = 0; i < module->parameter_count; ++i) {
-        if (module->parameters[i] == NULL) return 0;
-    }
-    for (size_t i = 0; i < module->child_count; ++i) {
-        if (!module_valid(module->children[i])) return 0;
-    }
-    return 1;
-}
+#include "../nn/nn_internal.h"
+#include "../tensor/tensor_internal.h"
 
 void nn_module_zero_grad(nn_module* module)
 {
     size_t count;
 
-    if (!module_valid(module)) return;
+    if (!nn_module_is_valid(module)) return;
     count = nn_module_parameter_count(module);
     for (size_t i = 0; i < count; ++i) {
         nn_parameter* parameter = nn_module_parameter_at(module, i);
@@ -56,7 +27,7 @@ int nn_clip_grad_norm(nn_module* module,
     double scale;
     size_t count;
 
-    if (!module_valid(module) || !isfinite(max_norm) || max_norm <= 0.0f) {
+    if (!nn_module_is_valid(module) || !isfinite(max_norm) || max_norm <= 0.0f) {
         return -1;
     }
     count = nn_module_parameter_count(module);

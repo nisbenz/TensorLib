@@ -4,53 +4,11 @@
 #include <stdlib.h>
 
 #include "../../include/tensorlib/nn.h"
+#include "../nn/nn_internal.h"
 #include "../tensor/parallel.h"
+#include "../tensor/tensor_internal.h"
 
 #define TENSORLIB_ADAMW_MIN_PARALLEL_ELEMENTS (1 << 16)
-
-static int tensor_flat_index(const tensor* value, int flat)
-{
-    int index = value->offset;
-    int remaining = flat;
-
-    for (int dim = value->ndim - 1; dim >= 0; --dim) {
-        int coordinate = remaining % value->dims[dim];
-        remaining /= value->dims[dim];
-        index += coordinate * value->strides[dim];
-    }
-    return index;
-}
-
-static int config_valid(const nn_adamw_config* config)
-{
-    return config != NULL &&
-           isfinite(config->learning_rate) && config->learning_rate > 0.0f &&
-           isfinite(config->beta1) &&
-           config->beta1 >= 0.0f && config->beta1 < 1.0f &&
-           isfinite(config->beta2) &&
-           config->beta2 >= 0.0f && config->beta2 < 1.0f &&
-           isfinite(config->epsilon) && config->epsilon > 0.0f &&
-           isfinite(config->weight_decay) && config->weight_decay >= 0.0f &&
-           isfinite(config->max_grad_norm) && config->max_grad_norm >= 0.0f;
-}
-
-static int module_valid(const nn_module* module)
-{
-    if (module == NULL ||
-        module->parameter_count > module->parameter_capacity ||
-        module->child_count > module->child_capacity ||
-        (module->parameter_count > 0 && module->parameters == NULL) ||
-        (module->child_count > 0 && module->children == NULL)) {
-        return 0;
-    }
-    for (size_t i = 0; i < module->parameter_count; ++i) {
-        if (module->parameters[i] == NULL) return 0;
-    }
-    for (size_t i = 0; i < module->child_count; ++i) {
-        if (!module_valid(module->children[i])) return 0;
-    }
-    return 1;
-}
 
 nn_adamw_config nn_adamw_default_config(void)
 {
@@ -90,7 +48,7 @@ nn_adamw* nn_adamw_create(nn_module* module,
     nn_adamw* optimizer;
     size_t count;
 
-    if (!module_valid(module) || !config_valid(config)) return NULL;
+    if (!nn_module_is_valid(module) || !nn_adamw_config_is_valid(config)) return NULL;
     count = nn_module_parameter_count(module);
     if (count == SIZE_MAX) return NULL;
     optimizer = (nn_adamw*)calloc(1, sizeof(*optimizer));
@@ -147,10 +105,10 @@ nn_adamw* nn_adamw_create(nn_module* module,
 
 static int topology_valid(const nn_adamw* optimizer)
 {
-    if (optimizer == NULL || !module_valid(optimizer->module) ||
+    if (optimizer == NULL || !nn_module_is_valid(optimizer->module) ||
         nn_module_parameter_count(optimizer->module) !=
             optimizer->parameter_count ||
-        !config_valid(&optimizer->config) ||
+        !nn_adamw_config_is_valid(&optimizer->config) ||
         (optimizer->parameter_count > 0 &&
          (optimizer->parameters == NULL ||
           optimizer->first_moments == NULL ||

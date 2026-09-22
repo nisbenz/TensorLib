@@ -1,23 +1,11 @@
 #include <stdlib.h>
 
 #include "../../include/tensorlib/autograd_internal.h"
+#include "../tensor/tensor_internal.h"
 
 typedef struct {
     tensor* indices;
 } gather_context;
-
-static int tensor_flat_index(const tensor* value, int flat)
-{
-    int index = value->offset;
-    int remaining = flat;
-
-    for (int dim = value->ndim - 1; dim >= 0; --dim) {
-        int coordinate = remaining % value->dims[dim];
-        remaining /= value->dims[dim];
-        index += coordinate * value->strides[dim];
-    }
-    return index;
-}
 
 static void free_gather_context(void* raw_context)
 {

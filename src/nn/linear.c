@@ -1,27 +1,7 @@
-#include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "nn_internal.h"
 #include "../../include/tensorlib/autograd_internal.h"
-
-static char* nn_parameter_name(const char* module_name, const char* suffix)
-{
-    size_t module_length;
-    size_t suffix_length;
-    char* result;
-
-    if (module_name == NULL || suffix == NULL) return NULL;
-    module_length = strlen(module_name);
-    suffix_length = strlen(suffix);
-    if (module_length > SIZE_MAX - suffix_length - 2) return NULL;
-    result = (char*)malloc(module_length + suffix_length + 2);
-    if (result == NULL) return NULL;
-    memcpy(result, module_name, module_length);
-    result[module_length] = '.';
-    memcpy(result + module_length + 1, suffix, suffix_length + 1);
-    return result;
-}
 
 static ag_tensor* nn_linear_module_forward(const nn_module* module,
                                            const ag_tensor* input)
@@ -64,29 +44,25 @@ nn_linear* nn_linear_create(const char* name,
 
     weight_dims[0] = out_features;
     weight_dims[1] = in_features;
-    parameter_name = nn_parameter_name(name, "weight");
+    parameter_name = nn_qualified_name(name, "weight");
     if (parameter_name == NULL) goto fail;
     layer->weight = nn_parameter_create(
         parameter_name, 2, weight_dims, 1, weight_init, rng);
     free(parameter_name);
     if (layer->weight == NULL) goto fail;
-    if (nn_module_register_parameter(&layer->base, layer->weight) != 0) {
-        nn_parameter_destroy(layer->weight);
-        layer->weight = NULL;
+    if (nn_register_owned_parameter(&layer->base, &layer->weight) != 0) {
         goto fail;
     }
 
     if (layer->use_bias) {
         bias_dims[0] = out_features;
-        parameter_name = nn_parameter_name(name, "bias");
+        parameter_name = nn_qualified_name(name, "bias");
         if (parameter_name == NULL) goto fail;
         layer->bias = nn_parameter_create(
             parameter_name, 1, bias_dims, 1, bias_init, rng);
         free(parameter_name);
         if (layer->bias == NULL) goto fail;
-        if (nn_module_register_parameter(&layer->base, layer->bias) != 0) {
-            nn_parameter_destroy(layer->bias);
-            layer->bias = NULL;
+        if (nn_register_owned_parameter(&layer->base, &layer->bias) != 0) {
             goto fail;
         }
     }

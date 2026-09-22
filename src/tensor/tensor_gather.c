@@ -3,19 +3,7 @@
 #include <stdlib.h>
 
 #include "../../include/tensorlib/tensor.h"
-
-static int tensor_flat_index(const tensor* value, int flat)
-{
-    int index = value->offset;
-    int remaining = flat;
-
-    for (int dim = value->ndim - 1; dim >= 0; --dim) {
-        int coordinate = remaining % value->dims[dim];
-        remaining /= value->dims[dim];
-        index += coordinate * value->strides[dim];
-    }
-    return index;
-}
+#include "tensor_internal.h"
 
 tensor* t_gather_rows(tensor* table, tensor* indices)
 {

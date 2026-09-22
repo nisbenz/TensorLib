@@ -154,6 +154,19 @@ ag_tensor* ag_make_result(tensor* output,
     return result;
 }
 
+int ag_backward_call_valid(const ag_node* node,
+                           int expected_input_count,
+                           int require_context,
+                           const tensor* output_gradient,
+                           tensor** input_gradients)
+{
+    return node != NULL && input_gradients != NULL &&
+           tensor_has_valid_metadata(output_gradient) &&
+           (expected_input_count < 0 ||
+            node->input_count == expected_input_count) &&
+           (!require_context || node->context != NULL);
+}
+
 tensor* ag_full_like(const tensor* reference, float value) {
     if (!tensor_has_valid_metadata(reference)) return NULL;
     tensor* result = t_alloc(reference->ndim, reference->dims);

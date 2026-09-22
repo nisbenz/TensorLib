@@ -37,17 +37,18 @@ ag_tensor* ag_make_result(tensor* output,
                           void* context,
                           void (*free_context)(void*));
 
+int ag_backward_call_valid(const ag_node* node,
+                           int expected_input_count,
+                           int require_context,
+                           const tensor* output_gradient,
+                           tensor** input_gradients);
+
 tensor* ag_full_like(const tensor* reference, float value);
 tensor* ag_sum_to_shape(const tensor* source, const tensor* target, float scale);
 int ag_accumulate_slice_gradient(const ag_node* node,
                                  const tensor* output_gradient,
                                  tensor** destination);
 
-ag_tensor* ag_matmul_packed_rhs(
-    const ag_tensor* a,
-    const ag_tensor* b,
-    const tensor_matmul_packed_rhs* packed_rhs
-);
 ag_tensor* ag_matmul_packed_rhs_with_backward_pack(
     const ag_tensor* a,
     const ag_tensor* b,

@@ -1,6 +1,5 @@
 #include <limits.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #include "nn_internal.h"
@@ -14,31 +13,6 @@ static ag_tensor* decoder_block_module_forward(const nn_module* module,
 static void decoder_block_module_destroy(nn_module* module)
 {
     nn_decoder_block_destroy((nn_decoder_block*)module);
-}
-
-static char* block_child_name(const char* name, const char* suffix)
-{
-    int required;
-    char* result;
-
-    if (name == NULL || suffix == NULL) return NULL;
-    required = snprintf(NULL, 0, "%s.%s", name, suffix);
-    if (required < 0 || (size_t)required == SIZE_MAX) return NULL;
-    result = (char*)malloc((size_t)required + 1);
-    if (result != NULL) {
-        snprintf(result, (size_t)required + 1, "%s.%s", name, suffix);
-    }
-    return result;
-}
-
-static int register_block_child(nn_module* parent, nn_module* child)
-{
-    if (child == NULL) return -1;
-    if (nn_module_register_child(parent, child) != 0) {
-        child->destroy(child);
-        return -1;
-    }
-    return 0;
 }
 
 nn_decoder_block* nn_decoder_block_create(
@@ -70,12 +44,12 @@ nn_decoder_block* nn_decoder_block_create(
     }
     block->channels = channels;
 
-    child_name = block_child_name(name, "attention_norm");
+    child_name = nn_qualified_name(name, "attention_norm");
     if (child_name == NULL) goto fail;
     block->attention_norm = nn_layer_norm_create(
         child_name, channels, layer_norm_epsilon, 1);
     free(child_name);
-    if (register_block_child(
+    if (nn_register_owned_child(
         &block->base,
         block->attention_norm == NULL ? NULL :
         &block->attention_norm->base) != 0) {
@@ -83,62 +57,62 @@ nn_decoder_block* nn_decoder_block_create(
         goto fail;
     }
 
-    child_name = block_child_name(name, "attention");
+    child_name = nn_qualified_name(name, "attention");
     if (child_name == NULL) goto fail;
     block->attention = nn_multihead_attention_create(
         child_name, channels, head_count, dropout_probability, rng);
     free(child_name);
-    if (register_block_child(
+    if (nn_register_owned_child(
         &block->base,
         block->attention == NULL ? NULL : &block->attention->base) != 0) {
         block->attention = NULL;
         goto fail;
     }
 
-    child_name = block_child_name(name, "mlp_norm");
+    child_name = nn_qualified_name(name, "mlp_norm");
     if (child_name == NULL) goto fail;
     block->mlp_norm = nn_layer_norm_create(
         child_name, channels, layer_norm_epsilon, 1);
     free(child_name);
-    if (register_block_child(
+    if (nn_register_owned_child(
         &block->base,
         block->mlp_norm == NULL ? NULL : &block->mlp_norm->base) != 0) {
         block->mlp_norm = NULL;
         goto fail;
     }
 
-    child_name = block_child_name(name, "mlp_input");
+    child_name = nn_qualified_name(name, "mlp_input");
     if (child_name == NULL) goto fail;
     block->mlp_input = nn_linear_create(
         child_name, channels, hidden_width, 1,
         NN_INIT_XAVIER_UNIFORM, NN_INIT_ZERO, rng);
     free(child_name);
-    if (register_block_child(
+    if (nn_register_owned_child(
         &block->base,
         block->mlp_input == NULL ? NULL : &block->mlp_input->base) != 0) {
         block->mlp_input = NULL;
         goto fail;
     }
 
-    child_name = block_child_name(name, "mlp_output");
+    child_name = nn_qualified_name(name, "mlp_output");
     if (child_name == NULL) goto fail;
     block->mlp_output = nn_linear_create(
         child_name, hidden_width, channels, 1,
         NN_INIT_XAVIER_UNIFORM, NN_INIT_ZERO, rng);
     free(child_name);
-    if (register_block_child(
+    if (nn_register_owned_child(
         &block->base,
         block->mlp_output == NULL ? NULL : &block->mlp_output->base) != 0) {
         block->mlp_output = NULL;
         goto fail;
     }
 
-    child_name = block_child_name(name, "mlp_dropout");
+    child_name = nn_qualified_name(name, "mlp_dropout");
     if (child_name == NULL) goto fail;
     block->mlp_dropout = nn_dropout_create(
         child_name, dropout_probability, rng);
     free(child_name);
-    if (register_block_child(
+    if (nn_register_owned_child(
         &block->base,
         block->mlp_dropout == NULL ? NULL : &block->mlp_dropout->base) != 0) {
         block->mlp_dropout = NULL;

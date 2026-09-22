@@ -24,8 +24,8 @@ static tensor* expand_reduction_gradient(const ag_node* node,
 static int backward_sum(const ag_node* node,
                         const tensor* output_gradient,
                         tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || node->context == NULL ||
-        input_gradients == NULL || !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 1, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     input_gradients[0] = expand_reduction_gradient(node, output_gradient);
     return input_gradients[0] == NULL;
@@ -61,8 +61,8 @@ static void map_output_to_input(const reduction_context* context,
 static int backward_max(const ag_node* node,
                         const tensor* output_gradient,
                         tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || node->context == NULL ||
-        input_gradients == NULL || !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 1, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
 
     reduction_context* context = (reduction_context*)node->context;

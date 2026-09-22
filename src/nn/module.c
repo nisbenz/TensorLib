@@ -1,5 +1,7 @@
 #include <stdint.h>
+#include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "nn_internal.h"
@@ -24,6 +26,90 @@ static int nn_module_contains(const nn_module* root, const nn_module* target)
         if (nn_module_contains(root->children[i], target)) return 1;
     }
     return 0;
+}
+
+int nn_module_is_valid(const nn_module* module)
+{
+    if (module == NULL ||
+        module->parameter_count > module->parameter_capacity ||
+        module->child_count > module->child_capacity ||
+        (module->parameter_count > 0 && module->parameters == NULL) ||
+        (module->child_count > 0 && module->children == NULL)) {
+        return 0;
+    }
+    for (size_t i = 0; i < module->parameter_count; ++i) {
+        if (module->parameters[i] == NULL) return 0;
+    }
+    for (size_t i = 0; i < module->child_count; ++i) {
+        if (!nn_module_is_valid(module->children[i])) return 0;
+    }
+    return 1;
+}
+
+int nn_adamw_config_is_valid(const nn_adamw_config* config)
+{
+    return config != NULL &&
+           isfinite(config->learning_rate) && config->learning_rate > 0.0f &&
+           isfinite(config->beta1) &&
+           config->beta1 >= 0.0f && config->beta1 < 1.0f &&
+           isfinite(config->beta2) &&
+           config->beta2 >= 0.0f && config->beta2 < 1.0f &&
+           isfinite(config->epsilon) && config->epsilon > 0.0f &&
+           isfinite(config->weight_decay) && config->weight_decay >= 0.0f &&
+           isfinite(config->max_grad_norm) && config->max_grad_norm >= 0.0f;
+}
+
+char* nn_qualified_name(const char* module_name, const char* suffix)
+{
+    size_t module_length;
+    size_t suffix_length;
+    char* result;
+
+    if (module_name == NULL || suffix == NULL) return NULL;
+    module_length = strlen(module_name);
+    suffix_length = strlen(suffix);
+    if (module_length > SIZE_MAX - suffix_length - 2) return NULL;
+    result = (char*)malloc(module_length + suffix_length + 2);
+    if (result == NULL) return NULL;
+    memcpy(result, module_name, module_length);
+    result[module_length] = '.';
+    memcpy(result + module_length + 1, suffix, suffix_length + 1);
+    return result;
+}
+
+char* nn_indexed_name(const char* module_name,
+                      const char* collection,
+                      size_t index)
+{
+    int required;
+    char* result;
+
+    if (module_name == NULL || collection == NULL) return NULL;
+    required = snprintf(NULL, 0, "%s.%s.%zu",
+                        module_name, collection, index);
+    if (required < 0 || (size_t)required == SIZE_MAX) return NULL;
+    result = (char*)malloc((size_t)required + 1);
+    if (result != NULL) {
+        snprintf(result, (size_t)required + 1, "%s.%s.%zu",
+                 module_name, collection, index);
+    }
+    return result;
+}
+
+nn_parameter* nn_create_named_parameter(const char* module_name,
+                                         const char* suffix,
+                                         int ndim,
+                                         const int* dims,
+                                         nn_init_kind initializer,
+                                         nn_rng* rng)
+{
+    char* name = nn_qualified_name(module_name, suffix);
+    nn_parameter* result;
+
+    if (name == NULL) return NULL;
+    result = nn_parameter_create(name, ndim, dims, 1, initializer, rng);
+    free(name);
+    return result;
 }
 
 static int nn_reserve_parameters(nn_module* module)
@@ -182,6 +268,28 @@ int nn_module_register_child(nn_module* module, nn_module* child)
     }
     if (nn_reserve_children(module) != 0) return -1;
     module->children[module->child_count++] = child;
+    return 0;
+}
+
+int nn_register_owned_parameter(nn_module* module, nn_parameter** parameter)
+{
+    if (parameter == NULL || *parameter == NULL ||
+        nn_module_register_parameter(module, *parameter) != 0) {
+        if (parameter != NULL && *parameter != NULL) {
+            nn_parameter_destroy(*parameter);
+            *parameter = NULL;
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int nn_register_owned_child(nn_module* module, nn_module* child)
+{
+    if (child == NULL || nn_module_register_child(module, child) != 0) {
+        if (child != NULL && child->destroy != NULL) child->destroy(child);
+        return -1;
+    }
     return 0;
 }
 

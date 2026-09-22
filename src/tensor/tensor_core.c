@@ -1,6 +1,8 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#include "tensor_internal.h"
 #include <stdlib.h>
 #include "../../include/tensorlib/tensor.h"
 
@@ -17,6 +19,33 @@ int tensor_checked_numel(int ndim, const int* dims, size_t* result) {
 
     *result = total;
     return 1;
+}
+
+int tensor_flat_index(const tensor* value, int flat)
+{
+    int index = value->offset;
+    int remaining = flat;
+
+    for (int dim = value->ndim - 1; dim >= 0; --dim) {
+        int coordinate = remaining % value->dims[dim];
+        remaining /= value->dims[dim];
+        index += coordinate * value->strides[dim];
+    }
+    return index;
+}
+
+int tensor_row_base(const tensor* value, int row, int width)
+{
+    if (is_contiguous((tensor*)value)) return value->offset + row * width;
+
+    int base = value->offset;
+    int remaining = row;
+    for (int axis = value->ndim - 2; axis >= 0; --axis) {
+        int coordinate = remaining % value->dims[axis];
+        remaining /= value->dims[axis];
+        base += coordinate * value->strides[axis];
+    }
+    return base;
 }
 
 int tensor_has_valid_shape(const tensor* t) {

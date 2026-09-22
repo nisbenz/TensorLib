@@ -42,8 +42,8 @@ static tensor* remove_vector_dimension(tensor* gradient, int left_operand) {
 static int backward_matmul(const ag_node* node,
                            const tensor* output_gradient,
                            tensor** input_gradients) {
-    if (node == NULL || node->input_count != 2 || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 2, 0, output_gradient,
+                                input_gradients)) return 1;
 
     tensor* a = node->inputs[0]->value;
     tensor* b = node->inputs[1]->value;
@@ -115,12 +115,6 @@ static ag_tensor* make_matmul_result(const ag_tensor* a,
 ag_tensor* ag_matmul(const ag_tensor* a, const ag_tensor* b) {
     if (a == NULL || b == NULL) return NULL;
     return make_matmul_result(a, b, t_matmul(a->value, b->value), NULL);
-}
-
-ag_tensor* ag_matmul_packed_rhs(const ag_tensor* a,
-                                const ag_tensor* b,
-                                const tensor_matmul_packed_rhs* packed_rhs) {
-    return ag_matmul_packed_rhs_with_backward_pack(a, b, packed_rhs, NULL);
 }
 
 ag_tensor* ag_matmul_packed_rhs_with_backward_pack(

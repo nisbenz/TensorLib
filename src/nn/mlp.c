@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -14,19 +13,6 @@ static ag_tensor* nn_mlp_module_forward(const nn_module* module,
 static void nn_mlp_module_destroy(nn_module* module)
 {
     nn_mlp_destroy((nn_mlp*)module);
-}
-
-static char* nn_mlp_layer_name(const char* model_name, size_t index)
-{
-    int required;
-    char* result;
-
-    required = snprintf(NULL, 0, "%s.layers.%zu", model_name, index);
-    if (required < 0 || (size_t)required == SIZE_MAX) return NULL;
-    result = (char*)malloc((size_t)required + 1);
-    if (result == NULL) return NULL;
-    snprintf(result, (size_t)required + 1, "%s.layers.%zu", model_name, index);
-    return result;
 }
 
 static int nn_mlp_config_valid(const nn_mlp_config* config)
@@ -74,7 +60,7 @@ nn_mlp* nn_mlp_create(const char* name,
         int out_features = i < config->hidden_count
             ? config->hidden_sizes[i]
             : config->output_features;
-        char* layer_name = nn_mlp_layer_name(name, i);
+        char* layer_name = nn_indexed_name(name, "layers", i);
         nn_linear* layer;
 
         if (layer_name == NULL) goto fail;
@@ -87,8 +73,7 @@ nn_mlp* nn_mlp_create(const char* name,
                                  rng);
         free(layer_name);
         if (layer == NULL) goto fail;
-        if (nn_module_register_child(&model->base, &layer->base) != 0) {
-            nn_linear_destroy(layer);
+        if (nn_register_owned_child(&model->base, &layer->base) != 0) {
             goto fail;
         }
         in_features = out_features;

@@ -10,6 +10,8 @@
 #endif
 
 #include "../../include/tensorlib/nn.h"
+#include "../nn/nn_internal.h"
+#include "../tensor/tensor_internal.h"
 
 #define CHECKPOINT_VERSION UINT32_C(1)
 #define CHECKPOINT_FLAG_ADAMW UINT32_C(1)
@@ -42,37 +44,6 @@ typedef struct {
     nn_adamw_config config;
     uint64_t rng_state;
 } saved_checkpoint;
-
-static int tensor_flat_index(const tensor* value, int flat)
-{
-    int index = value->offset;
-    int remaining = flat;
-
-    for (int dim = value->ndim - 1; dim >= 0; --dim) {
-        int coordinate = remaining % value->dims[dim];
-        remaining /= value->dims[dim];
-        index += coordinate * value->strides[dim];
-    }
-    return index;
-}
-
-static int module_valid(const nn_module* module)
-{
-    if (module == NULL ||
-        module->parameter_count > module->parameter_capacity ||
-        module->child_count > module->child_capacity ||
-        (module->parameter_count > 0 && module->parameters == NULL) ||
-        (module->child_count > 0 && module->children == NULL)) {
-        return 0;
-    }
-    for (size_t i = 0; i < module->parameter_count; ++i) {
-        if (module->parameters[i] == NULL) return 0;
-    }
-    for (size_t i = 0; i < module->child_count; ++i) {
-        if (!module_valid(module->children[i])) return 0;
-    }
-    return 1;
-}
 
 static int write_bytes(FILE* file, const void* data, size_t size)
 {
@@ -173,25 +144,14 @@ static char* read_string(FILE* file)
     return result;
 }
 
-static int adamw_config_valid(const nn_adamw_config* config)
-{
-    return isfinite(config->learning_rate) && config->learning_rate > 0.0f &&
-           isfinite(config->beta1) &&
-           config->beta1 >= 0.0f && config->beta1 < 1.0f &&
-           isfinite(config->beta2) &&
-           config->beta2 >= 0.0f && config->beta2 < 1.0f &&
-           isfinite(config->epsilon) && config->epsilon > 0.0f &&
-           isfinite(config->weight_decay) && config->weight_decay >= 0.0f &&
-           isfinite(config->max_grad_norm) && config->max_grad_norm >= 0.0f;
-}
-
 static int optimizer_matches(const nn_adamw* optimizer,
                              const nn_module* module)
 {
     size_t count;
 
     if (optimizer == NULL || optimizer->module != module ||
-        !adamw_config_valid(&optimizer->config) || !module_valid(module)) {
+        !nn_adamw_config_is_valid(&optimizer->config) ||
+        !nn_module_is_valid(module)) {
         return 0;
     }
     count = nn_module_parameter_count(module);
@@ -339,7 +299,7 @@ int nn_checkpoint_save(const char* path,
     size_t count;
     int success = 0;
 
-    if (!module_valid(module) || !parameters_unique_and_valid(module) ||
+    if (!nn_module_is_valid(module) || !parameters_unique_and_valid(module) ||
         (optimizer != NULL && !optimizer_matches(optimizer, module))) {
         return -1;
     }
@@ -460,7 +420,7 @@ static int read_optimizer(FILE* file, saved_checkpoint* checkpoint)
         !read_f32(file, &config->epsilon) ||
         !read_f32(file, &config->weight_decay) ||
         !read_f32(file, &config->max_grad_norm) ||
-        !adamw_config_valid(config) ||
+        !nn_adamw_config_is_valid(config) ||
         !read_u32(file, &count) || count != checkpoint->parameter_count) {
         return 0;
     }
@@ -548,7 +508,7 @@ static int checkpoint_matches_live(const saved_checkpoint* checkpoint,
 {
     size_t live_count;
 
-    if (!module_valid(module) || !parameters_unique_and_valid(module) ||
+    if (!nn_module_is_valid(module) || !parameters_unique_and_valid(module) ||
         (((checkpoint->flags & CHECKPOINT_FLAG_ADAMW) != 0) !=
          (optimizer != NULL)) ||
         (((checkpoint->flags & CHECKPOINT_FLAG_RNG) != 0) != (rng != NULL)) ||

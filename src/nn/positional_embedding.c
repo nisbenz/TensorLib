@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #include "nn_internal.h"
@@ -15,21 +14,6 @@ static ag_tensor* positional_embedding_module_forward(
 static void positional_embedding_module_destroy(nn_module* module)
 {
     nn_positional_embedding_destroy((nn_positional_embedding*)module);
-}
-
-static char* positional_table_name(const char* name)
-{
-    int required;
-    char* result;
-
-    if (name == NULL) return NULL;
-    required = snprintf(NULL, 0, "%s.table", name);
-    if (required < 0 || (size_t)required == SIZE_MAX) return NULL;
-    result = (char*)malloc((size_t)required + 1);
-    if (result != NULL) {
-        snprintf(result, (size_t)required + 1, "%s.table", name);
-    }
-    return result;
 }
 
 nn_positional_embedding* nn_positional_embedding_create(
@@ -55,14 +39,13 @@ nn_positional_embedding* nn_positional_embedding_create(
     }
     layer->context_length = context_length;
     layer->embedding_width = embedding_width;
-    table_name = positional_table_name(name);
+    table_name = nn_qualified_name(name, "table");
     if (table_name == NULL) goto fail;
     layer->table = nn_embedding_create(
         table_name, context_length, embedding_width, weight_init, rng);
     free(table_name);
     if (layer->table == NULL) goto fail;
-    if (nn_module_register_child(&layer->base, &layer->table->base) != 0) {
-        nn_embedding_destroy(layer->table);
+    if (nn_register_owned_child(&layer->base, &layer->table->base) != 0) {
         layer->table = NULL;
         goto fail;
     }

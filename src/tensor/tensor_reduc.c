@@ -221,7 +221,6 @@ static tensor* reduce_max(tensor* a, int dim, int keepdim) {
                 float value = row_start[k];
                 if (isnan(value)) {
                     maximum = value;
-                    found_value = 1;
                     break;
                 }
                 if (!found_value || value > maximum) {

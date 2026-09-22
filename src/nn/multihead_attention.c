@@ -1,6 +1,5 @@
 #include <math.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #include "nn_internal.h"
@@ -16,58 +15,6 @@ static ag_tensor* attention_module_forward(const nn_module* module,
 static void attention_module_destroy(nn_module* module)
 {
     nn_multihead_attention_destroy((nn_multihead_attention*)module);
-}
-
-static char* attention_child_name(const char* name, const char* suffix)
-{
-    int required;
-    char* result;
-
-    if (name == NULL || suffix == NULL) return NULL;
-    required = snprintf(NULL, 0, "%s.%s", name, suffix);
-    if (required < 0 || (size_t)required == SIZE_MAX) return NULL;
-    result = (char*)malloc((size_t)required + 1);
-    if (result != NULL) {
-        snprintf(result, (size_t)required + 1, "%s.%s", name, suffix);
-    }
-    return result;
-}
-
-static nn_parameter* create_parameter(const char* name,
-                                      const char* suffix,
-                                      int ndim,
-                                      const int* dims,
-                                      nn_init_kind initializer,
-                                      nn_rng* rng)
-{
-    char* child_name = attention_child_name(name, suffix);
-    nn_parameter* result;
-
-    if (child_name == NULL) return NULL;
-    result = nn_parameter_create(
-        child_name, ndim, dims, 1, initializer, rng);
-    free(child_name);
-    return result;
-}
-
-static int register_parameter(nn_module* module, nn_parameter* parameter)
-{
-    if (parameter == NULL) return -1;
-    if (nn_module_register_parameter(module, parameter) != 0) {
-        nn_parameter_destroy(parameter);
-        return -1;
-    }
-    return 0;
-}
-
-static int register_child(nn_module* parent, nn_module* child)
-{
-    if (child == NULL) return -1;
-    if (nn_module_register_child(parent, child) != 0) {
-        child->destroy(child);
-        return -1;
-    }
-    return 0;
 }
 
 nn_multihead_attention* nn_multihead_attention_create(
@@ -104,10 +51,10 @@ nn_multihead_attention* nn_multihead_attention_create(
     weight_dims[0] = 3;
     weight_dims[1] = channels;
     weight_dims[2] = channels;
-    attention->qkv_weight = create_parameter(
+    attention->qkv_weight = nn_create_named_parameter(
         name, "qkv_weight", 3, weight_dims, NN_INIT_ZERO, rng);
-    if (register_parameter(&attention->base, attention->qkv_weight) != 0) {
-        attention->qkv_weight = NULL;
+    if (nn_register_owned_parameter(&attention->base,
+                                    &attention->qkv_weight) != 0) {
         goto fail;
     }
     scale = sqrtf(3.0f / (float)channels);
@@ -120,14 +67,14 @@ nn_multihead_attention* nn_multihead_attention_create(
 
     bias_dims[0] = 3;
     bias_dims[1] = channels;
-    attention->qkv_bias = create_parameter(
+    attention->qkv_bias = nn_create_named_parameter(
         name, "qkv_bias", 2, bias_dims, NN_INIT_ZERO, rng);
-    if (register_parameter(&attention->base, attention->qkv_bias) != 0) {
-        attention->qkv_bias = NULL;
+    if (nn_register_owned_parameter(&attention->base,
+                                    &attention->qkv_bias) != 0) {
         goto fail;
     }
 
-    dropout_name = attention_child_name(name, "output");
+    dropout_name = nn_qualified_name(name, "output");
     if (dropout_name == NULL) goto fail;
     attention->output = nn_linear_create(
         dropout_name,
@@ -138,20 +85,21 @@ nn_multihead_attention* nn_multihead_attention_create(
         NN_INIT_ZERO,
         rng);
     free(dropout_name);
-    if (register_child(&attention->base,
-                       attention->output == NULL ? NULL :
-                       &attention->output->base) != 0) {
+    if (nn_register_owned_child(
+            &attention->base,
+            attention->output == NULL ? NULL : &attention->output->base) != 0) {
         attention->output = NULL;
         goto fail;
     }
-    dropout_name = attention_child_name(name, "output_dropout");
+    dropout_name = nn_qualified_name(name, "output_dropout");
     if (dropout_name == NULL) goto fail;
     attention->output_dropout = nn_dropout_create(
         dropout_name, dropout_probability, rng);
     free(dropout_name);
-    if (register_child(&attention->base,
-                       attention->output_dropout == NULL ? NULL :
-                       &attention->output_dropout->base) != 0) {
+    if (nn_register_owned_child(
+            &attention->base,
+            attention->output_dropout == NULL ? NULL :
+                &attention->output_dropout->base) != 0) {
         attention->output_dropout = NULL;
         goto fail;
     }

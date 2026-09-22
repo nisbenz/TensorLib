@@ -19,8 +19,8 @@ typedef struct {
 static int backward_reshape(const ag_node* node,
                             const tensor* output_gradient,
                             tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 0, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     tensor* input = node->inputs[0]->value;
     input_gradients[0] = t_reshape((tensor*)output_gradient, input->ndim, input->dims);
@@ -30,8 +30,8 @@ static int backward_reshape(const ag_node* node,
 static int backward_transpose(const ag_node* node,
                               const tensor* output_gradient,
                               tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
-        node->context == NULL || !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 1, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     transpose_context* context = (transpose_context*)node->context;
     input_gradients[0] = t_transpose((tensor*)output_gradient, context->dim0, context->dim1);
@@ -41,8 +41,8 @@ static int backward_transpose(const ag_node* node,
 static int backward_slice(const ag_node* node,
                           const tensor* output_gradient,
                           tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
-        node->context == NULL || !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 1, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
 
     tensor* input = node->inputs[0]->value;
@@ -157,8 +157,8 @@ int ag_accumulate_slice_gradient(const ag_node* node,
 static int backward_expand(const ag_node* node,
                            const tensor* output_gradient,
                            tensor** input_gradients) {
-    if (node == NULL || node->input_count != 1 || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 0, output_gradient,
+                                input_gradients)) return 1;
     if (!node->inputs[0]->requires_grad) return 0;
     input_gradients[0] = t_clone((tensor*)output_gradient);
     return input_gradients[0] == NULL;

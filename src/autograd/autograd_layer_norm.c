@@ -3,6 +3,7 @@
 
 #include "../../include/tensorlib/autograd_internal.h"
 #include "../tensor/parallel.h"
+#include "../tensor/tensor_internal.h"
 
 #define TENSORLIB_LAYER_NORM_MIN_PARALLEL_ELEMENTS (1 << 16)
 
@@ -22,19 +23,6 @@ static void free_layer_norm_context(void* opaque)
     free(context);
 }
 
-static int row_base(const tensor* value, int row, int width)
-{
-    if (is_contiguous((tensor*)value)) return value->offset + row * width;
-    int base = value->offset;
-    int remaining = row;
-    for (int axis = value->ndim - 2; axis >= 0; --axis) {
-        int coordinate = remaining % value->dims[axis];
-        remaining /= value->dims[axis];
-        base += coordinate * value->strides[axis];
-    }
-    return base;
-}
-
 static int backward_layer_norm(const ag_node* node,
                                const tensor* output_gradient,
                                tensor** input_gradients)
@@ -50,8 +38,8 @@ static int backward_layer_norm(const ag_node* node,
     float* weight_partials = NULL;
     float* bias_partials = NULL;
 
-    if (node == NULL || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, -1, 1, output_gradient,
+                                input_gradients)) return 1;
     context = (layer_norm_context*)node->context;
     if (context == NULL) return 1;
     input = node->inputs[0]->value;
@@ -110,8 +98,8 @@ static int backward_layer_norm(const ag_node* node,
                           ? (bias_gradient == NULL ? NULL :
                              bias_gradient->storage->data)
                           : bias_partials + (size_t)tid * (size_t)width;
-        int input_base = row_base(input, row, width);
-        int gradient_base = row_base(output_gradient, row, width);
+        int input_base = tensor_row_base(input, row, width);
+        int gradient_base = tensor_row_base(output_gradient, row, width);
         float sum = 0.0f;
         float weighted_sum = 0.0f;
         for (int k = 0; k < width; ++k) {
@@ -207,7 +195,7 @@ ag_tensor* ag_layer_norm(const ag_tensor* input,
     if (context->means == NULL || context->inverse_stds == NULL) goto fail;
 
     for (int row = 0; row < context->rows; ++row) {
-        int base = row_base(input->value, row, width);
+        int base = tensor_row_base(input->value, row, width);
         float mean = 0.0f;
         float variance = 0.0f;
         for (int k = 0; k < width; ++k) mean += input->value->storage->data[

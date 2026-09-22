@@ -3,6 +3,7 @@
 
 #include "../../include/tensorlib/autograd_internal.h"
 #include "../tensor/parallel.h"
+#include "../tensor/tensor_internal.h"
 
 #define TENSORLIB_SOFTMAX_MIN_PARALLEL_ELEMENTS (1 << 16)
 
@@ -12,19 +13,6 @@ typedef struct {
     int log_softmax;
     int causal;
 } softmax_context;
-
-static int row_base(const tensor* value, int row, int width)
-{
-    if (is_contiguous((tensor*)value)) return value->offset + row * width;
-    int base = value->offset;
-    int remaining = row;
-    for (int axis = value->ndim - 2; axis >= 0; --axis) {
-        int coordinate = remaining % value->dims[axis];
-        remaining /= value->dims[axis];
-        base += coordinate * value->strides[axis];
-    }
-    return base;
-}
 
 static int allowed_width(const softmax_context* context, int row)
 {
@@ -39,8 +27,8 @@ static int backward_softmax(const ag_node* node,
     tensor* output;
     tensor* gradient;
 
-    if (node == NULL || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 1, output_gradient,
+                                input_gradients)) return 1;
     context = (softmax_context*)node->context;
     if (context == NULL || !node->inputs[0]->requires_grad) return 0;
     output = node->output->value;
@@ -58,8 +46,8 @@ static int backward_softmax(const ag_node* node,
 #endif
     for (int row = 0; row < context->rows; ++row) {
         int width = allowed_width(context, row);
-        int output_base = row_base(output, row, context->width);
-        int upstream_base = row_base(output_gradient, row, context->width);
+        int output_base = tensor_row_base(output, row, context->width);
+        int upstream_base = tensor_row_base(output_gradient, row, context->width);
         float total = 0.0f;
         if (context->log_softmax) {
             for (int k = 0; k < width; ++k) {
@@ -112,7 +100,7 @@ ag_tensor* ag_softmax_last_dim(const ag_tensor* input,
     context->causal = causal != 0;
 
     for (int row = 0; row < context->rows; ++row) {
-        int input_base = row_base(input->value, row, width);
+        int input_base = tensor_row_base(input->value, row, width);
         int output_base = row * width;
         int count = allowed_width(context, row);
         float maximum = -INFINITY;
@@ -120,8 +108,7 @@ ag_tensor* ag_softmax_last_dim(const ag_tensor* input,
         for (int k = 0; k < count; ++k) {
             float value = input->value->storage->data[input_base + k *
                 input->value->strides[input->value->ndim - 1]];
-            if (isnan(value)) maximum = value;
-            else if (value > maximum) maximum = value;
+            if (isnan(value) || value > maximum) maximum = value;
         }
         for (int k = 0; k < count; ++k) {
             float exponential = expf(input->value->storage->data[input_base + k *

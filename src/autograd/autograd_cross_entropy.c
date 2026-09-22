@@ -3,6 +3,7 @@
 
 #include "../../include/tensorlib/autograd_internal.h"
 #include "../tensor/parallel.h"
+#include "../tensor/tensor_internal.h"
 
 #define TENSORLIB_CROSS_ENTROPY_MIN_PARALLEL_ELEMENTS (1 << 16)
 
@@ -20,31 +21,6 @@ static void free_cross_entropy_context(void* opaque)
     free(context);
 }
 
-static int flat_index(const tensor* value, int flat)
-{
-    int index = value->offset;
-    int remaining = flat;
-    for (int axis = value->ndim - 1; axis >= 0; --axis) {
-        int coordinate = remaining % value->dims[axis];
-        remaining /= value->dims[axis];
-        index += coordinate * value->strides[axis];
-    }
-    return index;
-}
-
-static int row_base(const tensor* value, int row, int width)
-{
-    if (is_contiguous((tensor*)value)) return value->offset + row * width;
-    int base = value->offset;
-    int remaining = row;
-    for (int axis = value->ndim - 2; axis >= 0; --axis) {
-        int coordinate = remaining % value->dims[axis];
-        remaining /= value->dims[axis];
-        base += coordinate * value->strides[axis];
-    }
-    return base;
-}
-
 static int backward_cross_entropy(const ag_node* node,
                                   const tensor* output_gradient,
                                   tensor** input_gradients)
@@ -54,8 +30,8 @@ static int backward_cross_entropy(const ag_node* node,
     tensor* gradient;
     float upstream;
 
-    if (node == NULL || input_gradients == NULL ||
-        !tensor_has_valid_metadata(output_gradient)) return 1;
+    if (!ag_backward_call_valid(node, 1, 1, output_gradient,
+                                input_gradients)) return 1;
     context = (cross_entropy_context*)node->context;
     if (context == NULL || !node->inputs[0]->requires_grad) return 0;
     input = node->inputs[0]->value;
@@ -73,14 +49,13 @@ static int backward_cross_entropy(const ag_node* node,
 #pragma omp parallel for if(threads > 1) schedule(static) num_threads(threads)
 #endif
     for (int row = 0; row < context->rows; ++row) {
-        int base = row_base(input, row, context->classes);
+        int base = tensor_row_base(input, row, context->classes);
         float maximum = -INFINITY;
         float sum = 0.0f;
         for (int k = 0; k < context->classes; ++k) {
             float value = input->storage->data[base + k *
                 input->strides[input->ndim - 1]];
-            if (isnan(value)) maximum = value;
-            else if (value > maximum) maximum = value;
+            if (isnan(value) || value > maximum) maximum = value;
         }
         for (int k = 0; k < context->classes; ++k) {
             sum += expf(input->storage->data[base + k *
@@ -120,7 +95,7 @@ ag_tensor* ag_cross_entropy(const ag_tensor* logits, const tensor* targets)
     context->targets = (int*)malloc((size_t)rows * sizeof(*context->targets));
     if (context->targets == NULL) goto fail;
     for (int row = 0; row < rows; ++row) {
-        float target = targets->storage->data[flat_index(targets, row)];
+        float target = targets->storage->data[tensor_flat_index(targets, row)];
         if (!isfinite(target) || floorf(target) != target || target < 0.0f ||
             target >= (float)classes) goto fail;
         context->targets[row] = (int)target;
@@ -128,14 +103,13 @@ ag_tensor* ag_cross_entropy(const ag_tensor* logits, const tensor* targets)
 
     float loss = 0.0f;
     for (int row = 0; row < rows; ++row) {
-        int base = row_base(logits->value, row, classes);
+        int base = tensor_row_base(logits->value, row, classes);
         float maximum = -INFINITY;
         float sum = 0.0f;
         for (int k = 0; k < classes; ++k) {
             float value = logits->value->storage->data[base + k *
                 logits->value->strides[logits->value->ndim - 1]];
-            if (isnan(value)) maximum = value;
-            else if (value > maximum) maximum = value;
+            if (isnan(value) || value > maximum) maximum = value;
         }
         for (int k = 0; k < classes; ++k) {
             sum += expf(logits->value->storage->data[base + k *

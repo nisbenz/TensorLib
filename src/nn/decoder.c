@@ -1,6 +1,5 @@
 #include <math.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #include "nn_internal.h"
@@ -14,36 +13,6 @@ static ag_tensor* decoder_module_forward(const nn_module* module,
 static void decoder_module_destroy(nn_module* module)
 {
     nn_decoder_destroy((nn_decoder*)module);
-}
-
-static char* decoder_child_name(const char* name, const char* suffix)
-{
-    int required;
-    char* result;
-
-    if (name == NULL || suffix == NULL) return NULL;
-    required = snprintf(NULL, 0, "%s.%s", name, suffix);
-    if (required < 0 || (size_t)required == SIZE_MAX) return NULL;
-    result = (char*)malloc((size_t)required + 1);
-    if (result != NULL) {
-        snprintf(result, (size_t)required + 1, "%s.%s", name, suffix);
-    }
-    return result;
-}
-
-static char* decoder_block_name(const char* name, size_t index)
-{
-    int required;
-    char* result;
-
-    if (name == NULL) return NULL;
-    required = snprintf(NULL, 0, "%s.blocks.%zu", name, index);
-    if (required < 0 || (size_t)required == SIZE_MAX) return NULL;
-    result = (char*)malloc((size_t)required + 1);
-    if (result != NULL) {
-        snprintf(result, (size_t)required + 1, "%s.blocks.%zu", name, index);
-    }
-    return result;
 }
 
 static int decoder_config_valid(const nn_decoder_config* config)
@@ -62,16 +31,6 @@ static int decoder_config_valid(const nn_decoder_config* config)
            config->dropout_probability < 1.0f &&
            isfinite(config->layer_norm_epsilon) &&
            config->layer_norm_epsilon > 0.0f;
-}
-
-static int register_decoder_child(nn_module* parent, nn_module* child)
-{
-    if (child == NULL) return -1;
-    if (nn_module_register_child(parent, child) != 0) {
-        child->destroy(child);
-        return -1;
-    }
-    return 0;
 }
 
 nn_decoder* nn_decoder_create(const char* name,
@@ -98,7 +57,7 @@ nn_decoder* nn_decoder_create(const char* name,
         decoder->block_count, sizeof(*decoder->blocks));
     if (decoder->blocks == NULL) goto fail;
 
-    child_name = decoder_child_name(name, "token_embedding");
+    child_name = nn_qualified_name(name, "token_embedding");
     if (child_name == NULL) goto fail;
     decoder->token_embedding = nn_embedding_create(
         child_name,
@@ -107,7 +66,7 @@ nn_decoder* nn_decoder_create(const char* name,
         NN_INIT_XAVIER_UNIFORM,
         rng);
     free(child_name);
-    if (register_decoder_child(
+    if (nn_register_owned_child(
         &decoder->base,
         decoder->token_embedding == NULL ? NULL :
         &decoder->token_embedding->base) != 0) {
@@ -115,7 +74,7 @@ nn_decoder* nn_decoder_create(const char* name,
         goto fail;
     }
 
-    child_name = decoder_child_name(name, "position_embedding");
+    child_name = nn_qualified_name(name, "position_embedding");
     if (child_name == NULL) goto fail;
     decoder->positional_embedding = nn_positional_embedding_create(
         child_name,
@@ -124,7 +83,7 @@ nn_decoder* nn_decoder_create(const char* name,
         NN_INIT_XAVIER_UNIFORM,
         rng);
     free(child_name);
-    if (register_decoder_child(
+    if (nn_register_owned_child(
         &decoder->base,
         decoder->positional_embedding == NULL ? NULL :
         &decoder->positional_embedding->base) != 0) {
@@ -133,7 +92,7 @@ nn_decoder* nn_decoder_create(const char* name,
     }
 
     for (size_t index = 0; index < decoder->block_count; ++index) {
-        child_name = decoder_block_name(name, index);
+        child_name = nn_indexed_name(name, "blocks", index);
         if (child_name == NULL) goto fail;
         decoder->blocks[index] = nn_decoder_block_create(
             child_name,
@@ -143,7 +102,7 @@ nn_decoder* nn_decoder_create(const char* name,
             config->layer_norm_epsilon,
             rng);
         free(child_name);
-        if (register_decoder_child(
+        if (nn_register_owned_child(
             &decoder->base,
             decoder->blocks[index] == NULL ? NULL :
             &decoder->blocks[index]->base) != 0) {
@@ -152,12 +111,12 @@ nn_decoder* nn_decoder_create(const char* name,
         }
     }
 
-    child_name = decoder_child_name(name, "final_norm");
+    child_name = nn_qualified_name(name, "final_norm");
     if (child_name == NULL) goto fail;
     decoder->final_norm = nn_layer_norm_create(
         child_name, config->channels, config->layer_norm_epsilon, 1);
     free(child_name);
-    if (register_decoder_child(
+    if (nn_register_owned_child(
         &decoder->base,
         decoder->final_norm == NULL ? NULL :
         &decoder->final_norm->base) != 0) {
@@ -165,7 +124,7 @@ nn_decoder* nn_decoder_create(const char* name,
         goto fail;
     }
 
-    child_name = decoder_child_name(name, "language_model_head");
+    child_name = nn_qualified_name(name, "language_model_head");
     if (child_name == NULL) goto fail;
     decoder->language_model_head = nn_linear_create(
         child_name,
@@ -176,7 +135,7 @@ nn_decoder* nn_decoder_create(const char* name,
         NN_INIT_ZERO,
         rng);
     free(child_name);
-    if (register_decoder_child(
+    if (nn_register_owned_child(
         &decoder->base,
         decoder->language_model_head == NULL ? NULL :
         &decoder->language_model_head->base) != 0) {
