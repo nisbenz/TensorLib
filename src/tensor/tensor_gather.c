@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 #include "../../include/tensorlib/tensor.h"
-#include "tensor_internal.h"
+#include "tensor_alloc_internal.h"
 
 tensor* t_gather_rows(tensor* table, tensor* indices)
 {

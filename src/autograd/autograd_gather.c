@@ -1,7 +1,7 @@
 #include <stdlib.h>
 
 #include "../../include/tensorlib/autograd_internal.h"
-#include "../tensor/tensor_internal.h"
+#include "../tensor/tensor_alloc_internal.h"
 
 typedef struct {
     tensor* indices;

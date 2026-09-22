@@ -6,7 +6,7 @@
 #include "../../include/tensorlib/nn.h"
 #include "../nn/nn_internal.h"
 #include "../tensor/parallel.h"
-#include "../tensor/tensor_internal.h"
+#include "../tensor/tensor_alloc_internal.h"
 
 #define TENSORLIB_ADAMW_MIN_PARALLEL_ELEMENTS (1 << 16)
 

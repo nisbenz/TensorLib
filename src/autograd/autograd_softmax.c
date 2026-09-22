@@ -3,7 +3,7 @@
 
 #include "../../include/tensorlib/autograd_internal.h"
 #include "../tensor/parallel.h"
-#include "../tensor/tensor_internal.h"
+#include "../tensor/tensor_alloc_internal.h"
 
 #define TENSORLIB_SOFTMAX_MIN_PARALLEL_ELEMENTS (1 << 16)
 

@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "tensor_internal.h"
+#include "tensor_alloc_internal.h"
 #include <stdlib.h>
 #include "../../include/tensorlib/tensor.h"
 

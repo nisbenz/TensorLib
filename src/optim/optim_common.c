@@ -2,7 +2,7 @@
 
 #include "../../include/tensorlib/nn.h"
 #include "../nn/nn_internal.h"
-#include "../tensor/tensor_internal.h"
+#include "../tensor/tensor_alloc_internal.h"
 
 void nn_module_zero_grad(nn_module* module)
 {

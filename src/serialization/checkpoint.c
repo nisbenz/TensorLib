@@ -11,7 +11,7 @@
 
 #include "../../include/tensorlib/nn.h"
 #include "../nn/nn_internal.h"
-#include "../tensor/tensor_internal.h"
+#include "../tensor/tensor_alloc_internal.h"
 
 #define CHECKPOINT_VERSION UINT32_C(1)
 #define CHECKPOINT_FLAG_ADAMW UINT32_C(1)

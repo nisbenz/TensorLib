@@ -3,7 +3,7 @@
 
 #include "../../include/tensorlib/nn.h"
 #include "../nn/nn_internal.h"
-#include "../tensor/tensor_internal.h"
+#include "../tensor/tensor_alloc_internal.h"
 
 nn_sgd* nn_sgd_create(nn_module* module, float learning_rate)
 {
