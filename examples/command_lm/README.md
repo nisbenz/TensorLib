@@ -23,8 +23,8 @@ cmake --build build --config Release --target command_lm
 
 ## Prepare and train
 
-Generate a reproducible developer-command corpus and run the practical 16-
-thread training configuration:
+Generate a reproducible developer-command corpus and train with a thread
+budget appropriate for your machine (16 is an example):
 
 ```sh
 OMP_NUM_THREADS=16 OMP_DYNAMIC=FALSE ./build/command_lm command.txt \
@@ -32,9 +32,12 @@ OMP_NUM_THREADS=16 OMP_DYNAMIC=FALSE ./build/command_lm command.txt \
   --tokenizer command.tok \
   --checkpoint command.chk \
   --steps 50000 \
-  --batch-size 16 \
-  --threads 16
+  --batch-size 16
 ```
+
+`--threads N` overrides the OpenMP runtime default. When omitted, CommandLM
+honors `OMP_NUM_THREADS`; builds without OpenMP run serially. Operation-specific
+thread budgets and thresholds are described in [threading.md](../../docs/threading.md).
 
 To import the MIT-licensed NL2Bash corpus into the same record format, run:
 

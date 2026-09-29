@@ -49,7 +49,7 @@ static void usage(const char* program)
            "  --resume               explicitly resume a compatible checkpoint\n"
            "  --steps N              updates (default: 50000)\n"
            "  --batch-size N         sequences per update (default: 16)\n"
-           "  --threads N            OpenMP threads (default: 16)\n"
+           "  --threads N            OpenMP threads (default: runtime/OMP_NUM_THREADS)\n"
            "  --eval-interval N      validation/checkpoint interval (default: 500)\n"
            "  --eval-batches N       validation batches (default: 8)\n"
            "  --log-interval N      throughput log interval (default: 10)\n"
@@ -119,7 +119,7 @@ static int parse_options(int argc, char** argv, command_options* options)
     options->checkpoint_path = "command.chk";
     options->steps = 50000;
     options->batch_size = 16;
-    options->threads = 16;
+    options->threads = 0;
     options->eval_interval = 500;
     options->eval_batches = 8;
     options->log_interval = 10;
@@ -414,7 +414,10 @@ int main(int argc, char** argv)
     }
 #ifdef _OPENMP
     omp_set_dynamic(0);
-    omp_set_num_threads(options.threads);
+    if (options.threads > 0) omp_set_num_threads(options.threads);
+    options.threads = omp_get_max_threads();
+#else
+    options.threads = 1;
 #endif
     if (options.generate_corpus > 0) {
         if (command_corpus_generate(&corpus, (size_t)options.generate_corpus,
