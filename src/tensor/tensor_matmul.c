@@ -185,8 +185,8 @@ tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs) {
     }
 
     size_t task_count = packed->batch_count * (size_t)packed->panel_count;
-    int threads = tensorlib_parallel_threads(
-        (long long)(total_values / sizeof(float)),
+    int threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_PACK_RHS, (long long)(total_values / sizeof(float)),
         TENSORLIB_PACK_MIN_PARALLEL_ELEMENTS,
         task_count > (size_t)INT_MAX ? 1 : (int)task_count);
 #ifndef _OPENMP
@@ -410,8 +410,8 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
     int base_task_count = (int)(batch_count * (size_t)row_block_count);
     long long batch_flops = 2LL * lhs_info.rows * lhs_info.inner *
                             rhs->columns * (long long)batch_count;
-    int desired_threads = tensorlib_parallel_threads(
-        batch_flops, TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS, 0);
+    int desired_threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_PACKED_MATMUL, batch_flops, TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS, 0);
     int panel_count = (rhs->columns + TENSORLIB_MATMUL_NR - 1) /
                       TENSORLIB_MATMUL_NR;
     int column_splits = desired_threads > base_task_count
@@ -420,8 +420,8 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
                       : 1;
     if (column_splits > panel_count) column_splits = panel_count;
     int task_count = base_task_count * column_splits;
-    int threads = tensorlib_parallel_threads(
-        batch_flops, TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS,
+    int threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_PACKED_MATMUL, batch_flops, TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS,
         batch_ndim <= TENSORLIB_MATMUL_MAX_NDIM ? task_count : 1);
     size_t workspace_values = (size_t)TENSORLIB_MATMUL_MC *
                               (size_t)TENSORLIB_MATMUL_KC;
@@ -669,12 +669,12 @@ static void matmul_2d_contiguous_row_block(const float* restrict a,
 }
 
 TENSORLIB_AVX2_TARGET
-void matmul_2d_avx2_contiguous(const float* restrict a,
+static void matmul_2d_avx2_contiguous_for(const float* restrict a,
                                const float* restrict b,
                                float* restrict output,
                                int rows,
                                int inner,
-                               int columns) {
+                               int columns, tensorlib_parallel_kind kind) {
     int full_rows = rows - (rows % TENSORLIB_MATMUL_MR);
     int full_columns = columns - (columns % TENSORLIB_MATMUL_NR);
     int panel_count = (columns + TENSORLIB_MATMUL_NR - 1) /
@@ -699,8 +699,8 @@ void matmul_2d_avx2_contiguous(const float* restrict a,
             (full_columns + TENSORLIB_MATMUL_NC - 1) / TENSORLIB_MATMUL_NC;
         int task_count = row_block_count * column_block_count;
         long long flops = 2LL * rows * inner * columns;
-        int threads = tensorlib_parallel_threads(
-            flops, TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS, task_count);
+        int threads = tensorlib_parallel_threads_for(
+            kind, flops, TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS, task_count);
 
         if (threads > 1) {
 #ifdef _OPENMP
@@ -749,6 +749,15 @@ void matmul_2d_avx2_contiguous(const float* restrict a,
             output[row * columns + column] = sum;
         }
     }
+}
+
+TENSORLIB_AVX2_TARGET
+void matmul_2d_avx2_contiguous(const float* restrict a,
+                             const float* restrict b,
+                             float* restrict output,
+                             int rows, int inner, int columns) {
+    matmul_2d_avx2_contiguous_for(a, b, output, rows, inner, columns,
+                                TENSORLIB_PARALLEL_MATMUL);
 }
 
 TENSORLIB_AVX2_TARGET
@@ -1203,8 +1212,11 @@ void matmul_2d_strided(const tensor* a,
 
 #if TENSORLIB_HAS_AVX2_KERNEL
         if (matmul_avx2_available()) {
-            matmul_2d_avx2_contiguous(a_data, b_data, output_data,
-                                      a_info->rows, a_info->inner, b_info->columns);
+            matmul_2d_avx2_contiguous_for(
+                a_data, b_data, output_data,
+                a_info->rows, a_info->inner, b_info->columns,
+                output_batch_ndim > 0 ? TENSORLIB_PARALLEL_BATCHED_MATMUL
+                                      : TENSORLIB_PARALLEL_MATMUL);
         } else {
             matmul_2d_blocked_contiguous(a_data, b_data, output_data,
                                          a_info->rows, a_info->inner, b_info->columns);
@@ -1382,7 +1394,9 @@ tensor* t_matmul(tensor* a, tensor* b) {
     int batch_parallel = (batch_ndim <= TENSORLIB_MATMUL_MAX_NDIM);
     long long batch_flops = 2LL * a_info.rows * a_info.inner *
                             b_info.columns * (long long)batch_count;
-    int threads = tensorlib_parallel_threads(
+    int threads = tensorlib_parallel_threads_for(
+        batch_ndim > 0 ? TENSORLIB_PARALLEL_BATCHED_MATMUL
+                       : TENSORLIB_PARALLEL_MATMUL,
         batch_flops, TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS,
         batch_parallel ? (int)batch_count : 1);
 
