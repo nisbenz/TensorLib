@@ -36,6 +36,7 @@ if (TENSORLIB_ENABLE_OPENMP)
 endif()
 
 set(TENSORLIB_SOURCES
+    src/tensor/parallel.c
     src/tensor/tensor_core.c
     src/tensor/tensor_ops.c
     src/tensor/tensor_alloc.c
