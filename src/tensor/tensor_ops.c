@@ -229,8 +229,9 @@ static tensor* apply_binary(tensor* a,
                                   a->storage->data + a->offset,
                                   b->storage->data + b->offset,
                                   total_elements,
-                                  tensorlib_parallel_threads_for(TENSORLIB_PARALLEL_MEMORY,
-                                      total_elements, TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, 0));
+                                  tensorlib_parallel_threads_for(
+                                      TENSORLIB_PARALLEL_MEMORY, total_elements,
+                                      TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, 0));
     } else if (try_contiguous_broadcast(a, b, c, scalar_op)) {
         /* Handled by the streaming broadcast fast path. */
     } else {

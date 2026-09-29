@@ -411,7 +411,8 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
     long long batch_flops = 2LL * lhs_info.rows * lhs_info.inner *
                             rhs->columns * (long long)batch_count;
     int desired_threads = tensorlib_parallel_threads_for(
-        TENSORLIB_PARALLEL_PACKED_MATMUL, batch_flops, TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS, 0);
+        TENSORLIB_PARALLEL_PACKED_MATMUL, batch_flops,
+        TENSORLIB_MATMUL_MIN_PARALLEL_FLOPS, 0);
     int panel_count = (rhs->columns + TENSORLIB_MATMUL_NR - 1) /
                       TENSORLIB_MATMUL_NR;
     int column_splits = desired_threads > base_task_count

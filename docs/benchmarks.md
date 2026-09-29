@@ -82,6 +82,9 @@ Select one suite with `--suite kernels|autograd|nn|scaling`, or use `all`.
 | `nn` | Linear, LayerNorm, attention, decoder block, MNIST MLP, TinyLM | Eager forward graph construction; training rows include loss, backward, optimizer step, and zero-grad |
 | `scaling` | large add, GELU, square matmul, TinyLM forward/train | The same workload across the requested OpenMP thread ladder, plus derived speedup data for tensor kernels |
 
+The Python runner records `TENSORLIB_*` and `OMP_*` values in the CSV
+`thread_environment` field so differently configured runs can be identified.
+
 Inputs and model construction happen outside the timed region. Most public
 tensor operations allocate their outputs, so output allocation and destruction
 remain inside it. Forward-only NN rows are labeled `forward;graph-build`:

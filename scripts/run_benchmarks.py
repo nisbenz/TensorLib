@@ -3,6 +3,7 @@
 
 import argparse
 import csv
+import json
 import os
 import platform
 import re
@@ -47,6 +48,10 @@ def main():
         "os": platform.platform(),
         "cpu": cpu_model(),
         "logical_processors": str(os.cpu_count() or 1),
+        "thread_environment": json.dumps({
+            key: value for key, value in sorted(os.environ.items())
+            if key.startswith(("TENSORLIB_", "OMP_"))
+        }, sort_keys=True),
     }
     print("Host:")
     for key, value in metadata.items():
