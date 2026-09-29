@@ -303,6 +303,45 @@ TEST(test_packed_rhs_handles_transposed_slices_and_kernel_tails) {
     t_free(left_base);
 }
 
+TEST(test_packed_and_batched_policy_partitioning) {
+    int left_dims[3] = {3, 73, 129};
+    int right_dims[2] = {129, 145};
+    tensor* left = t_alloc(3, left_dims);
+    tensor* right = t_alloc(2, right_dims);
+    ASSERT_NOT_NULL(left);
+    ASSERT_NOT_NULL(right);
+    for (int index = 0; index < tensor_numel(left); ++index)
+        left->storage->data[index] = (float)((index % 13) - 6) * 0.25f;
+    for (int index = 0; index < tensor_numel(right); ++index)
+        right->storage->data[index] = (float)((index % 11) - 5) * 0.125f;
+    tensor_matmul_packed_rhs* packed = t_pack_matmul_rhs(right);
+    tensor* packed_result = t_matmul_packed_rhs(left, packed);
+    tensor* batch_result = t_matmul(left, right);
+    ASSERT_NOT_NULL(packed);
+    ASSERT_NOT_NULL(packed_result);
+    ASSERT_NOT_NULL(batch_result);
+    /* Rows cross MC=64, columns cross panel/tile boundaries, and a shared
+     * RHS is broadcast. Compare every output with an independent reference. */
+    for (int batch = 0; batch < 3; ++batch) {
+        for (int row = 0; row < 73; ++row) {
+            for (int col = 0; col < 145; ++col) {
+                float sum = 0.0f;
+                for (int k = 0; k < 129; ++k)
+                    sum += left->storage->data[(batch * 73 + row) * 129 + k] *
+                           right->storage->data[k * 145 + col];
+                int index = (batch * 73 + row) * 145 + col;
+                ASSERT_FLOAT_NEAR(packed_result->storage->data[index], sum, 1e-5f);
+                ASSERT_FLOAT_NEAR(batch_result->storage->data[index], sum, 1e-5f);
+            }
+        }
+    }
+    t_free(batch_result);
+    t_free(packed_result);
+    t_free_matmul_packed_rhs(packed);
+    t_free(right);
+    t_free(left);
+}
+
 TEST(test_packed_rhs_handles_non_multiple_kernel_dimensions) {
     int left_dims[2] = {5, 129};
     int right_dims[2] = {129, 17};
@@ -657,6 +696,7 @@ int main(void) {
     RUN_TEST(test_packed_rhs_transpose_pack_retains_lifetime);
     RUN_TEST(test_packed_rhs_handles_transposed_slices_and_kernel_tails);
     RUN_TEST(test_packed_rhs_handles_non_multiple_kernel_dimensions);
+    RUN_TEST(test_packed_and_batched_policy_partitioning);
     RUN_TEST(test_packed_rhs_handles_reshape_contiguous_squeeze_and_unsqueeze);
     RUN_TEST(test_packed_rhs_broadcasts_positive_stride_batches);
     RUN_TEST(test_packed_rhs_handles_materialized_contiguous_view);

@@ -241,6 +241,15 @@ add_test(NAME test_parallel_large COMMAND ${CMAKE_COMMAND} -E env
     ${policy_environment} TENSORLIB_MEMORY_THREADS=2147483647
     TENSORLIB_MEMORY_MIN_ELEMENTS=9223372036854775807
     $<TARGET_FILE:test_parallel> large)
+foreach(cap 1 3 7)
+    add_test(NAME test_matmul_policy_${cap} COMMAND ${CMAKE_COMMAND} -E env
+        ${policy_environment} OMP_NUM_THREADS=8 OMP_DYNAMIC=FALSE
+        TENSORLIB_MATMUL_THREADS=2 TENSORLIB_MATMUL_MIN_FLOPS=1
+        TENSORLIB_PACKED_MATMUL_THREADS=${cap}
+        TENSORLIB_BATCHED_MATMUL_THREADS=1
+        TENSORLIB_PACK_RHS_THREADS=3 TENSORLIB_PACK_RHS_MIN_ELEMENTS=1
+        $<TARGET_FILE:test_tensor_matmul>)
+endforeach()
 endif()
 
 if (TENSORLIB_BUILD_EXAMPLES)
