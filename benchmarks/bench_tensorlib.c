@@ -1,4 +1,5 @@
 #include "bench_runner.h"
+#include "../src/tensor/parallel.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -13,7 +14,7 @@ static void usage(const char* program)
 {
     printf("Usage: %s [--profile quick|full] [--suite NAME] "
            "[--threads LIST] [--csv PATH] [--smoke]\n", program);
-    printf("Suites: kernels, autograd, nn, command, scaling, all\n");
+    printf("Suites: kernels, autograd, nn, command, scaling, policy, all\n");
 }
 
 static int available_threads(void)
@@ -62,7 +63,8 @@ static int valid_suite(const char* suite)
 {
     return strcmp(suite, "all") == 0 || strcmp(suite, "kernels") == 0 ||
            strcmp(suite, "autograd") == 0 || strcmp(suite, "nn") == 0 ||
-           strcmp(suite, "command") == 0 || strcmp(suite, "scaling") == 0;
+           strcmp(suite, "command") == 0 || strcmp(suite, "scaling") == 0 ||
+           strcmp(suite, "policy") == 0;
 }
 
 static const char* compiler_name(void)
@@ -93,7 +95,9 @@ static void print_environment(const bench_options* options)
     for (int index = 0; index < options->thread_count; ++index) {
         printf(" %d", options->threads[index]);
     }
-    printf("\n\n");
+    printf("\n");
+    tensorlib_parallel_report(stdout);
+    printf("  actual_threads measures the harness team; kernel policies may use fewer.\n\n");
 }
 
 int main(int argc, char** argv)
