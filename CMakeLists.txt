@@ -250,6 +250,12 @@ foreach(cap 1 3 7)
         TENSORLIB_PACK_RHS_THREADS=3 TENSORLIB_PACK_RHS_MIN_ELEMENTS=1
         $<TARGET_FILE:test_tensor_matmul>)
 endforeach()
+foreach(setting THREADS=1 MIN_ELEMENTS=9223372036854775807)
+    string(REPLACE "=" "_" case_name "${setting}")
+    add_test(NAME test_adamw_policy_${case_name} COMMAND ${CMAKE_COMMAND} -E env
+        ${policy_environment} "TENSORLIB_ADAMW_${setting}"
+        $<TARGET_FILE:test_nn_adamw>)
+endforeach()
 endif()
 
 if (TENSORLIB_BUILD_EXAMPLES)

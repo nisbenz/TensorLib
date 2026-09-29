@@ -253,10 +253,13 @@ int nn_adamw_step(nn_adamw* optimizer)
             free(correction2s); free(correction1s); free(next_steps);
             return -1;
         }
+    }
+    {
         /* Validate every value and precompute all step-dependent factors before
-         * any parameter or optimizer state is modified. */
+         * any parameter or optimizer state is modified. Serial policies must
+         * retain the same failure behavior without parallel bookkeeping. */
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic, 1) num_threads(threads) \
+#pragma omp parallel for if(threads > 1) schedule(dynamic, 1) num_threads(threads) \
     reduction(|:validation_failed)
 #endif
         for (int i = 0; i < parameter_count; ++i) {
@@ -266,14 +269,18 @@ int nn_adamw_step(nn_adamw* optimizer)
             if (!parameter->trainable || parameter->value->grad == NULL) continue;
             value = parameter->value->value;
             step = optimizer->steps[i] + 1;
-            correction1s[i] = 1.0 - pow((double)config->beta1, (double)step);
-            correction2s[i] = 1.0 - pow((double)config->beta2, (double)step);
-            if (!(correction1s[i] > 0.0) || !(correction2s[i] > 0.0) ||
+            double correction1 = 1.0 - pow((double)config->beta1, (double)step);
+            double correction2 = 1.0 - pow((double)config->beta2, (double)step);
+            if (!(correction1 > 0.0) || !(correction2 > 0.0) ||
                 optimizer->steps[i] == UINT64_MAX) {
                 validation_failed = 1;
                 continue;
             }
-            next_steps[i] = step;
+            if (threads > 1) {
+                correction1s[i] = correction1;
+                correction2s[i] = correction2;
+                next_steps[i] = step;
+            }
             int count = tensor_numel(value);
             tensor* first_moment = optimizer->first_moments[i];
             tensor* second_moment = optimizer->second_moments[i];
