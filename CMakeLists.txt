@@ -195,6 +195,34 @@ foreach(test_name IN LISTS TENSORLIB_TESTS)
     target_link_libraries(test_${test_name} PRIVATE tensorlib ${TENSORLIB_MATH_LIB})
     add_test(NAME test_${test_name} COMMAND test_${test_name})
 endforeach()
+
+# Each policy case starts a fresh process with an isolated ENV snapshot.
+add_executable(test_parallel tests/unit/tensor/test_parallel.c)
+target_include_directories(test_parallel PRIVATE tests/fixtures)
+target_link_libraries(test_parallel PRIVATE tensorlib)
+set(policy_environment)
+foreach(kind MEMORY COMPUTE MATMUL CLONE PACK_RHS GELU GELU_BACKWARD
+             PACKED_MATMUL BATCHED_MATMUL ADAMW)
+    if (kind MATCHES "MATMUL")
+        set(unit FLOPS)
+    else()
+        set(unit ELEMENTS)
+    endif()
+    list(APPEND policy_environment "TENSORLIB_${kind}_THREADS="
+         "TENSORLIB_${kind}_MIN_${unit}=")
+endforeach()
+add_test(NAME test_parallel_defaults COMMAND ${CMAKE_COMMAND} -E env
+    ${policy_environment} $<TARGET_FILE:test_parallel> defaults)
+add_test(NAME test_parallel_configured COMMAND ${CMAKE_COMMAND} -E env
+    ${policy_environment}
+    TENSORLIB_MEMORY_THREADS=3 TENSORLIB_MEMORY_MIN_ELEMENTS=20
+    TENSORLIB_COMPUTE_THREADS=4 TENSORLIB_COMPUTE_MIN_ELEMENTS=30
+    TENSORLIB_MATMUL_THREADS=5 TENSORLIB_MATMUL_MIN_FLOPS=40
+    TENSORLIB_CLONE_THREADS=1 TENSORLIB_CLONE_MIN_ELEMENTS=10
+    TENSORLIB_PACK_RHS_THREADS=6 TENSORLIB_GELU_THREADS=2
+    TENSORLIB_GELU_MIN_ELEMENTS=4096 TENSORLIB_PACKED_MATMUL_THREADS=7
+    TENSORLIB_BATCHED_MATMUL_THREADS=1
+    $<TARGET_FILE:test_parallel> configured)
 endif()
 
 if (TENSORLIB_BUILD_EXAMPLES)
