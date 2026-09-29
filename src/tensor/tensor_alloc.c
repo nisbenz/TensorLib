@@ -210,8 +210,9 @@ tensor* t_clone(tensor* t) {
     if (is_contiguous(t)) {
         const float* source = t->storage->data + t->offset;
         float* destination = a->storage->data;
-        int threads = tensorlib_parallel_threads(
-            total_elements, TENSORLIB_CLONE_MIN_PARALLEL_ELEMENTS, 0);
+        int threads = tensorlib_parallel_threads_for(
+            TENSORLIB_PARALLEL_CLONE, total_elements,
+            TENSORLIB_CLONE_MIN_PARALLEL_ELEMENTS, 0);
 #ifndef _OPENMP
         (void)threads;
 #endif
@@ -236,8 +237,9 @@ tensor* t_clone(tensor* t) {
     if (t->ndim > 1 && t->strides[t->ndim - 1] == 1) {
         int inner = t->dims[t->ndim - 1];
         int outer = total_elements / inner;
-        int threads = tensorlib_parallel_threads(
-            total_elements, TENSORLIB_CLONE_MIN_PARALLEL_ELEMENTS, outer);
+        int threads = tensorlib_parallel_threads_for(
+            TENSORLIB_PARALLEL_CLONE, total_elements,
+            TENSORLIB_CLONE_MIN_PARALLEL_ELEMENTS, outer);
 #ifndef _OPENMP
         (void)threads;
 #endif
@@ -264,8 +266,9 @@ tensor* t_clone(tensor* t) {
         const int tile = 32;
         int row_blocks = (t->dims[0] + tile - 1) / tile;
         int column_blocks = (t->dims[1] + tile - 1) / tile;
-        int threads = tensorlib_parallel_threads(
-            total_elements, TENSORLIB_CLONE_MIN_PARALLEL_ELEMENTS,
+        int threads = tensorlib_parallel_threads_for(
+            TENSORLIB_PARALLEL_CLONE, total_elements,
+            TENSORLIB_CLONE_MIN_PARALLEL_ELEMENTS,
             row_blocks * column_blocks);
 #ifndef _OPENMP
         (void)threads;

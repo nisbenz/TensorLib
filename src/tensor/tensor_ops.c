@@ -166,8 +166,9 @@ static int try_contiguous_broadcast(tensor* a, tensor* b,
     const float* a_data = a->storage->data + a->offset;
     const float* b_data = b->storage->data + b->offset;
     float* c_data = c->storage->data + c->offset;
-    int threads = tensorlib_parallel_threads(
-        (long long)outer * block, TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, outer);
+    int threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_MEMORY, (long long)outer * block,
+        TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, outer);
 #ifndef _OPENMP
     (void)threads;
 #endif
@@ -228,7 +229,8 @@ static tensor* apply_binary(tensor* a,
                                   a->storage->data + a->offset,
                                   b->storage->data + b->offset,
                                   total_elements,
-                                  tensorlib_parallel_threads(total_elements, TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, 0));
+                                  tensorlib_parallel_threads_for(TENSORLIB_PARALLEL_MEMORY,
+                                      total_elements, TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, 0));
     } else if (try_contiguous_broadcast(a, b, c, scalar_op)) {
         /* Handled by the streaming broadcast fast path. */
     } else {
@@ -295,7 +297,9 @@ static tensor* apply_scalar_binary(tensor* a,
     if (is_contiguous(a) && is_contiguous(out)) {
         float* out_data = out->storage->data + out->offset;
         const float* in_data = a->storage->data + a->offset;
-        int threads = tensorlib_parallel_threads(total_elements, TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, 0);
+        int threads = tensorlib_parallel_threads_for(
+            TENSORLIB_PARALLEL_MEMORY, total_elements,
+            TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, 0);
         if (threads > 1) {
 #ifdef _OPENMP
 #pragma omp parallel num_threads(threads)
@@ -356,7 +360,8 @@ tensor* t_div_scalar(tensor* a, float scalar) {
 
 typedef float (*unary_fn)(float);
 
-static tensor* apply_unary(tensor* input, unary_fn fn) {
+static tensor* apply_unary(tensor* input, unary_fn fn,
+                           tensorlib_parallel_kind kind) {
     if (input == NULL || fn == NULL) return NULL;
 
     tensor* contiguous = t_contiguous(input);
@@ -371,7 +376,8 @@ static tensor* apply_unary(tensor* input, unary_fn fn) {
     int total_elements = tensor_numel(contiguous);
     float* out_data = out->storage->data;
     const float* in_data = contiguous->storage->data + contiguous->offset;
-    int threads = tensorlib_parallel_threads(total_elements, TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, 0);
+    int threads = tensorlib_parallel_threads_for(
+        kind, total_elements, TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, 0);
     if (threads > 1) {
 #ifdef _OPENMP
 #pragma omp parallel num_threads(threads)
@@ -408,14 +414,30 @@ static float op_gelu(float x) {
                          (x + 0.044715f * x * x * x)));
 }
 
-tensor* t_exp(tensor* t) { return apply_unary(t, op_exp); }
-tensor* t_log(tensor* t) { return apply_unary(t, op_log); }
-tensor* t_relu(tensor* t) { return apply_unary(t, op_relu); }
-tensor* t_tanh(tensor* t) { return apply_unary(t, op_tanh); }
-tensor* t_sigmoid(tensor* t) { return apply_unary(t, op_sigmoid); }
-tensor* t_neg(tensor* t) { return apply_unary(t, op_neg); }
-tensor* t_sqrt(tensor* t) { return apply_unary(t, op_sqrt); }
-tensor* t_gelu(tensor* t) { return apply_unary(t, op_gelu); }
+tensor* t_exp(tensor* t) {
+    return apply_unary(t, op_exp, TENSORLIB_PARALLEL_COMPUTE);
+}
+tensor* t_log(tensor* t) {
+    return apply_unary(t, op_log, TENSORLIB_PARALLEL_COMPUTE);
+}
+tensor* t_relu(tensor* t) {
+    return apply_unary(t, op_relu, TENSORLIB_PARALLEL_MEMORY);
+}
+tensor* t_tanh(tensor* t) {
+    return apply_unary(t, op_tanh, TENSORLIB_PARALLEL_COMPUTE);
+}
+tensor* t_sigmoid(tensor* t) {
+    return apply_unary(t, op_sigmoid, TENSORLIB_PARALLEL_COMPUTE);
+}
+tensor* t_neg(tensor* t) {
+    return apply_unary(t, op_neg, TENSORLIB_PARALLEL_MEMORY);
+}
+tensor* t_sqrt(tensor* t) {
+    return apply_unary(t, op_sqrt, TENSORLIB_PARALLEL_COMPUTE);
+}
+tensor* t_gelu(tensor* t) {
+    return apply_unary(t, op_gelu, TENSORLIB_PARALLEL_GELU);
+}
 
 tensor* t_pow(tensor* t, float exponent) {
     if (t == NULL) return NULL;
@@ -432,7 +454,9 @@ tensor* t_pow(tensor* t, float exponent) {
     int total_elements = tensor_numel(t);
     float* out_data = out->storage->data;
     const float* in_data = contiguous->storage->data + contiguous->offset;
-    int threads = tensorlib_parallel_threads(total_elements, TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, 0);
+    int threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_COMPUTE, total_elements,
+        TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, 0);
     if (threads > 1) {
 #ifdef _OPENMP
 #pragma omp parallel num_threads(threads)
