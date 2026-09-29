@@ -36,8 +36,7 @@ OMP_NUM_THREADS=16 OMP_DYNAMIC=FALSE ./build/command_lm command.txt \
 ```
 
 `--threads N` overrides the OpenMP runtime default. When omitted, CommandLM
-honors `OMP_NUM_THREADS`; builds without OpenMP run serially. Operation-specific
-thread budgets and thresholds are described in [threading.md](../../docs/threading.md).
+honors `OMP_NUM_THREADS`; builds without OpenMP run serially.
 
 To import the MIT-licensed NL2Bash corpus into the same record format, run:
 
