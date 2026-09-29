@@ -35,8 +35,8 @@ static int backward_softmax(const ag_node* node,
     gradient = t_alloc(output->ndim, output->dims);
     if (gradient == NULL) return 1;
 
-    int threads = tensorlib_parallel_threads(
-        (long long)context->rows * context->width,
+    int threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_COMPUTE, (long long)context->rows * context->width,
         TENSORLIB_SOFTMAX_MIN_PARALLEL_ELEMENTS, context->rows);
 #ifndef _OPENMP
     (void)threads;

@@ -414,8 +414,9 @@ static int backward_gelu(const ag_node* node,
     tensor* result = t_alloc(input->ndim, input->dims);
     if (result == NULL) return 1;
     int count = tensor_numel(input);
-    int threads = tensorlib_parallel_threads(
-        count, TENSORLIB_GELU_MIN_PARALLEL_ELEMENTS, 0);
+    int threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_GELU_BACKWARD, count,
+        TENSORLIB_GELU_MIN_PARALLEL_ELEMENTS, 0);
 #ifndef _OPENMP
     (void)threads;
 #endif

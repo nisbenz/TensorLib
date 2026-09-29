@@ -124,9 +124,9 @@ int ag_accumulate_slice_gradient(const ag_node* node,
     }
     size_t slice = (size_t)output_gradient->dims[context->dim];
     size_t copied = outer * slice * inner;
-    int threads = tensorlib_parallel_threads((long long)copied,
-                                              AG_SLICE_MIN_PARALLEL_ELEMENTS,
-                                              (int)outer);
+    int threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_MEMORY, (long long)copied,
+        AG_SLICE_MIN_PARALLEL_ELEMENTS, (int)outer);
 #ifndef _OPENMP
     (void)threads;
 #endif

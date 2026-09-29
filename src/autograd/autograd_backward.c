@@ -58,8 +58,8 @@ static void sum_contiguous_suffix(const float* source,
                                   float scale)
 {
     int tasks = outer_count > result_count ? outer_count : result_count;
-    int threads = tensorlib_parallel_threads(
-        (long long)outer_count * result_count,
+    int threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_MEMORY, (long long)outer_count * result_count,
         AG_REDUCTION_MIN_PARALLEL_ELEMENTS, tasks);
 #ifndef _OPENMP
     (void)threads;

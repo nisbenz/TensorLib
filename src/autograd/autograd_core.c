@@ -172,8 +172,8 @@ tensor* ag_full_like(const tensor* reference, float value) {
     tensor* result = t_alloc(reference->ndim, reference->dims);
     if (result == NULL) return NULL;
     int count = tensor_numel(result);
-    int threads = tensorlib_parallel_threads(
-        count, AG_FILL_MIN_PARALLEL_ELEMENTS, 0);
+    int threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_MEMORY, count, AG_FILL_MIN_PARALLEL_ELEMENTS, 0);
 #ifndef _OPENMP
     (void)threads;
 #endif

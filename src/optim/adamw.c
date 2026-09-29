@@ -160,8 +160,8 @@ static int gradient_scale(const nn_adamw* optimizer, double* result)
         work = work > LLONG_MAX - count ? LLONG_MAX : work + count;
     }
 
-    int threads = tensorlib_parallel_threads(
-        work, TENSORLIB_ADAMW_MIN_PARALLEL_ELEMENTS,
+    int threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_ADAMW, work, TENSORLIB_ADAMW_MIN_PARALLEL_ELEMENTS,
         optimizer->parameter_count > (size_t)INT_MAX
             ? 1 : (int)optimizer->parameter_count);
 #ifndef _OPENMP
@@ -239,9 +239,9 @@ int nn_adamw_step(nn_adamw* optimizer)
         int count = tensor_numel(value);
         work = work > LLONG_MAX - count ? LLONG_MAX : work + count;
     }
-    threads = tensorlib_parallel_threads(work,
-                                         TENSORLIB_ADAMW_MIN_PARALLEL_ELEMENTS,
-                                         eligible_count);
+    threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_ADAMW, work,
+        TENSORLIB_ADAMW_MIN_PARALLEL_ELEMENTS, eligible_count);
     if (threads > 1) {
         next_steps = (uint64_t*)calloc((size_t)parameter_count,
                                        sizeof(*next_steps));

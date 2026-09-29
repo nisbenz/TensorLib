@@ -65,8 +65,8 @@ static int backward_layer_norm(const ag_node* node,
         for (int k = 0; k < width; ++k) bias_gradient->storage->data[k] = 0.0f;
     }
 
-    int threads = tensorlib_parallel_threads(
-        (long long)context->rows * width,
+    int threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_COMPUTE, (long long)context->rows * width,
         TENSORLIB_LAYER_NORM_MIN_PARALLEL_ELEMENTS, context->rows);
 #ifndef _OPENMP
     (void)threads;

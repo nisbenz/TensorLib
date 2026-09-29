@@ -39,8 +39,8 @@ static int backward_cross_entropy(const ag_node* node,
     if (gradient == NULL) return 1;
     upstream = output_gradient->storage->data[output_gradient->offset] /
                (float)context->rows;
-    int threads = tensorlib_parallel_threads(
-        (long long)context->rows * context->classes,
+    int threads = tensorlib_parallel_threads_for(
+        TENSORLIB_PARALLEL_COMPUTE, (long long)context->rows * context->classes,
         TENSORLIB_CROSS_ENTROPY_MIN_PARALLEL_ELEMENTS, context->rows);
 #ifndef _OPENMP
     (void)threads;
