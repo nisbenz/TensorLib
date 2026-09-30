@@ -8,6 +8,8 @@
 typedef struct {
     double operation_seconds[AG_BACKWARD_OP_COUNT];
     unsigned long operation_calls[AG_BACKWARD_OP_COUNT];
+    unsigned long long operation_copied_bytes[AG_BACKWARD_OP_COUNT];
+    unsigned long long operation_allocated_bytes[AG_BACKWARD_OP_COUNT];
     double traversal_seconds;
     double reduction_seconds;
     double accumulation_seconds;

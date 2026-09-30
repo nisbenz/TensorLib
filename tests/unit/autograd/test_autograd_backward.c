@@ -37,6 +37,8 @@ TEST(test_backward_stats_are_disabled_by_default_and_resettable) {
     ag_tensor* square = ag_mul(input, input);
     ag_tensor* loss = ag_mean(square, 0, 0);
     ag_backward_stats stats;
+    tensor_alloc_stats_enable(1);
+    tensor_alloc_stats_reset();
     ag_backward_stats_reset();
     ag_backward_stats_enable(1);
     ASSERT_EQ_INT(ag_backward(loss), 0);
@@ -44,11 +46,13 @@ TEST(test_backward_stats_are_disabled_by_default_and_resettable) {
     ag_backward_stats_read(&stats);
     ASSERT_EQ_INT((int)stats.operation_calls[AG_OP_MEAN], 1);
     ASSERT_EQ_INT((int)stats.operation_calls[AG_OP_MUL], 1);
+    ASSERT_TRUE(stats.operation_allocated_bytes[AG_OP_MUL] > 0);
     ASSERT_TRUE(stats.traversal_seconds >= 0.0);
     ASSERT_TRUE(stats.merge_seconds >= 0.0);
     ag_backward_stats_reset();
     ag_backward_stats_read(&stats);
     ASSERT_EQ_INT((int)stats.operation_calls[AG_OP_MUL], 0);
+    tensor_alloc_stats_enable(0);
     ag_tensor_release(loss); ag_tensor_release(square); ag_tensor_release(input);
 }
 

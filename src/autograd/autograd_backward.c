@@ -29,6 +29,18 @@ typedef struct {
 static int backward_stats_enabled;
 static ag_backward_stats backward_stats;
 
+static void record_operation_memory(int operation, const tensor_alloc_stats* before)
+{
+    tensor_alloc_stats after;
+    tensor_alloc_stats_read(&after);
+    backward_stats.operation_copied_bytes[operation] +=
+        after.copied_bytes - before->copied_bytes;
+    size_t bytes = after.allocated_bytes - before->allocated_bytes;
+    for (int kind = 0; kind < TENSOR_ALLOC_AUX_KINDS; ++kind)
+        bytes += after.auxiliary_bytes[kind] - before->auxiliary_bytes[kind];
+    backward_stats.operation_allocated_bytes[operation] += bytes;
+}
+
 static double backward_now(void)
 {
 #ifdef _WIN32
@@ -574,6 +586,9 @@ int ag_backward_with_grad_ex(ag_tensor* output,
         ag_node* node = nodes.values[node_index];
         int gradient_index = node->output->graph_index;
         if (gradient_index < 0 || pass_gradients[gradient_index] == NULL) goto cleanup;
+        int profiling = backward_stats_enabled;
+        tensor_alloc_stats memory_before;
+        if (profiling) tensor_alloc_stats_read(&memory_before);
 
         if (node->operation == AG_OP_SLICE && node->input_count == 1 &&
             node->inputs[0]->requires_grad) {
@@ -583,10 +598,11 @@ int ag_backward_with_grad_ex(ag_tensor* output,
                 ag_accumulate_slice_gradient(
                     node, pass_gradients[gradient_index],
                     &pass_gradients[destination]) == 0) {
-                if (backward_stats_enabled) {
+                if (profiling) {
                     backward_stats.operation_seconds[AG_OP_SLICE] +=
                         backward_elapsed(started);
                     ++backward_stats.operation_calls[AG_OP_SLICE];
+                    record_operation_memory(AG_OP_SLICE, &memory_before);
                 }
                 if (options->retention == AG_GRAD_RETAIN_LEAVES) {
                     t_free(pass_gradients[gradient_index]);
@@ -603,12 +619,13 @@ int ag_backward_with_grad_ex(ag_tensor* output,
         started = backward_stats_enabled ? backward_now() : 0.0;
         int backward_status =
             node->backward(node, pass_gradients[gradient_index], contributions);
-        if (backward_stats_enabled) {
+        if (profiling) {
             int operation = (int)node->operation;
             if (operation >= 0 && operation < AG_BACKWARD_OP_COUNT) {
                 backward_stats.operation_seconds[operation] +=
                     backward_elapsed(started);
                 ++backward_stats.operation_calls[operation];
+                record_operation_memory(operation, &memory_before);
             }
         }
         if (backward_status != 0) {

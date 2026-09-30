@@ -241,6 +241,16 @@ static void report_backward_stats(const bench_options* options,
             requested_threads, measured_threads,
             stats->operation_seconds[operation] * 1000.0 /
                 (double)stats->operation_calls[operation]);
+        snprintf(name, sizeof(name), "backward_op_%s_copied_bytes", names[operation]);
+        bench_record_scalar(options, csv, "nn_backward", name,
+            context->metric_shape, "clone+projection-copy", "bytes/backward",
+            requested_threads, measured_threads,
+            (double)stats->operation_copied_bytes[operation]);
+        snprintf(name, sizeof(name), "backward_op_%s_allocated_bytes", names[operation]);
+        bench_record_scalar(options, csv, "nn_backward", name,
+            context->metric_shape, "storage+instrumented-auxiliary", "bytes/backward",
+            requested_threads, measured_threads,
+            (double)stats->operation_allocated_bytes[operation]);
     }
     static const char* engine_names[] = {
         "backward_graph_traversal", "backward_shape_reduction",
