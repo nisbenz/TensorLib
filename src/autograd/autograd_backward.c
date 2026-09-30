@@ -588,6 +588,10 @@ int ag_backward_with_grad_ex(ag_tensor* output,
                         backward_elapsed(started);
                     ++backward_stats.operation_calls[AG_OP_SLICE];
                 }
+                if (options->retention == AG_GRAD_RETAIN_LEAVES) {
+                    t_free(pass_gradients[gradient_index]);
+                    pass_gradients[gradient_index] = NULL;
+                }
                 continue;
             }
         }
@@ -630,6 +634,12 @@ int ag_backward_with_grad_ex(ag_tensor* output,
                 goto cleanup;
             }
             contributions[input_index] = NULL;
+        }
+        /* Reverse topological order has consumed this intermediate gradient.
+         * Shared tensor storage remains alive through any propagated views. */
+        if (options->retention == AG_GRAD_RETAIN_LEAVES) {
+            t_free(pass_gradients[gradient_index]);
+            pass_gradients[gradient_index] = NULL;
         }
     }
 
