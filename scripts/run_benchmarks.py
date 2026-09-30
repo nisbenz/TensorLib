@@ -65,7 +65,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--executable", default="build/bench_tensorlib")
     parser.add_argument("--profile", choices=("quick", "full", "fixed"), default="quick")
-    parser.add_argument("--suite", choices=("all", "kernels", "autograd", "nn", "command", "training", "scaling", "policy"),
+    parser.add_argument("--suite", choices=("all", "kernels", "autograd", "nn", "command", "training", "matmul", "scaling", "policy"),
                         default="all")
     parser.add_argument("--threads", help="comma-separated OpenMP thread ladder")
     parser.add_argument("--csv", default="benchmark-results.csv")

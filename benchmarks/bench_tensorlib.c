@@ -14,7 +14,7 @@ static void usage(const char* program)
 {
     printf("Usage: %s [--profile quick|full|fixed] [--suite NAME] "
            "[--threads LIST] [--csv PATH] [--no-diagnostics] [--smoke]\n", program);
-    printf("Suites: kernels, autograd, nn, command, training, scaling, policy, all\n");
+    printf("Suites: kernels, autograd, nn, command, training, matmul, scaling, policy, all\n");
 }
 
 static int available_threads(void)
@@ -64,7 +64,8 @@ static int valid_suite(const char* suite)
     return strcmp(suite, "all") == 0 || strcmp(suite, "kernels") == 0 ||
            strcmp(suite, "autograd") == 0 || strcmp(suite, "nn") == 0 ||
            strcmp(suite, "command") == 0 || strcmp(suite, "scaling") == 0 ||
-           strcmp(suite, "policy") == 0 || strcmp(suite, "training") == 0;
+           strcmp(suite, "policy") == 0 || strcmp(suite, "training") == 0 ||
+           strcmp(suite, "matmul") == 0;
 }
 
 static const char* compiler_name(void)

@@ -153,6 +153,9 @@ int bench_run_suites(const bench_options* options, FILE* csv)
         status |= bench_run_nn_suite(options, csv);
         status |= bench_run_backward_matrix_suite(options, csv);
     }
+    if (strcmp(options->suite, "matmul") == 0) {
+        status |= bench_run_backward_matrix_suite(options, csv);
+    }
     if (suite_selected(options->suite, "command")) {
         status |= bench_run_command_suite(options, csv);
     }
