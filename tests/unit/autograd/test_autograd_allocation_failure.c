@@ -49,39 +49,46 @@ int main(void) {
         single_step[i] = t_clone(values[i]->grad);
         CHECK(single_step[i] != NULL);
     }
-    int failed_passes = 0, completed = 0;
-    for (int budget = 0; budget < 512; ++budget) {
-        tensor* snapshots[5];
-        for (int i = 0; i < 5; ++i) {
-            snapshots[i] = t_clone(values[i]->grad);
-            CHECK(snapshots[i] != NULL);
-        }
-        failures = 0;
-        remaining = budget;
-        int status = ag_backward(loss);
-        remaining = -1;
-        if (status != 0) {
-            ++failed_passes;
+    int failed_passes = 0;
+    for (int leaves = 0; leaves <= 1; ++leaves) {
+        int completed = 0, previous_failures = failed_passes;
+        ag_backward_options options = ag_backward_default_options();
+        if (leaves) options.retention = AG_GRAD_RETAIN_LEAVES;
+        for (int budget = 0; budget < 512; ++budget) {
+            tensor* snapshots[5];
             for (int i = 0; i < 5; ++i) {
-                CHECK(values[i]->grad != NULL && values[i]->graph_index == -1);
-                for (int j = 0; j < tensor_numel(snapshots[i]); ++j)
-                    CHECK(values[i]->grad->storage->data[tensor_flat_index(values[i]->grad, j)] ==
-                          snapshots[i]->storage->data[j]);
+                snapshots[i] = t_clone(values[i]->grad);
+                CHECK(snapshots[i] != NULL);
             }
-        } else {
-            for (int i = 0; i < 5; ++i) {
-                CHECK(values[i]->grad != NULL && values[i]->graph_index == -1);
-                for (int j = 0; j < tensor_numel(snapshots[i]); ++j) {
-                    float expected = snapshots[i]->storage->data[j] + single_step[i]->storage->data[j];
-                    CHECK(fabsf(values[i]->grad->storage->data[tensor_flat_index(values[i]->grad, j)] -
-                                expected) < 1e-5f);
+            failures = 0;
+            remaining = budget;
+            int status = ag_backward_ex(loss, &options);
+            remaining = -1;
+            if (status != 0) {
+                ++failed_passes;
+                for (int i = 0; i < 5; ++i) {
+                    CHECK(values[i]->grad != NULL && values[i]->graph_index == -1);
+                    for (int j = 0; j < tensor_numel(snapshots[i]); ++j)
+                        CHECK(values[i]->grad->storage->data[tensor_flat_index(values[i]->grad, j)] ==
+                              snapshots[i]->storage->data[j]);
+                }
+            } else {
+                for (int i = 0; i < 5; ++i) {
+                    CHECK(values[i]->grad != NULL && values[i]->graph_index == -1);
+                    for (int j = 0; j < tensor_numel(snapshots[i]); ++j) {
+                        float contribution = !leaves || i == 0
+                                           ? single_step[i]->storage->data[j] : 0.0f;
+                        float expected = snapshots[i]->storage->data[j] + contribution;
+                        CHECK(fabsf(values[i]->grad->storage->data[tensor_flat_index(values[i]->grad, j)] -
+                                    expected) < 1e-5f);
+                    }
                 }
             }
+            for (int i = 0; i < 5; ++i) t_free(snapshots[i]);
+            if (failures == 0) { completed = status == 0; break; }
         }
-        for (int i = 0; i < 5; ++i) t_free(snapshots[i]);
-        if (failures == 0) { completed = status == 0; break; }
+        CHECK(failed_passes > previous_failures && completed);
     }
-    CHECK(failed_passes > 0 && completed);
     for (int i = 4; i >= 0; --i) {
         t_free(single_step[i]);
         ag_tensor_release(values[i]);
