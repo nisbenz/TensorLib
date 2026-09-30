@@ -219,8 +219,8 @@ static int append_node(node_list* list, ag_node* node) {
 
 static int collect_graph(ag_tensor* value, tensor_list* tensors, node_list* nodes) {
     if (value == NULL || value->graph_index >= 0) return value == NULL;
-    value->graph_index = tensors->count;
     if (append_tensor(tensors, value) != 0) return 1;
+    value->graph_index = tensors->count - 1;
     if (value->creator == NULL) return 0;
     for (int i = 0; i < value->creator->input_count; ++i) {
         if (collect_graph(value->creator->inputs[i], tensors, nodes) != 0) return 1;
