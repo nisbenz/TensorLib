@@ -12,6 +12,7 @@ typedef struct {
     const char* suite;
     int threads[BENCH_MAX_THREADS];
     int thread_count;
+    int diagnostics;
 } bench_options;
 
 typedef struct {

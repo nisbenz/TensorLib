@@ -70,6 +70,13 @@ call or warm-up. Use it for matched training comparisons so both processes
 start from the same seeded state and perform the same optimizer/RNG sequence.
 Repeat in fresh processes; the five calls include the first-step packing cost.
 
+For primary training timings use `--suite training --profile fixed
+--no-diagnostics`. This measures MNIST MLP (batch 64), TinyLM (batch 4), and
+CommandLM (batches 1 and 16) at each requested thread count. It disables phase
+clocks, allocation counters, and the extra backward profiling step. Run again
+without `--no-diagnostics` for a separate diagnostic profile; do not compare
+its throughput directly with the uninstrumented measurements.
+
 Run the full profile with:
 
 ```sh

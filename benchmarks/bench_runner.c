@@ -136,6 +136,7 @@ int bench_run_command_suite(const bench_options* options, FILE* csv);
 int bench_run_backward_matrix_suite(const bench_options* options, FILE* csv);
 int bench_run_scaling_suite(const bench_options* options, FILE* csv);
 int bench_run_policy_suite(const bench_options* options, FILE* csv);
+int bench_run_training_suite(const bench_options* options, FILE* csv);
 
 int bench_run_suites(const bench_options* options, FILE* csv)
 {
@@ -160,6 +161,9 @@ int bench_run_suites(const bench_options* options, FILE* csv)
     }
     if (suite_selected(options->suite, "policy")) {
         status |= bench_run_policy_suite(options, csv);
+    }
+    if (strcmp(options->suite, "training") == 0) {
+        status |= bench_run_training_suite(options, csv);
     }
     return status;
 }
