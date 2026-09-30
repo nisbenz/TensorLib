@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include "../tensor/tensor_alloc_internal.h"
 
 #include "./../../include/tensorlib/autograd_internal.h"
 #include "../tensor/tensor_matmul_internal.h"
@@ -126,7 +127,7 @@ ag_tensor* ag_matmul_packed_rhs_with_backward_pack(
     matmul_context* context = NULL;
     if (a == NULL || b == NULL || packed_rhs == NULL) return NULL;
     if (backward_rhs != NULL) {
-        context = (matmul_context*)calloc(1, sizeof(*context));
+        context = (matmul_context*)tensor_profile_calloc(1, sizeof(*context), TENSOR_ALLOC_GRAPH);
         if (context == NULL) return NULL;
         context->backward_rhs = (tensor_matmul_packed_rhs*)backward_rhs;
         t_retain_matmul_packed_rhs(context->backward_rhs);

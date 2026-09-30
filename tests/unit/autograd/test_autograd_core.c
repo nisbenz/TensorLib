@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include "./../../../include/tensorlib/autograd.h"
 #include "./../../fixtures/test_common.h"
+#include "../../../src/tensor/tensor_alloc_internal.h"
 
 static int contexts_freed = 0;
 
@@ -129,8 +130,25 @@ TEST(test_detach_stops_gradient_tracking_and_detects_alias_mutation) {
     ASSERT_NULL(ag_detach(NULL));
 }
 
+TEST(test_graph_profile_separates_nodes_from_tensor_storage) {
+    tensor_alloc_stats stats;
+    tensor_alloc_stats_enable(1);
+    tensor_alloc_stats_reset();
+    ag_tensor* input = ag_from_owned_tensor(make_scalar(2.0f), 1);
+    ag_tensor* output = ag_mul(input, input);
+    ASSERT_NOT_NULL(output);
+    tensor_alloc_stats_read(&stats);
+    ASSERT_TRUE(stats.auxiliary_allocations[TENSOR_ALLOC_GRAPH] >= 5);
+    ASSERT_TRUE(stats.auxiliary_bytes[TENSOR_ALLOC_GRAPH] >= sizeof(ag_node));
+    ag_tensor_release(output); ag_tensor_release(input);
+    tensor_alloc_stats_read(&stats);
+    ASSERT_EQ_INT(stats.live_bytes, 0);
+    tensor_alloc_stats_enable(0);
+}
+
 int main(void) {
     printf("== autograd_core.c ==\n");
+    RUN_TEST(test_graph_profile_separates_nodes_from_tensor_storage);
     RUN_TEST(test_owned_tensor_initializes_normalized_leaf);
     RUN_TEST(test_owned_tensor_rejects_null);
     RUN_TEST(test_tensor_retain_keeps_value_alive);

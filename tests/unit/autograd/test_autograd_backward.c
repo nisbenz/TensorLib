@@ -1,6 +1,7 @@
 #include "./../../../include/tensorlib/autograd.h"
 #include "./../../../include/tensorlib/autograd_internal.h"
 #include "./../../fixtures/test_common.h"
+#include "../../../src/tensor/tensor_alloc_internal.h"
 
 static ag_tensor* make_ag(int ndim, const int* dims, const float* values, int requires_grad) {
     tensor* raw = t_alloc(ndim, dims);
@@ -36,6 +37,8 @@ TEST(test_backward_stats_are_disabled_by_default_and_resettable) {
     ag_tensor* square = ag_mul(input, input);
     ag_tensor* loss = ag_mean(square, 0, 0);
     ag_backward_stats stats;
+    tensor_alloc_stats_enable(1);
+    tensor_alloc_stats_reset();
     ag_backward_stats_reset();
     ag_backward_stats_enable(1);
     ASSERT_EQ_INT(ag_backward(loss), 0);
@@ -43,11 +46,13 @@ TEST(test_backward_stats_are_disabled_by_default_and_resettable) {
     ag_backward_stats_read(&stats);
     ASSERT_EQ_INT((int)stats.operation_calls[AG_OP_MEAN], 1);
     ASSERT_EQ_INT((int)stats.operation_calls[AG_OP_MUL], 1);
+    ASSERT_TRUE(stats.operation_allocated_bytes[AG_OP_MUL] > 0);
     ASSERT_TRUE(stats.traversal_seconds >= 0.0);
     ASSERT_TRUE(stats.merge_seconds >= 0.0);
     ag_backward_stats_reset();
     ag_backward_stats_read(&stats);
     ASSERT_EQ_INT((int)stats.operation_calls[AG_OP_MUL], 0);
+    tensor_alloc_stats_enable(0);
     ag_tensor_release(loss); ag_tensor_release(square); ag_tensor_release(input);
 }
 
@@ -269,8 +274,50 @@ TEST(test_backward_rejects_modified_intermediate_output) {
     ag_tensor_release(input);
 }
 
+static void retained_chain_peak(ag_grad_retention retention, size_t* result) {
+    int dims[1] = {4096};
+    ag_backward_options options = {retention};
+    tensor_alloc_stats stats;
+    tensor_alloc_stats_enable(1);
+    tensor_alloc_stats_reset();
+    tensor* raw = t_alloc(1, dims);
+    tensor* seed = t_alloc(1, dims);
+    for (int i = 0; i < dims[0]; ++i) {
+        raw->storage->data[i] = 1.0f;
+        seed->storage->data[i] = 1.0f;
+    }
+    ag_tensor* input = ag_from_owned_tensor(raw, 1);
+    ag_tensor* output = input;
+    ag_tensor_retain(output);
+    for (int i = 0; i < 8; ++i) {
+        ag_tensor* next = ag_mul_scalar(output, 2.0f);
+        ASSERT_NOT_NULL(next);
+        ag_tensor_release(output);
+        output = next;
+    }
+    ASSERT_EQ_INT(ag_backward_with_grad_ex(output, seed, &options), 0);
+    ASSERT_EQ_FLOAT(input->grad->storage->data[0], 256.0f);
+    tensor_alloc_stats_read(&stats);
+    size_t peak = stats.peak_live_bytes;
+    ASSERT_EQ_INT(ag_backward_with_grad_ex(output, seed, &options), 0);
+    ASSERT_EQ_FLOAT(input->grad->storage->data[0], 512.0f);
+    ag_tensor_release(output); ag_tensor_release(input); t_free(seed);
+    tensor_alloc_stats_read(&stats);
+    ASSERT_EQ_INT(stats.live_bytes, 0);
+    tensor_alloc_stats_enable(0);
+    *result = peak;
+}
+
+TEST(test_leaf_retention_bounds_live_intermediate_gradients) {
+    size_t all = 0, leaves = 0;
+    retained_chain_peak(AG_GRAD_RETAIN_ALL, &all);
+    retained_chain_peak(AG_GRAD_RETAIN_LEAVES, &leaves);
+    ASSERT_TRUE(leaves + 4 * 4096 * sizeof(float) < all);
+}
+
 int main(void) {
     printf("== autograd_backward.c ==\n");
+    RUN_TEST(test_leaf_retention_bounds_live_intermediate_gradients);
     RUN_TEST(test_backward_chain_computes_weight_gradients);
     RUN_TEST(test_backward_stats_are_disabled_by_default_and_resettable);
     RUN_TEST(test_shared_dag_accumulates_each_branch_once);

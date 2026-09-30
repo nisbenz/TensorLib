@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdlib.h>
+#include "../tensor/tensor_alloc_internal.h"
 
 #include "./../../include/tensorlib/autograd_internal.h"
 
@@ -70,8 +71,8 @@ static int backward_max(const ag_node* node,
     tensor* output = node->output->value;
     tensor* gradient = ag_full_like(input, 0.0f);
     int* output_coords = output->ndim > 0
-                       ? (int*)calloc((size_t)output->ndim, sizeof(int)) : NULL;
-    int* input_coords = (int*)calloc((size_t)input->ndim, sizeof(int));
+                       ? (int*)tensor_profile_calloc((size_t)output->ndim, sizeof(int), TENSOR_ALLOC_GRAPH) : NULL;
+    int* input_coords = (int*)tensor_profile_calloc((size_t)input->ndim, sizeof(int), TENSOR_ALLOC_GRAPH);
     if (gradient == NULL || (output->ndim > 0 && output_coords == NULL) || input_coords == NULL) {
         t_free(gradient); free(output_coords); free(input_coords);
         return 1;
@@ -124,7 +125,7 @@ static ag_tensor* apply_reduction(const ag_tensor* value,
     if (value == NULL) return NULL;
     tensor* output = keepdim ? keep_dim(value->value, dim) : remove_dim(value->value, dim);
     if (output == NULL) return NULL;
-    reduction_context* context = (reduction_context*)malloc(sizeof(*context));
+    reduction_context* context = (reduction_context*)tensor_profile_malloc(sizeof(*context), TENSOR_ALLOC_GRAPH);
     if (context == NULL) { t_free(output); return NULL; }
     context->dim = dim;
     context->keepdim = keepdim != 0;

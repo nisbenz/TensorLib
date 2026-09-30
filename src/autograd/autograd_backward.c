@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdlib.h>
+#include "../tensor/tensor_alloc_internal.h"
 #include <string.h>
 #include <time.h>
 
@@ -27,6 +28,18 @@ typedef struct {
 
 static int backward_stats_enabled;
 static ag_backward_stats backward_stats;
+
+static void record_operation_memory(int operation, const tensor_alloc_stats* before)
+{
+    tensor_alloc_stats after;
+    tensor_alloc_stats_read(&after);
+    backward_stats.operation_copied_bytes[operation] +=
+        after.copied_bytes - before->copied_bytes;
+    size_t bytes = after.allocated_bytes - before->allocated_bytes;
+    for (int kind = 0; kind < TENSOR_ALLOC_AUX_KINDS; ++kind)
+        bytes += after.auxiliary_bytes[kind] - before->auxiliary_bytes[kind];
+    backward_stats.operation_allocated_bytes[operation] += bytes;
+}
 
 static double backward_now(void)
 {
@@ -75,8 +88,8 @@ static void sum_contiguous_suffix(const float* source,
     }
 #ifdef _OPENMP
     if (outer_count >= threads * 4 && result_count <= (1 << 14)) {
-        float* partials = (float*)calloc(
-            (size_t)threads * (size_t)result_count, sizeof(float));
+        float* partials = (float*)tensor_profile_calloc(
+            (size_t)threads * (size_t)result_count, sizeof(float), TENSOR_ALLOC_GRAPH);
         if (partials != NULL) {
 #pragma omp parallel num_threads(threads)
             {
@@ -193,8 +206,8 @@ void ag_backward_stats_record_matmul(int packed_dinput, int fast_dweight)
 static int append_tensor(tensor_list* list, ag_tensor* value) {
     if (list->count == list->capacity) {
         int capacity = list->capacity == 0 ? 16 : list->capacity * 2;
-        ag_tensor** values = (ag_tensor**)realloc(list->values,
-                                                  (size_t)capacity * sizeof(*values));
+        ag_tensor** values = (ag_tensor**)tensor_profile_realloc(list->values,
+                                                  (size_t)capacity * sizeof(*values), TENSOR_ALLOC_GRAPH);
         if (values == NULL) return 1;
         list->values = values;
         list->capacity = capacity;
@@ -206,8 +219,8 @@ static int append_tensor(tensor_list* list, ag_tensor* value) {
 static int append_node(node_list* list, ag_node* node) {
     if (list->count == list->capacity) {
         int capacity = list->capacity == 0 ? 16 : list->capacity * 2;
-        ag_node** values = (ag_node**)realloc(list->values,
-                                              (size_t)capacity * sizeof(*values));
+        ag_node** values = (ag_node**)tensor_profile_realloc(list->values,
+                                              (size_t)capacity * sizeof(*values), TENSOR_ALLOC_GRAPH);
         if (values == NULL) return 1;
         list->values = values;
         list->capacity = capacity;
@@ -218,8 +231,8 @@ static int append_node(node_list* list, ag_node* node) {
 
 static int collect_graph(ag_tensor* value, tensor_list* tensors, node_list* nodes) {
     if (value == NULL || value->graph_index >= 0) return value == NULL;
-    value->graph_index = tensors->count;
     if (append_tensor(tensors, value) != 0) return 1;
+    value->graph_index = tensors->count - 1;
     if (value->creator == NULL) return 0;
     for (int i = 0; i < value->creator->input_count; ++i) {
         if (collect_graph(value->creator->inputs[i], tensors, nodes) != 0) return 1;
@@ -288,7 +301,7 @@ tensor* ag_sum_to_shape(const tensor* source, const tensor* target, float scale)
     }
 
     int* coords = source->ndim > 0
-                ? (int*)calloc((size_t)source->ndim, sizeof(*coords)) : NULL;
+                ? (int*)tensor_profile_calloc((size_t)source->ndim, sizeof(*coords), TENSOR_ALLOC_GRAPH) : NULL;
     if (backward_stats_enabled) {
         ++backward_stats.reduction_generic_calls;
         backward_stats.reduction_generic_elements +=
@@ -556,7 +569,7 @@ int ag_backward_with_grad_ex(ag_tensor* output,
                            (size_t)contribution_capacity;
     size_t workspace_bytes = pointer_count * sizeof(tensor*) +
         (size_t)reduction_coord_capacity * sizeof(int);
-    workspace = calloc(1, workspace_bytes);
+    workspace = tensor_profile_calloc(1, workspace_bytes, TENSOR_ALLOC_GRAPH);
     if (workspace == NULL) goto cleanup;
     pass_gradients = (tensor**)workspace;
     merged_gradients = pass_gradients + tensors.count;
@@ -573,6 +586,9 @@ int ag_backward_with_grad_ex(ag_tensor* output,
         ag_node* node = nodes.values[node_index];
         int gradient_index = node->output->graph_index;
         if (gradient_index < 0 || pass_gradients[gradient_index] == NULL) goto cleanup;
+        int profiling = backward_stats_enabled;
+        tensor_alloc_stats memory_before;
+        if (profiling) tensor_alloc_stats_read(&memory_before);
 
         if (node->operation == AG_OP_SLICE && node->input_count == 1 &&
             node->inputs[0]->requires_grad) {
@@ -582,10 +598,15 @@ int ag_backward_with_grad_ex(ag_tensor* output,
                 ag_accumulate_slice_gradient(
                     node, pass_gradients[gradient_index],
                     &pass_gradients[destination]) == 0) {
-                if (backward_stats_enabled) {
+                if (profiling) {
                     backward_stats.operation_seconds[AG_OP_SLICE] +=
                         backward_elapsed(started);
                     ++backward_stats.operation_calls[AG_OP_SLICE];
+                    record_operation_memory(AG_OP_SLICE, &memory_before);
+                }
+                if (options->retention == AG_GRAD_RETAIN_LEAVES) {
+                    t_free(pass_gradients[gradient_index]);
+                    pass_gradients[gradient_index] = NULL;
                 }
                 continue;
             }
@@ -598,12 +619,13 @@ int ag_backward_with_grad_ex(ag_tensor* output,
         started = backward_stats_enabled ? backward_now() : 0.0;
         int backward_status =
             node->backward(node, pass_gradients[gradient_index], contributions);
-        if (backward_stats_enabled) {
+        if (profiling) {
             int operation = (int)node->operation;
             if (operation >= 0 && operation < AG_BACKWARD_OP_COUNT) {
                 backward_stats.operation_seconds[operation] +=
                     backward_elapsed(started);
                 ++backward_stats.operation_calls[operation];
+                record_operation_memory(operation, &memory_before);
             }
         }
         if (backward_status != 0) {
@@ -629,6 +651,12 @@ int ag_backward_with_grad_ex(ag_tensor* output,
                 goto cleanup;
             }
             contributions[input_index] = NULL;
+        }
+        /* Reverse topological order has consumed this intermediate gradient.
+         * Shared tensor storage remains alive through any propagated views. */
+        if (options->retention == AG_GRAD_RETAIN_LEAVES) {
+            t_free(pass_gradients[gradient_index]);
+            pass_gradients[gradient_index] = NULL;
         }
     }
 

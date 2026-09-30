@@ -197,6 +197,15 @@ foreach(test_name IN LISTS TENSORLIB_TESTS)
 endforeach()
 
 # Each policy case starts a fresh process with an isolated ENV snapshot.
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    add_executable(test_autograd_allocation_failure
+        tests/unit/autograd/test_autograd_allocation_failure.c)
+    target_link_libraries(test_autograd_allocation_failure PRIVATE tensorlib)
+    target_link_options(test_autograd_allocation_failure PRIVATE
+        "-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc")
+    add_test(NAME test_autograd_allocation_failure COMMAND test_autograd_allocation_failure)
+endif()
+
 add_executable(test_parallel tests/unit/tensor/test_parallel.c)
 target_include_directories(test_parallel PRIVATE tests/fixtures)
 target_link_libraries(test_parallel PRIVATE tensorlib)

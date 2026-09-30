@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdlib.h>
+#include "../tensor/tensor_alloc_internal.h"
 
 #include "./../../include/tensorlib/autograd_internal.h"
 #include "../tensor/parallel.h"
@@ -166,7 +167,7 @@ static ag_tensor* apply_scalar(const ag_tensor* value,
     if (value == NULL || forward == NULL || backward == NULL) return NULL;
     output = forward(value->value, scalar);
     if (output == NULL) return NULL;
-    context = (scalar_context*)malloc(sizeof(*context));
+    context = (scalar_context*)tensor_profile_malloc(sizeof(*context), TENSOR_ALLOC_GRAPH);
     if (context == NULL) {
         t_free(output);
         return NULL;
@@ -274,7 +275,7 @@ ag_tensor* ag_pow(const ag_tensor* value, float exponent) {
     if (value == NULL) return NULL;
     tensor* output = t_pow(value->value, exponent);
     if (output == NULL) return NULL;
-    pow_context* context = (pow_context*)malloc(sizeof(*context));
+    pow_context* context = (pow_context*)tensor_profile_malloc(sizeof(*context), TENSOR_ALLOC_GRAPH);
     if (context == NULL) {
         t_free(output);
         return NULL;
@@ -433,7 +434,7 @@ static int backward_gelu(const ag_node* node,
         }
     } else {
         int* coords = input->ndim > 0
-                    ? (int*)calloc((size_t)input->ndim, sizeof(*coords)) : NULL;
+                    ? (int*)tensor_profile_calloc((size_t)input->ndim, sizeof(*coords), TENSOR_ALLOC_GRAPH) : NULL;
         if (input->ndim > 0 && coords == NULL) {
             t_free(result);
             return 1;
