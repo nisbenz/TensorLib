@@ -60,7 +60,7 @@ Run `build-bench/bench_tensorlib --help` for the accepted command-line options.
 | `full` | 15 | 100 ms | 250 ms | Results intended for comparison or publication |
 | `fixed` | 5 | none | none | Identical five-step training sequences across implementations |
 
-The harness first times one operation, then batches up to 1,000,000 iterations
+The quick/full harness first times one operation, then batches up to 1,000,000 iterations
 per sample to reach the profile's minimum duration. It reports time per
 operation. The median is the primary result; p95 is useful for spotting noisy
 runs. Do not treat `smoke` timings as performance measurements.
@@ -92,13 +92,16 @@ make benchmark-full BUILD_DIR=build-bench \
 
 ## Suites and measurement boundaries
 
-Select one suite with `--suite kernels|autograd|nn|scaling`, or use `all`.
+Select one suite with `--suite kernels|autograd|nn|command|training|matmul|scaling|policy`,
+or use `all`. Use `training` for the designated model acceptance workloads.
 
 | Suite | Representative cases | What the timed region includes |
 |-------|----------------------|--------------------------------|
 | `kernels` | allocation, views, copies, broadcasting, GELU, reductions, gather, matmul, RHS packing | Public API call and output allocation/free |
 | `autograd` | composed elementwise forward; forward plus backward | Dynamic graph construction; backward case also includes gradient computation, zeroing, and graph cleanup |
 | `nn` | Linear, LayerNorm, attention, decoder block, MNIST MLP, TinyLM | Eager forward graph construction; training rows include loss, backward, optimizer step, and zero-grad |
+| `training` | MNIST MLP batch 64, TinyLM batch 4, CommandLM batches 1/16 | Complete training calls at every requested thread count, including release and weight updates |
+| `matmul` | Linear forward, repacking, dinput/dweight, packing, narrow/tail shapes and attention gradients | Multiplication or the explicitly named packing/copy/reduction boundary; reusable inputs outside timing |
 | `scaling` | large add, GELU, square matmul, TinyLM forward/train | The same workload across the requested OpenMP thread ladder, plus derived speedup data for tensor kernels |
 
 The Python runner records `TENSORLIB_*` and `OMP_*` values in the CSV
@@ -110,9 +113,16 @@ remain inside it. Forward-only NN rows are labeled `forward;graph-build`:
 TensorLib has no no-grad execution mode, and these rows should not be described
 as inference-only latency.
 
-The `kernels`, `autograd`, and `nn` suites currently run their cases with one
-requested thread. Use the `scaling` suite to study thread count. Reductions and
-gather are serial today and identify that fact in the `layout` column.
+Most `kernels`, `autograd`, and component `nn` cases use the first requested
+thread count. Use `training` or `scaling` for complete model ladders. In `matmul`,
+forward, forward-repack and direct dweight span the ladder; dinput, legacy
+dweight, packing, bias reduction and attention use its first count. Reductions
+and gather are serial today and identify that fact in the `layout` column.
+
+`forward_repack` invalidates and rebuilds a weight pack every call; it does not
+perform an optimizer update. The `training` suite supplies that acceptance
+boundary. The isolated projection shapes use 4×128 input rows, including width
+193/output 257 tails and outputs 17/7; they are not all CommandLM shapes.
 
 ## Thread scaling
 
@@ -174,7 +184,7 @@ The native and reference runners share these columns:
 |--------|---------|
 | `suite`, `case` | Workload group and stable case name |
 | `shape`, `layout` | Symbolic dimensions and relevant memory/execution layout |
-| `profile` | `smoke`, `quick`, or `full` |
+| `profile` | `smoke`, `quick`, `full`, or `fixed` |
 | `requested_threads`, `actual_threads` | Requested OpenMP/library setting and observed team size |
 | `median_seconds`, `p95_seconds` | Per-operation timing statistics |
 | `metric`, `value` | Unit and derived throughput, or milliseconds per call |
@@ -188,6 +198,16 @@ parallel efficiency in `checksum`; their raw timing columns are zero. TinyLM
 scaling speedup is currently printed to the console but is not emitted as a
 separate derived CSV row, so calculate it from its `status=ok` timing rows when
 processing CSV data.
+
+The fixed training profile also appears as `profile=fixed`. Diagnostic rows
+report storage allocation/live/peak bytes, requested auxiliary allocation counts
+and bytes for metadata/graphs/matmul scratch, and logical clone/QKV assembly
+copy bytes. Auxiliary reallocations count request sizes, not net live bytes.
+The live/peak figures cover tensor storage only. These counters exclude some
+NN/optimizer allocations, allocator overhead and other memory traffic.
+Backward per-operation byte deltas cover the operation callback; engine merges
+and reductions have separate timing rows. Run primary throughput separately
+with `--no-diagnostics`.
 
 Metric formulas are conventional effective rates:
 
@@ -226,6 +246,30 @@ For results that others can reproduce:
 
 CI runs only the smoke profile. The project intentionally has no fixed
 performance threshold because shared CI hosts do not provide stable timing.
+
+## CPU performance campaigns
+
+Use `scripts/compare_training.py` for at least three alternating fresh-process
+pairs from frozen baseline/candidate executables. It rejects differing model
+inventories, fixed training sequences, loss checksums, host/affinity/environment
+metadata, and changing executable hashes. A median regression above 5% returns
+failure. Inspect paired ratio ranges and process spread before claiming gains.
+
+Use `scripts/sweep_matmul.py` from a clean tracked checkout to build and validate
+private MC/KC/NC blocking variants, then rotate measurements across at least
+three fresh processes. The default 4×16 AVX2 microkernel remains fixed. Build
+controls are private experiments, not supported runtime tuning APIs. Keep the
+portable fallback and validate selected blocks in matched full training before
+changing defaults.
+
+Use `scripts/compare_thread_profiles.py` with an explicit JSON profile list to
+separate placement from caps and thresholds. Each item names `name`, `threads`,
+`reference`, and an `environment` object containing only `OMP_*`/`TENSORLIB_*`.
+It measures the same executable and fixed model sequence in rotated fresh
+processes, validates host/binary/loss consistency, and reports each profile
+against its named reference. Affinity must be verified before using CPU IDs
+from another machine. The [September 30 campaign](cpu-performance-campaign.md)
+contains local results and the exact Intel profile definitions.
 
 ## Adding a benchmark case
 
