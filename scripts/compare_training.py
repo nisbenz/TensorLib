@@ -39,9 +39,18 @@ def summarize(pairs):
             raise ValueError("Benchmark inventories differ")
     summaries = []
     for key in keys:
+        if key[4] != "fixed":
+            raise ValueError("Paired training comparisons require the fixed profile")
         ratios, before, after = [], [], []
         for left, right in pairs:
             a, b = left[key], right[key]
+            for field in ("os", "cpu", "thread_environment", "process_affinity"):
+                if a.get(field) != b.get(field):
+                    raise ValueError(f"Measurement environments differ: {field}")
+            for rows, reference in ((left, baseline), (right, candidate)):
+                for field in ("executable_sha256", "source_revision"):
+                    if rows[key].get(field) != reference[key].get(field):
+                        raise ValueError(f"Executable changed between repeats: {field}")
             if a["iterations"] != b["iterations"]:
                 raise ValueError(f"Training sequences differ: {key}")
             if not math.isclose(float(a["checksum"]), float(b["checksum"]),

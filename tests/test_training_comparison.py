@@ -23,9 +23,13 @@ class TrainingComparisonTests(unittest.TestCase):
         row = comparison.summarize([(before, after)] * 3)[0]
         self.assertAlmostEqual(row["change_percent"], -20)
         for bad in ({}, {key: dict(after[key], iterations="2")},
-                    {key: dict(after[key], checksum="9")}):
+                    {key: dict(after[key], checksum="9")},
+                    {key: dict(after[key], cpu="different CPU")}):
             with self.assertRaises(ValueError):
                 comparison.summarize([(before, bad)] * 3)
+        changed = {key: dict(after[key], executable_sha256="different binary")}
+        with self.assertRaises(ValueError):
+            comparison.summarize([(before, after), (before, changed), (before, after)])
 
     @unittest.skipUnless(EXECUTABLE, "benchmark executable was not supplied")
     def test_training_thread_inventory_and_diagnostic_boundary(self):
