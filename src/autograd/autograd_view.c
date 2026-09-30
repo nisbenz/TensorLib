@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include "../tensor/tensor_alloc_internal.h"
 #include <string.h>
 
 #include "./../../include/tensorlib/autograd_internal.h"
@@ -71,8 +72,8 @@ static int backward_slice(const ag_node* node,
         input_gradients[0] = gradient;
         return 0;
     }
-    int* output_coords = (int*)calloc((size_t)output_gradient->ndim, sizeof(int));
-    int* input_coords = (int*)calloc((size_t)input->ndim, sizeof(int));
+    int* output_coords = (int*)tensor_profile_calloc((size_t)output_gradient->ndim, sizeof(int), TENSOR_ALLOC_GRAPH);
+    int* input_coords = (int*)tensor_profile_calloc((size_t)input->ndim, sizeof(int), TENSOR_ALLOC_GRAPH);
     if (output_coords == NULL || input_coords == NULL) {
         t_free(gradient); free(output_coords); free(input_coords);
         return 1;
@@ -176,7 +177,7 @@ ag_tensor* ag_transpose(const ag_tensor* value, int dim0, int dim1) {
     if (value == NULL) return NULL;
     tensor* output = t_transpose(value->value, dim0, dim1);
     if (output == NULL) return NULL;
-    transpose_context* context = (transpose_context*)malloc(sizeof(*context));
+    transpose_context* context = (transpose_context*)tensor_profile_malloc(sizeof(*context), TENSOR_ALLOC_GRAPH);
     if (context == NULL) { t_free(output); return NULL; }
     context->dim0 = dim0;
     context->dim1 = dim1;
@@ -189,7 +190,7 @@ ag_tensor* ag_slice(const ag_tensor* value, int dim, int start, int end) {
     if (value == NULL) return NULL;
     tensor* output = t_slice(value->value, dim, start, end);
     if (output == NULL) return NULL;
-    slice_context* context = (slice_context*)malloc(sizeof(*context));
+    slice_context* context = (slice_context*)tensor_profile_malloc(sizeof(*context), TENSOR_ALLOC_GRAPH);
     if (context == NULL) { t_free(output); return NULL; }
     context->dim = dim;
     context->start = start;

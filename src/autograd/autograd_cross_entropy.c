@@ -87,12 +87,12 @@ ag_tensor* ag_cross_entropy(const ag_tensor* logits, const tensor* targets)
     }
     classes = logits->value->dims[logits->value->ndim - 1];
     rows = tensor_numel((tensor*)targets);
-    context = (cross_entropy_context*)calloc(1, sizeof(*context));
+    context = (cross_entropy_context*)tensor_profile_calloc(1, sizeof(*context), TENSOR_ALLOC_GRAPH);
     output = t_alloc(0, NULL);
     if (context == NULL || output == NULL) goto fail;
     context->rows = rows;
     context->classes = classes;
-    context->targets = (int*)malloc((size_t)rows * sizeof(*context->targets));
+    context->targets = (int*)tensor_profile_malloc((size_t)rows * sizeof(*context->targets), TENSOR_ALLOC_GRAPH);
     if (context->targets == NULL) goto fail;
     for (int row = 0; row < rows; ++row) {
         float target = targets->storage->data[tensor_flat_index(targets, row)];

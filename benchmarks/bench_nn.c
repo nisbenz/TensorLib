@@ -24,6 +24,7 @@ typedef struct {
     double* phase_samples[6];
     int phase_sample_count;
     int phase_sample_capacity;
+    unsigned long measured_calls;
     tensor_alloc_stats allocation_stats;
     ag_backward_stats backward_stats;
     size_t allocation_baseline_bytes;
@@ -131,6 +132,7 @@ static int nn_operation(void* opaque, double* checksum)
         *checksum += output->value->storage->data[output->value->offset];
     }
     status = 0;
+    if (context->train) ++context->measured_calls;
 
 cleanup:
     if (context->train) started = phase_now(context);
@@ -154,6 +156,7 @@ static void reset_phase_samples(void* opaque)
 {
     nn_bench_context* context = (nn_bench_context*)opaque;
     context->phase_sample_count = 0;
+    context->measured_calls = 0;
     tensor_alloc_stats_reset_counters();
 }
 
@@ -164,9 +167,27 @@ static void report_allocation_stats(const bench_options* options,
                                     const nn_bench_context* context)
 {
     char name[64];
-    double calls = context->phase_sample_count > 0
-                 ? (double)context->phase_sample_count : 1.0;
+    double calls = context->measured_calls > 0
+                 ? (double)context->measured_calls : 1.0;
     const tensor_alloc_stats* stats = &context->allocation_stats;
+    static const char* kinds[] = {"metadata", "graph", "matmul_buffer"};
+    for (int kind = 0; kind < TENSOR_ALLOC_AUX_KINDS; ++kind) {
+        snprintf(name, sizeof(name), "%s_%s_allocations",
+                 context->metric_prefix, kinds[kind]);
+        bench_record_scalar(options, csv, "nn_phase", name,
+            context->metric_shape, "instrumented-auxiliary", "alloc/call",
+            requested_threads, measured_threads,
+            (double)stats->auxiliary_allocations[kind] / calls);
+        snprintf(name, sizeof(name), "%s_%s_bytes", context->metric_prefix, kinds[kind]);
+        bench_record_scalar(options, csv, "nn_phase", name,
+            context->metric_shape, "instrumented-auxiliary", "bytes/call",
+            requested_threads, measured_threads,
+            (double)stats->auxiliary_bytes[kind] / calls);
+    }
+    snprintf(name, sizeof(name), "%s_copied_bytes", context->metric_prefix);
+    bench_record_scalar(options, csv, "nn_phase", name,
+        context->metric_shape, "clone+projection-copy", "bytes/call",
+        requested_threads, measured_threads, (double)stats->copied_bytes / calls);
     snprintf(name, sizeof(name), "%s_allocations", context->metric_prefix);
     bench_record_scalar(options, csv, "nn_phase", name,
                         context->metric_shape, "isolated-phase",
@@ -592,6 +613,7 @@ static int run_decoder_case(const bench_options* options,
     }
     if (diagnostics && allocate_phase_samples(&context, options->profile.sample_count) != 0) {
         destroy_context(&context);
+        tensor_alloc_stats_enable(0);
         return 1;
     }
     if (diagnostics) {

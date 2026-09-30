@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdlib.h>
+#include "../tensor/tensor_alloc_internal.h"
 #include <string.h>
 #include <time.h>
 
@@ -75,8 +76,8 @@ static void sum_contiguous_suffix(const float* source,
     }
 #ifdef _OPENMP
     if (outer_count >= threads * 4 && result_count <= (1 << 14)) {
-        float* partials = (float*)calloc(
-            (size_t)threads * (size_t)result_count, sizeof(float));
+        float* partials = (float*)tensor_profile_calloc(
+            (size_t)threads * (size_t)result_count, sizeof(float), TENSOR_ALLOC_GRAPH);
         if (partials != NULL) {
 #pragma omp parallel num_threads(threads)
             {
@@ -193,8 +194,8 @@ void ag_backward_stats_record_matmul(int packed_dinput, int fast_dweight)
 static int append_tensor(tensor_list* list, ag_tensor* value) {
     if (list->count == list->capacity) {
         int capacity = list->capacity == 0 ? 16 : list->capacity * 2;
-        ag_tensor** values = (ag_tensor**)realloc(list->values,
-                                                  (size_t)capacity * sizeof(*values));
+        ag_tensor** values = (ag_tensor**)tensor_profile_realloc(list->values,
+                                                  (size_t)capacity * sizeof(*values), TENSOR_ALLOC_GRAPH);
         if (values == NULL) return 1;
         list->values = values;
         list->capacity = capacity;
@@ -206,8 +207,8 @@ static int append_tensor(tensor_list* list, ag_tensor* value) {
 static int append_node(node_list* list, ag_node* node) {
     if (list->count == list->capacity) {
         int capacity = list->capacity == 0 ? 16 : list->capacity * 2;
-        ag_node** values = (ag_node**)realloc(list->values,
-                                              (size_t)capacity * sizeof(*values));
+        ag_node** values = (ag_node**)tensor_profile_realloc(list->values,
+                                              (size_t)capacity * sizeof(*values), TENSOR_ALLOC_GRAPH);
         if (values == NULL) return 1;
         list->values = values;
         list->capacity = capacity;
@@ -288,7 +289,7 @@ tensor* ag_sum_to_shape(const tensor* source, const tensor* target, float scale)
     }
 
     int* coords = source->ndim > 0
-                ? (int*)calloc((size_t)source->ndim, sizeof(*coords)) : NULL;
+                ? (int*)tensor_profile_calloc((size_t)source->ndim, sizeof(*coords), TENSOR_ALLOC_GRAPH) : NULL;
     if (backward_stats_enabled) {
         ++backward_stats.reduction_generic_calls;
         backward_stats.reduction_generic_elements +=
@@ -556,7 +557,7 @@ int ag_backward_with_grad_ex(ag_tensor* output,
                            (size_t)contribution_capacity;
     size_t workspace_bytes = pointer_count * sizeof(tensor*) +
         (size_t)reduction_coord_capacity * sizeof(int);
-    workspace = calloc(1, workspace_bytes);
+    workspace = tensor_profile_calloc(1, workspace_bytes, TENSOR_ALLOC_GRAPH);
     if (workspace == NULL) goto cleanup;
     pass_gradients = (tensor**)workspace;
     merged_gradients = pass_gradients + tensors.count;

@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "tensor_alloc_internal.h"
 #include <string.h>
 #if defined(_WIN32)
 #include <malloc.h>
@@ -70,9 +71,11 @@ static int matmul_2d_packed_rhs_avx2(const tensor* lhs, int lhs_base,
 
 static void* matmul_aligned_malloc(size_t bytes) {
 #if defined(_WIN32)
-    return _aligned_malloc(bytes, 32);
+    void* result = _aligned_malloc(bytes, 32);
+    if (result != NULL) tensor_alloc_record_auxiliary(TENSOR_ALLOC_MATMUL, bytes);
+    return result;
 #else
-    return malloc(bytes);
+    return tensor_profile_malloc(bytes, TENSOR_ALLOC_MATMUL);
 #endif
 }
 
@@ -129,7 +132,7 @@ tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs) {
     if (inner_stride <= 0 || column_stride <= 0) return NULL;
 
     tensor_matmul_packed_rhs* packed =
-        (tensor_matmul_packed_rhs*)calloc(1, sizeof(*packed));
+        (tensor_matmul_packed_rhs*)tensor_profile_calloc(1, sizeof(*packed), TENSOR_ALLOC_MATMUL);
     if (packed == NULL) return NULL;
     packed->ref_count = 1;
 
@@ -145,7 +148,7 @@ tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs) {
     }
 
     if (batch_rank > 0) {
-        packed->batch_dims = (int*)malloc((size_t)batch_rank * sizeof(int));
+        packed->batch_dims = (int*)tensor_profile_malloc((size_t)batch_rank * sizeof(int), TENSOR_ALLOC_MATMUL);
         if (packed->batch_dims == NULL) {
             t_free_matmul_packed_rhs(packed);
             return NULL;
@@ -367,7 +370,7 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
                    ? lhs_info.batch_rank : rhs->batch_rank;
     int* batch_dims = NULL;
     if (batch_ndim > 0) {
-        batch_dims = (int*)malloc((size_t)batch_ndim * sizeof(int));
+        batch_dims = (int*)tensor_profile_malloc((size_t)batch_ndim * sizeof(int), TENSOR_ALLOC_MATMUL);
         if (batch_dims == NULL) return NULL;
     }
 
@@ -382,7 +385,7 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
     }
 
     int output_dims_count = batch_ndim + 2;
-    int* output_dims = (int*)malloc((size_t)output_dims_count * sizeof(int));
+    int* output_dims = (int*)tensor_profile_malloc((size_t)output_dims_count * sizeof(int), TENSOR_ALLOC_MATMUL);
     if (output_dims == NULL) {
         free(batch_dims);
         return NULL;
@@ -1062,6 +1065,7 @@ static tensor* try_contiguous_projected_rhs_gradient(
         memcpy(result->storage->data + (size_t)projection * (size_t)inner *
                    (size_t)columns,
                matrix->storage->data + matrix->offset, matrix_bytes);
+        tensor_alloc_record_copy(matrix_bytes);
         t_free(matrix); t_free(gradient_matrix); t_free(gradient_slice);
     }
     t_free(lhs_transpose); t_free(lhs_matrix);
@@ -1344,7 +1348,7 @@ tensor* t_matmul(tensor* a, tensor* b) {
                    : b_info.batch_rank;
     int* batch_dims = NULL;
     if (batch_ndim > 0) {
-        batch_dims = (int*)malloc((size_t)batch_ndim * sizeof(int));
+        batch_dims = (int*)tensor_profile_malloc((size_t)batch_ndim * sizeof(int), TENSOR_ALLOC_MATMUL);
         if (batch_dims == NULL) return NULL;
     }
 
@@ -1363,7 +1367,7 @@ tensor* t_matmul(tensor* a, tensor* b) {
     int output_ndim = batch_ndim + 2 - a_info.is_vector - b_info.is_vector;
     int* output_dims = NULL;
     if (output_ndim > 0) {
-        output_dims = (int*)malloc((size_t)output_ndim * sizeof(int));
+        output_dims = (int*)tensor_profile_malloc((size_t)output_ndim * sizeof(int), TENSOR_ALLOC_MATMUL);
         if (output_dims == NULL) {
             free(batch_dims);
             return NULL;
