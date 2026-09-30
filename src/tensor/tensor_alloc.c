@@ -12,6 +12,52 @@ static volatile unsigned long long stats_frees;
 static volatile size_t stats_allocated_bytes;
 static volatile size_t stats_live_bytes;
 static volatile size_t stats_peak_live_bytes;
+static volatile unsigned long long stats_aux_allocations[TENSOR_ALLOC_AUX_KINDS];
+static volatile size_t stats_aux_bytes[TENSOR_ALLOC_AUX_KINDS];
+static volatile size_t stats_copied_bytes;
+
+void tensor_alloc_record_auxiliary(int kind, size_t bytes)
+{
+    if (!stats_enabled || kind < 0 || kind >= TENSOR_ALLOC_AUX_KINDS) return;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    ++stats_aux_allocations[kind];
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    stats_aux_bytes[kind] += bytes;
+}
+
+void tensor_alloc_record_copy(size_t bytes)
+{
+    if (!stats_enabled) return;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    stats_copied_bytes += bytes;
+}
+
+void* tensor_profile_malloc(size_t bytes, int kind)
+{
+    void* result = malloc(bytes);
+    if (result != NULL) tensor_alloc_record_auxiliary(kind, bytes);
+    return result;
+}
+
+void* tensor_profile_calloc(size_t count, size_t bytes, int kind)
+{
+    void* result = calloc(count, bytes);
+    if (result != NULL) tensor_alloc_record_auxiliary(kind, count * bytes);
+    return result;
+}
+
+void* tensor_profile_realloc(void* pointer, size_t bytes, int kind)
+{
+    void* result = realloc(pointer, bytes);
+    if (result != NULL) tensor_alloc_record_auxiliary(kind, bytes);
+    return result;
+}
 
 static void record_storage_alloc(size_t bytes)
 {
@@ -61,6 +107,11 @@ void tensor_alloc_stats_reset(void)
     stats_allocated_bytes = 0;
     stats_live_bytes = 0;
     stats_peak_live_bytes = 0;
+    for (int kind = 0; kind < TENSOR_ALLOC_AUX_KINDS; ++kind) {
+        stats_aux_allocations[kind] = 0;
+        stats_aux_bytes[kind] = 0;
+    }
+    stats_copied_bytes = 0;
 }
 
 void tensor_alloc_stats_reset_counters(void)
@@ -69,6 +120,11 @@ void tensor_alloc_stats_reset_counters(void)
     stats_frees = 0;
     stats_allocated_bytes = 0;
     stats_peak_live_bytes = stats_live_bytes;
+    for (int kind = 0; kind < TENSOR_ALLOC_AUX_KINDS; ++kind) {
+        stats_aux_allocations[kind] = 0;
+        stats_aux_bytes[kind] = 0;
+    }
+    stats_copied_bytes = 0;
 }
 
 void tensor_alloc_stats_read(tensor_alloc_stats* result)
@@ -79,6 +135,11 @@ void tensor_alloc_stats_read(tensor_alloc_stats* result)
     result->allocated_bytes = stats_allocated_bytes;
     result->live_bytes = stats_live_bytes;
     result->peak_live_bytes = stats_peak_live_bytes;
+    for (int kind = 0; kind < TENSOR_ALLOC_AUX_KINDS; ++kind) {
+        result->auxiliary_allocations[kind] = stats_aux_allocations[kind];
+        result->auxiliary_bytes[kind] = stats_aux_bytes[kind];
+    }
+    result->copied_bytes = stats_copied_bytes;
 }
 
 void add_ref_count(Storage* a, tensor* b) {
@@ -92,7 +153,7 @@ Storage* s_alloc(int ndim, const int* dims) {
     size_t count;
     if (!tensor_checked_numel(ndim, dims, &count)) return NULL;
 
-    Storage* s = (Storage*)malloc(sizeof(Storage));
+    Storage* s = (Storage*)tensor_profile_malloc(sizeof(Storage), TENSOR_ALLOC_METADATA);
     if (s == NULL) return NULL;
     s->ref_count = 1;
     s->size = (int)count;
@@ -111,12 +172,12 @@ tensor* t_alloc(int ndim, const int* dims) {
     if (!tensor_checked_numel(ndim, dims, &count)) return NULL;
     (void)count;
 
-    tensor* a = (tensor*)calloc(1, sizeof(tensor));
+    tensor* a = (tensor*)tensor_profile_calloc(1, sizeof(tensor), TENSOR_ALLOC_METADATA);
     if (a == NULL) return NULL;
     a->ndim = ndim;
 
     if (ndim > 0) {
-        int* strides = (int*)malloc((size_t)ndim * sizeof(int));
+        int* strides = (int*)tensor_profile_malloc((size_t)ndim * sizeof(int), TENSOR_ALLOC_METADATA);
         if (strides == NULL) {
             t_free(a);
             return NULL;
@@ -165,7 +226,7 @@ int init_t(tensor* c, tensor* ref) {
     c->ndim = ref->ndim;
     c->offset = 0;
 
-    c->storage = (Storage*)malloc(sizeof(Storage));
+    c->storage = (Storage*)tensor_profile_malloc(sizeof(Storage), TENSOR_ALLOC_METADATA);
     if (c->storage == NULL) return 1;
     c->storage->ref_count = 1;
     c->storage->size = total_elements;
@@ -179,7 +240,7 @@ int init_t(tensor* c, tensor* ref) {
     record_storage_alloc((size_t)total_elements * sizeof(float));
 
     if (ref->ndim > 0) {
-        int* strides = (int*)malloc((size_t)ref->ndim * sizeof(int));
+        int* strides = (int*)tensor_profile_malloc((size_t)ref->ndim * sizeof(int), TENSOR_ALLOC_METADATA);
         if (strides == NULL) {
             free(c->storage->data);
             free(c->storage);
@@ -229,6 +290,7 @@ tensor* t_clone(tensor* t) {
 #else
         memcpy(destination, source, (size_t)total_elements * sizeof(float));
 #endif
+        tensor_alloc_record_copy((size_t)total_elements * sizeof(float));
         return a;
     }
 
@@ -258,6 +320,7 @@ tensor* t_clone(tensor* t) {
                    t->storage->data + source,
                    (size_t)inner * sizeof(float));
         }
+        tensor_alloc_record_copy((size_t)total_elements * sizeof(float));
         return a;
     }
 
@@ -292,10 +355,11 @@ tensor* t_clone(tensor* t) {
                 }
             }
         }
+        tensor_alloc_record_copy((size_t)total_elements * sizeof(float));
         return a;
     }
 
-    int* coords = (int*)calloc((size_t)t->ndim, sizeof(int));
+    int* coords = (int*)tensor_profile_calloc((size_t)t->ndim, sizeof(int), TENSOR_ALLOC_METADATA);
     int src_idx = t->offset;
     if (t->ndim > 0 && coords == NULL) {
         t_free(a);
@@ -313,6 +377,7 @@ tensor* t_clone(tensor* t) {
         }
     }
     free(coords);
+    tensor_alloc_record_copy((size_t)total_elements * sizeof(float));
     return a;
 }
 
