@@ -247,30 +247,6 @@ For results that others can reproduce:
 CI runs only the smoke profile. The project intentionally has no fixed
 performance threshold because shared CI hosts do not provide stable timing.
 
-## CPU performance campaigns
-
-Use `scripts/compare_training.py` for at least three alternating fresh-process
-pairs from frozen baseline/candidate executables. It rejects differing model
-inventories, fixed training sequences, loss checksums, host/affinity/environment
-metadata, and changing executable hashes. A median regression above 5% returns
-failure. Inspect paired ratio ranges and process spread before claiming gains.
-
-Use `scripts/sweep_matmul.py` from a clean tracked checkout to build and validate
-private MC/KC/NC blocking variants, then rotate measurements across at least
-three fresh processes. The default 4×16 AVX2 microkernel remains fixed. Build
-controls are private experiments, not supported runtime tuning APIs. Keep the
-portable fallback and validate selected blocks in matched full training before
-changing defaults.
-
-Use `scripts/compare_thread_profiles.py` with an explicit JSON profile list to
-separate placement from caps and thresholds. Each item names `name`, `threads`,
-`reference`, and an `environment` object containing only `OMP_*`/`TENSORLIB_*`.
-It measures the same executable and fixed model sequence in rotated fresh
-processes, validates host/binary/loss consistency, and reports each profile
-against its named reference. Affinity must be verified before using CPU IDs
-from another machine. The [September 30 campaign](cpu-performance-campaign.md)
-contains local results and the exact Intel profile definitions.
-
 ## Adding a benchmark case
 
 Place the case in the suite that owns its measurement boundary:
