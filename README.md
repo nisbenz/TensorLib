@@ -126,7 +126,6 @@ Comprehensive documentation is available for each component:
 | [**Neural Network Modules**](docs/neural_network_modules.md) | Module system, all layers, loss functions, optimizers, checkpointing |
 | [**Decoder Implementation**](docs/decoder_implementation.md) | GPT-style decoder stack, multi-head attention, causal masking, training guide |
 | [**Benchmark Guide**](docs/benchmarks.md) | Suites, timing methodology, CSV schema, comparisons, and reproducible reporting |
-| [**Performance Notes**](docs/performance.md) | Measurement boundaries, interpretation, and optimization guidance |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and change
 guidelines.
