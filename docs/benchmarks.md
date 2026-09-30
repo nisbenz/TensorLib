@@ -58,11 +58,17 @@ Run `build-bench/bench_tensorlib --help` for the accepted command-line options.
 | `smoke` | 1 | none | none | Correctness and portability checks only |
 | `quick` | 5 | 20 ms | 20 ms | Local development and regression triage |
 | `full` | 15 | 100 ms | 250 ms | Results intended for comparison or publication |
+| `fixed` | 5 | none | none | Identical five-step training sequences across implementations |
 
 The harness first times one operation, then batches up to 1,000,000 iterations
 per sample to reach the profile's minimum duration. It reports time per
 operation. The median is the primary result; p95 is useful for spotting noisy
 runs. Do not treat `smoke` timings as performance measurements.
+
+The `fixed` profile executes exactly five measured calls, with no calibration
+call or warm-up. Use it for matched training comparisons so both processes
+start from the same seeded state and perform the same optimizer/RNG sequence.
+Repeat in fresh processes; the five calls include the first-step packing cost.
 
 Run the full profile with:
 
@@ -223,4 +229,3 @@ and use the shared harness rather than adding a new timer. If a reference case
 is added, keep its shape and timed allocation boundary aligned and document any
 semantic difference. Validate harness changes with `test_bench_harness` and run
 the smoke benchmark before collecting timings.
-

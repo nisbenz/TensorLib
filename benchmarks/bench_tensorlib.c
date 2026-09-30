@@ -12,7 +12,7 @@
 
 static void usage(const char* program)
 {
-    printf("Usage: %s [--profile quick|full] [--suite NAME] "
+    printf("Usage: %s [--profile quick|full|fixed] [--suite NAME] "
            "[--threads LIST] [--csv PATH] [--smoke]\n", program);
     printf("Suites: kernels, autograd, nn, command, scaling, policy, all\n");
 }
@@ -117,7 +117,8 @@ int main(int argc, char** argv)
             options.profile = bench_profile_named("smoke");
         } else if (strcmp(argv[index], "--profile") == 0 && index + 1 < argc) {
             const char* name = argv[++index];
-            if (strcmp(name, "quick") != 0 && strcmp(name, "full") != 0) {
+            if (strcmp(name, "quick") != 0 && strcmp(name, "full") != 0 &&
+                strcmp(name, "fixed") != 0) {
                 usage(argv[0]);
                 return EXIT_FAILURE;
             }
