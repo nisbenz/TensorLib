@@ -511,7 +511,7 @@ static int run_mlp(const bench_options* options, FILE* csv, int batch, int train
         train ? "mnist_mlp_train_step" : "mnist_mlp_forward",
         "[Bx784]->[Bx10]", train ? "forward+loss+backward+sgd" :
         "forward;graph-build", "samples/s", (double)batch,
-        1, &context, &result);
+        options->threads[0], &context, &result);
     destroy_context(&context);
     return status == 1;
 }
