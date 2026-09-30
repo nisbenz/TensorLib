@@ -24,11 +24,12 @@
 #include "../../include/tensorlib/tensor_matmul.h"
 #include "parallel.h"
 #include "tensor_matmul_internal.h"
+#include "tensor_matmul_tuning.h"
 
 enum {
-    TENSORLIB_MATMUL_MC = 64,
-    TENSORLIB_MATMUL_NC = 64,
-    TENSORLIB_MATMUL_KC = 128,
+    TENSORLIB_MATMUL_MC = TENSORLIB_MATMUL_CONFIG_MC,
+    TENSORLIB_MATMUL_NC = TENSORLIB_MATMUL_CONFIG_NC,
+    TENSORLIB_MATMUL_KC = TENSORLIB_MATMUL_CONFIG_KC,
     TENSORLIB_MATMUL_NR = 16,
     TENSORLIB_MATMUL_MR = 4,
     TENSORLIB_MATMUL_MAX_NDIM = 32
@@ -429,8 +430,11 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
         batch_ndim <= TENSORLIB_MATMUL_MAX_NDIM ? task_count : 1);
     size_t workspace_values = (size_t)TENSORLIB_MATMUL_MC *
                               (size_t)TENSORLIB_MATMUL_KC;
-    float* workspaces = (float*)matmul_aligned_malloc(
-        (size_t)threads * workspace_values * sizeof(float));
+    size_t workspace_bytes;
+    int workspace_valid = checked_size_multiply(
+        (size_t)threads, workspace_values * sizeof(float), &workspace_bytes);
+    float* workspaces = workspace_valid
+                      ? (float*)matmul_aligned_malloc(workspace_bytes) : NULL;
 
     if (threads > 1) {
 #ifdef _OPENMP
