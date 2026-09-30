@@ -77,6 +77,12 @@ clocks, allocation counters, and the extra backward profiling step. Run again
 without `--no-diagnostics` for a separate diagnostic profile; do not compare
 its throughput directly with the uninstrumented measurements.
 
+The Python runner records the executable SHA-256, available CMake settings,
+CPU topology, inherited process affinity, thread environment, and checkout
+revision/status. Supply `--source-revision REV` from the clean source used for
+the build; without it the binary's source revision is explicitly `unverified`.
+The current checkout revision alone cannot identify an older executable.
+
 Run the full profile with:
 
 ```sh
