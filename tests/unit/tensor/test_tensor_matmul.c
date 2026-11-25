@@ -342,6 +342,49 @@ TEST(test_packed_and_batched_policy_partitioning) {
     t_free(left);
 }
 
+/* Every tail combination around MR=4 and NR=16, against a naive reference. */
+TEST(test_matmul_tail_shapes_match_reference) {
+    const int sizes[] = {1, 3, 4, 5, 15, 16, 17, 33};
+    const int inner = 7;
+    int errors = 0;
+    for (int r = 0; r < 8; ++r) {
+        for (int c = 0; c < 8; ++c) {
+            int rows = sizes[r], columns = sizes[c];
+            int left_dims[2] = {rows, inner};
+            int right_dims[2] = {inner, columns};
+            tensor* left = t_alloc(2, left_dims);
+            tensor* right = t_alloc(2, right_dims);
+            for (int i = 0; i < rows * inner; ++i)
+                left->storage->data[i] = (float)(i % 13 - 6);
+            for (int i = 0; i < inner * columns; ++i)
+                right->storage->data[i] = (float)(i % 11 - 5);
+            tensor_matmul_packed_rhs* packed = t_pack_matmul_rhs(right);
+            tensor* plain = t_matmul(left, right);
+            tensor* from_packed = t_matmul_packed_rhs(left, packed);
+            ASSERT_NOT_NULL(plain);
+            ASSERT_NOT_NULL(from_packed);
+            for (int row = 0; row < rows; ++row) {
+                for (int column = 0; column < columns; ++column) {
+                    float sum = 0.0f;
+                    for (int k = 0; k < inner; ++k)
+                        sum += left->storage->data[row * inner + k] *
+                               right->storage->data[k * columns + column];
+                    int index = row * columns + column;
+                    /* Small integers: every result is exact. */
+                    if (plain->storage->data[index] != sum) ++errors;
+                    if (from_packed->storage->data[index] != sum) ++errors;
+                }
+            }
+            t_free(from_packed);
+            t_free(plain);
+            t_free_matmul_packed_rhs(packed);
+            t_free(right);
+            t_free(left);
+        }
+    }
+    ASSERT_EQ_INT(errors, 0);
+}
+
 TEST(test_packed_rhs_handles_non_multiple_kernel_dimensions) {
     int left_dims[2] = {5, 129};
     int right_dims[2] = {129, 17};
@@ -695,6 +738,7 @@ int main(void) {
     RUN_TEST(test_packed_rhs_snapshots_transposed_view);
     RUN_TEST(test_packed_rhs_transpose_pack_retains_lifetime);
     RUN_TEST(test_packed_rhs_handles_transposed_slices_and_kernel_tails);
+    RUN_TEST(test_matmul_tail_shapes_match_reference);
     RUN_TEST(test_packed_rhs_handles_non_multiple_kernel_dimensions);
     RUN_TEST(test_packed_and_batched_policy_partitioning);
     RUN_TEST(test_packed_rhs_handles_reshape_contiguous_squeeze_and_unsqueeze);

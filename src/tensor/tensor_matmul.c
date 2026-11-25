@@ -740,9 +740,9 @@ static void matmul_2d_avx2_contiguous_for(const float* restrict a,
     }
 
     for (int row = 0; row < rows; ++row) {
-        for (int column = 0; column < columns; ++column) {
-            if (row < full_rows && column < full_columns) continue;
-
+        /* The kernel already produced the full block; visit only the tails. */
+        int first = row < full_rows ? full_columns : 0;
+        for (int column = first; column < columns; ++column) {
             float sum = 0.0f;
             for (int k = 0; k < inner; ++k) {
                 sum += a[row * inner + k] * b[k * columns + column];
@@ -855,8 +855,9 @@ static void matmul_2d_packed_rhs_scalar_tails(const tensor* lhs, int lhs_base,
     int output_column_stride = output->strides[output_batch_ndim + 1];
 
     for (int row = 0; row < rows; ++row) {
-        for (int column = column_start; column < column_end; ++column) {
-            if (row < full_rows && column < full_columns) continue;
+        int first = row < full_rows && full_columns > column_start
+                        ? full_columns : column_start;
+        for (int column = first; column < column_end; ++column) {
             const float* rhs_panel = packed_rhs +
                 (size_t)(column / TENSORLIB_MATMUL_NR) * (size_t)inner *
                 TENSORLIB_MATMUL_NR;
