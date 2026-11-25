@@ -47,8 +47,10 @@ static int nn_sgd_parameter_valid(const nn_sgd* optimizer,
         /* No early exit: failure is rare and this form vectorizes. */
         for (int i = 0; i < count; ++i) {
             float updated = value_data[i] - learning_rate * gradient_data[i];
-            invalid |= !isfinite(value_data[i]) | !isfinite(gradient_data[i]) |
-                       !isfinite(updated);
+            if (!isfinite(value_data[i]) || !isfinite(gradient_data[i]) ||
+                !isfinite(updated)) {
+                invalid = 1;
+            }
         }
         return !invalid;
     }
