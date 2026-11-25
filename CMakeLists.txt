@@ -40,6 +40,7 @@ set(TENSORLIB_SOURCES
     src/tensor/tensor_core.c
     src/tensor/tensor_ops.c
     src/tensor/tensor_alloc.c
+    src/tensor/tensor_pool.c
     src/tensor/tensor_view.c
     src/tensor/tensor_gather.c
     src/tensor/tensor_reduc.c
