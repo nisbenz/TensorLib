@@ -130,6 +130,80 @@ static void test_transactional_failure(void)
     nn_linear_destroy(root);
 }
 
+/* The same update through a contiguous and a transposed-view gradient. */
+static void test_contiguous_and_strided_gradients(void)
+{
+    enum { ROWS = 5, COLUMNS = 7 };
+    int dims[] = {ROWS, COLUMNS};
+    int flipped[] = {COLUMNS, ROWS};
+
+    for (int strided = 0; strided <= 1; ++strided) {
+        nn_linear* layer = nn_linear_create(
+            "layout", COLUMNS, ROWS, 0, NN_INIT_ZERO, NN_INIT_ZERO, NULL);
+        nn_sgd* optimizer = nn_sgd_create(&layer->base, 0.5f);
+        tensor* base = t_alloc(2, strided ? flipped : dims);
+        float* values = layer->weight->value->value->storage->data;
+        uint64_t version;
+
+        for (int row = 0; row < ROWS; ++row) {
+            for (int column = 0; column < COLUMNS; ++column) {
+                int index = row * COLUMNS + column;
+                values[index] = (float)index;
+                base->storage->data[strided ? column * ROWS + row : index] =
+                    (float)(2 * index - 9);
+            }
+        }
+        if (strided) {
+            layer->weight->value->grad = t_transpose(base, 0, 1);
+            t_free(base);
+        } else {
+            layer->weight->value->grad = base;
+        }
+        CHECK(is_contiguous(layer->weight->value->grad) == !strided);
+        version = layer->weight->value->value->storage->version;
+        CHECK(nn_sgd_step(optimizer) == 0);
+        CHECK(layer->weight->value->value->storage->version == version + 1);
+        for (int index = 0; index < ROWS * COLUMNS; ++index) {
+            CHECK(values[index] == 4.5f);
+        }
+        nn_sgd_destroy(optimizer);
+        nn_linear_destroy(layer);
+    }
+}
+
+/* Non-finite values, gradients and updates in the last element are rejected
+ * without touching earlier elements or parameters. */
+static void test_nonfinite_is_transactional(void)
+{
+    const float bad_values[] = {NAN, INFINITY, 1.0f, 1.0f, 3e38f};
+    const float bad_gradients[] = {1.0f, 1.0f, NAN, -INFINITY, -3e38f};
+
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        nn_linear* layer = nn_linear_create(
+            "finite", 19, 1, 1, NN_INIT_ZERO, NN_INIT_ZERO, NULL);
+        nn_sgd* optimizer = nn_sgd_create(&layer->base, 1.0f);
+        int dims[] = {1, 19};
+        int bias_dims[] = {1};
+        float one = 1.0f;
+        tensor* raw = t_alloc(2, dims);
+        float* values = layer->weight->value->value->storage->data;
+
+        for (int index = 0; index < 19; ++index) {
+            values[index] = 2.0f;
+            raw->storage->data[index] = 1.0f;
+        }
+        values[18] = bad_values[attempt];
+        raw->storage->data[18] = bad_gradients[attempt];
+        layer->weight->value->grad = raw;
+        layer->bias->value->grad = gradient(1, bias_dims, &one);
+        CHECK(nn_sgd_step(optimizer) != 0);
+        for (int index = 0; index < 18; ++index) CHECK(values[index] == 2.0f);
+        CHECK(layer->bias->value->value->storage->data[0] == 0.0f);
+        nn_sgd_destroy(optimizer);
+        nn_linear_destroy(layer);
+    }
+}
+
 static void test_invalid(void)
 {
     nn_module malformed = {0};
@@ -157,6 +231,8 @@ int main(void)
     test_recursive_update_and_zero();
     test_stale_graph();
     test_transactional_failure();
+    test_contiguous_and_strided_gradients();
+    test_nonfinite_is_transactional();
     test_invalid();
     if (failures != 0) {
         fprintf(stderr, "%d SGD contract checks failed\n", failures);
