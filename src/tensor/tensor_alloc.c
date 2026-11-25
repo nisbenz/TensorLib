@@ -2,6 +2,7 @@
 #include <string.h>
 #include "../../include/tensorlib/tensor.h"
 #include "tensor_alloc_internal.h"
+#include "tensor_pool.h"
 #include "parallel.h"
 
 #define TENSORLIB_CLONE_MIN_PARALLEL_ELEMENTS (1 << 16)
@@ -158,7 +159,7 @@ Storage* s_alloc(int ndim, const int* dims) {
     s->ref_count = 1;
     s->size = (int)count;
     s->version = 0;
-    s->data = (float*)malloc(count * sizeof(float));
+    s->data = (float*)tensor_pool_alloc(count * sizeof(float));
     if (s->data == NULL) {
         free(s);
         return NULL;
@@ -205,8 +206,9 @@ void t_free(tensor* t) {
         if (t->storage->ref_count > 1) {
             t->storage->ref_count--;
         } else {
-            record_storage_free((size_t)t->storage->size * sizeof(float));
-            free(t->storage->data);
+            size_t bytes = (size_t)t->storage->size * sizeof(float);
+            record_storage_free(bytes);
+            tensor_pool_free(t->storage->data, bytes);
             free(t->storage);
         }
     }

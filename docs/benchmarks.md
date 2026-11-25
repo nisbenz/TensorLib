@@ -124,6 +124,24 @@ perform an optimizer update. The `training` suite supplies that acceptance
 boundary. The isolated projection shapes use 4×128 input rows, including width
 193/output 257 tails and outputs 17/7; they are not all CommandLM shapes.
 
+## Thread placement and memory reuse
+
+On hybrid CPUs, pin workers to the performance cores. TensorLib splits work
+statically, so a slower efficiency core can hold up the whole team. For
+example, on an i5-13400F, logical CPUs 0, 2, 4, 6, 8 and 10 are the first
+hardware threads of its six P-cores (check `lscpu -e` on other machines):
+
+```sh
+OMP_NUM_THREADS=6 OMP_PROC_BIND=true \
+  OMP_PLACES="{0},{2},{4},{6},{8},{10}" build/tiny_lm
+```
+
+Tensor storage and matmul buffers of 64 KiB or more are kept for reuse by later
+operations of exactly the same size. `TENSORLIB_POOL_MAX_BYTES` bounds the
+retained memory (default 268435456; 0 disables it) and is read once per process.
+Larger models can benefit from a larger limit. Sanitizer builds and compilers
+other than GCC and Clang retain nothing.
+
 ## Thread scaling
 
 By default, the runner tests powers of two up to the number of logical

@@ -23,3 +23,5 @@ __pycache__/
 build-bench/
 *.txt
 build-profile/
+uftrace-bench/
+build-uftrace/

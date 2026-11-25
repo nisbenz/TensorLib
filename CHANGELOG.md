@@ -2,6 +2,19 @@
 
 All notable changes to TensorLib are documented in this file.
 
+## [Unreleased]
+
+### Performance
+
+- Packed and contiguous AVX2 matmul no longer scan the full output when
+  computing scalar tails.
+- SGD validates and updates contiguous parameters without per-element index
+  arithmetic.
+- Large tensor storage and matmul buffers are reused through a bounded pool,
+  controlled by `TENSORLIB_POOL_MAX_BYTES`.
+- Elementwise operations run in parallel from 131,072 elements, and unary
+  operations from 65,536, instead of 1,048,576.
+
 ## [0.3.0] - 2026-09-21
 
 TensorLib 0.3.0 improves CPU training performance and introduces CommandLM as

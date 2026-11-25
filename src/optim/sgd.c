@@ -38,6 +38,21 @@ static int nn_sgd_parameter_valid(const nn_sgd* optimizer,
         return 0;
     }
     count = tensor_numel(value);
+    if (is_contiguous(value) && is_contiguous(gradient)) {
+        const float* value_data = value->storage->data + value->offset;
+        const float* gradient_data = gradient->storage->data +
+                                     gradient->offset;
+        float learning_rate = optimizer->learning_rate;
+        int invalid = 0;
+        /* No early exit: failure is rare and this form vectorizes. */
+        for (int i = 0; i < count; ++i) {
+            float updated = value_data[i] - learning_rate * gradient_data[i];
+            invalid |= !isfinite(value_data[i]);
+            invalid |= !isfinite(gradient_data[i]);
+            invalid |= !isfinite(updated);
+        }
+        return !invalid;
+    }
     for (int i = 0; i < count; ++i) {
         float current = value->storage->data[tensor_flat_index(value, i)];
         float grad = gradient->storage->data[tensor_flat_index(gradient, i)];
@@ -75,11 +90,21 @@ int nn_sgd_step(nn_sgd* optimizer)
         value = parameter->value->value;
         gradient = parameter->value->grad;
         element_count = tensor_numel(value);
-        for (int element = 0; element < element_count; ++element) {
-            int value_index = tensor_flat_index(value, element);
-            int gradient_index = tensor_flat_index(gradient, element);
-            value->storage->data[value_index] -=
-                optimizer->learning_rate * gradient->storage->data[gradient_index];
+        if (is_contiguous(value) && is_contiguous(gradient)) {
+            float* value_data = value->storage->data + value->offset;
+            const float* gradient_data = gradient->storage->data +
+                                         gradient->offset;
+            float learning_rate = optimizer->learning_rate;
+            for (int element = 0; element < element_count; ++element) {
+                value_data[element] -= learning_rate * gradient_data[element];
+            }
+        } else {
+            for (int element = 0; element < element_count; ++element) {
+                int value_index = tensor_flat_index(value, element);
+                int gradient_index = tensor_flat_index(gradient, element);
+                value->storage->data[value_index] -=
+                    optimizer->learning_rate * gradient->storage->data[gradient_index];
+            }
         }
         tensor_mark_modified(value);
     }
