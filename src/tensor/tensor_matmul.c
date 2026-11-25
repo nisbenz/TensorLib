@@ -3,9 +3,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#if defined(_WIN32)
-#include <malloc.h>
-#endif
 
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
 #include <immintrin.h>
@@ -23,6 +20,7 @@
 #include "../../include/tensorlib/tensor_matmul.h"
 #include "parallel.h"
 #include "tensor_matmul_internal.h"
+#include "tensor_pool.h"
 
 enum {
     TENSORLIB_MATMUL_MC = 64,
@@ -67,22 +65,6 @@ static int matmul_2d_packed_rhs_avx2(const tensor* lhs, int lhs_base,
                                       int column_start, int column_end,
                                       float* packed_lhs);
 #endif
-
-static void* matmul_aligned_malloc(size_t bytes) {
-#if defined(_WIN32)
-    return _aligned_malloc(bytes, 32);
-#else
-    return malloc(bytes);
-#endif
-}
-
-static void matmul_aligned_free(void* ptr) {
-#if defined(_WIN32)
-    _aligned_free(ptr);
-#else
-    free(ptr);
-#endif
-}
 
 static int packed_rhs_batch_offset(const tensor* rhs, size_t batch_index,
                                    int batch_rank, int* offset) {
@@ -178,7 +160,7 @@ tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs) {
         return NULL;
     }
 
-    packed->data = (float*)matmul_aligned_malloc(total_values);
+    packed->data = (float*)tensor_pool_alloc(total_values);
     if (packed->data == NULL) {
         t_free_matmul_packed_rhs(packed);
         return NULL;
@@ -232,7 +214,8 @@ void t_free_matmul_packed_rhs(tensor_matmul_packed_rhs* rhs) {
         --rhs->ref_count;
         return;
     }
-    matmul_aligned_free(rhs->data);
+    tensor_pool_free(rhs->data, rhs->batch_count * rhs->values_per_batch *
+                                sizeof(float));
     free(rhs->batch_dims);
     free(rhs);
 }
@@ -426,8 +409,8 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
         batch_ndim <= TENSORLIB_MATMUL_MAX_NDIM ? task_count : 1);
     size_t workspace_values = (size_t)TENSORLIB_MATMUL_MC *
                               (size_t)TENSORLIB_MATMUL_KC;
-    float* workspaces = (float*)matmul_aligned_malloc(
-        (size_t)threads * workspace_values * sizeof(float));
+    size_t workspace_bytes = (size_t)threads * workspace_values * sizeof(float);
+    float* workspaces = (float*)tensor_pool_alloc(workspace_bytes);
 
     if (threads > 1) {
 #ifdef _OPENMP
@@ -468,7 +451,7 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
         }
     }
 
-    matmul_aligned_free(workspaces);
+    tensor_pool_free(workspaces, workspace_bytes);
     free(batch_dims);
     return output;
 }
@@ -684,7 +667,7 @@ static void matmul_2d_avx2_contiguous_for(const float* restrict a,
     if (full_rows > 0 && full_columns > 0) {
         size_t packed_count = (size_t)panel_count * (size_t)inner *
                               TENSORLIB_MATMUL_NR;
-        float* packed_b = (float*)matmul_aligned_malloc(
+        float* packed_b = (float*)tensor_pool_alloc(
             packed_count * sizeof(float));
 
         if (packed_b == NULL) {
@@ -736,7 +719,7 @@ static void matmul_2d_avx2_contiguous_for(const float* restrict a,
             }
         }
 
-        matmul_aligned_free(packed_b);
+        tensor_pool_free(packed_b, packed_count * sizeof(float));
     }
 
     for (int row = 0; row < rows; ++row) {
