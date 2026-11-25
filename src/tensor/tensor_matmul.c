@@ -21,6 +21,7 @@
 #include "../../include/tensorlib/tensor_matmul.h"
 #include "parallel.h"
 #include "tensor_matmul_internal.h"
+#include "tensor_matmul_tuning.h"
 #include "tensor_pool.h"
 
 enum {
@@ -66,6 +67,13 @@ static int matmul_2d_packed_rhs_avx2(const tensor* lhs, int lhs_base,
                                       int column_start, int column_end,
                                       float* packed_lhs);
 #endif
+
+/* Profiling counts requests, whether or not the pool satisfies them. */
+static void* matmul_buffer_alloc(size_t bytes) {
+    void* result = tensor_pool_alloc(bytes);
+    if (result != NULL) tensor_alloc_record_auxiliary(TENSOR_ALLOC_MATMUL, bytes);
+    return result;
+}
 
 static int packed_rhs_batch_offset(const tensor* rhs, size_t batch_index,
                                    int batch_rank, int* offset) {
@@ -161,7 +169,7 @@ tensor_matmul_packed_rhs* t_pack_matmul_rhs(const tensor* rhs) {
         return NULL;
     }
 
-    packed->data = (float*)tensor_pool_alloc(total_values);
+    packed->data = (float*)matmul_buffer_alloc(total_values);
     if (packed->data == NULL) {
         t_free_matmul_packed_rhs(packed);
         return NULL;
@@ -410,8 +418,11 @@ tensor* t_matmul_packed_rhs(const tensor* lhs,
         batch_ndim <= TENSORLIB_MATMUL_MAX_NDIM ? task_count : 1);
     size_t workspace_values = (size_t)TENSORLIB_MATMUL_MC *
                               (size_t)TENSORLIB_MATMUL_KC;
-    size_t workspace_bytes = (size_t)threads * workspace_values * sizeof(float);
-    float* workspaces = (float*)tensor_pool_alloc(workspace_bytes);
+    size_t workspace_bytes = 0;
+    int workspace_valid = checked_size_multiply(
+        (size_t)threads, workspace_values * sizeof(float), &workspace_bytes);
+    float* workspaces = workspace_valid
+                      ? (float*)matmul_buffer_alloc(workspace_bytes) : NULL;
 
     if (threads > 1) {
 #ifdef _OPENMP
@@ -668,7 +679,7 @@ static void matmul_2d_avx2_contiguous_for(const float* restrict a,
     if (full_rows > 0 && full_columns > 0) {
         size_t packed_count = (size_t)panel_count * (size_t)inner *
                               TENSORLIB_MATMUL_NR;
-        float* packed_b = (float*)tensor_pool_alloc(
+        float* packed_b = (float*)matmul_buffer_alloc(
             packed_count * sizeof(float));
 
         if (packed_b == NULL) {

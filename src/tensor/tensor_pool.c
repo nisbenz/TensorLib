@@ -97,7 +97,7 @@ void* tensor_pool_alloc(size_t bytes)
 #endif
     data = malloc(bytes);
 #if POOL_ENABLED
-    if (data == NULL && bytes > 0) {
+    if (data == NULL && tensor_pool_retained_bytes() > 0) {
         tensor_pool_trim();
         data = malloc(bytes);
     }
