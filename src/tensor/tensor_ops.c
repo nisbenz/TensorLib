@@ -4,12 +4,14 @@
 #include <math.h>
 #include "parallel.h"
 
-/* Element-wise loops only benefit from OpenMP once the working set exceeds a
- * single core's share of memory bandwidth (i.e. beyond the CPU cache). Below
- * this element count a single thread is already at peak and forking only adds
- * overhead, so the op stays serial for small tensors. */
+/* Below these element counts fork/join overhead outweighs the speedup. Unary
+ * operations include costly scalar math, so they pay off sooner than binary
+ * arithmetic. */
 #ifndef TENSORLIB_OP_MIN_PARALLEL_ELEMENTS
-#define TENSORLIB_OP_MIN_PARALLEL_ELEMENTS (1 << 20)
+#define TENSORLIB_OP_MIN_PARALLEL_ELEMENTS (1 << 17)
+#endif
+#ifndef TENSORLIB_UNARY_MIN_PARALLEL_ELEMENTS
+#define TENSORLIB_UNARY_MIN_PARALLEL_ELEMENTS (1 << 16)
 #endif
 
 typedef float (*binary_fn)(float, float);
@@ -378,7 +380,7 @@ static tensor* apply_unary(tensor* input, unary_fn fn,
     float* out_data = out->storage->data;
     const float* in_data = contiguous->storage->data + contiguous->offset;
     int threads = tensorlib_parallel_threads_for(
-        kind, total_elements, TENSORLIB_OP_MIN_PARALLEL_ELEMENTS, 0);
+        kind, total_elements, TENSORLIB_UNARY_MIN_PARALLEL_ELEMENTS, 0);
     if (threads > 1) {
 #ifdef _OPENMP
 #pragma omp parallel num_threads(threads)
