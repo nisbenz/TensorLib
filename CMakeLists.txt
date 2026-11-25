@@ -197,6 +197,18 @@ foreach(test_name IN LISTS TENSORLIB_TESTS)
     add_test(NAME test_${test_name} COMMAND test_${test_name})
 endforeach()
 
+# The pool limit is read once, so each limit needs a fresh process.
+add_executable(test_tensor_pool tests/unit/tensor/test_tensor_pool.c)
+target_include_directories(test_tensor_pool PRIVATE tests/fixtures)
+target_link_libraries(test_tensor_pool PRIVATE tensorlib)
+foreach(pool_case default= disabled=0 small=200000)
+    string(REGEX MATCH "^[a-z]+" pool_mode "${pool_case}")
+    string(REGEX REPLACE "^[a-z]+=" "" pool_limit "${pool_case}")
+    add_test(NAME test_tensor_pool_${pool_mode} COMMAND ${CMAKE_COMMAND} -E env
+        "TENSORLIB_POOL_MAX_BYTES=${pool_limit}"
+        $<TARGET_FILE:test_tensor_pool> ${pool_mode})
+endforeach()
+
 # Each policy case starts a fresh process with an isolated ENV snapshot.
 add_executable(test_parallel tests/unit/tensor/test_parallel.c)
 target_include_directories(test_parallel PRIVATE tests/fixtures)
