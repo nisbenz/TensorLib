@@ -11,7 +11,9 @@ typedef enum {
     LINEAR_DWEIGHT,
     LINEAR_DWEIGHT_DIRECT,
     LINEAR_DBIAS,
-    LINEAR_PACK
+    LINEAR_PACK,
+    LINEAR_FORWARD,
+    LINEAR_FORWARD_REPACK
 } linear_gradient_kind;
 
 typedef struct {
@@ -73,6 +75,9 @@ static int init_linear_context(linear_gradient_context* context,
     if (kind == LINEAR_DINPUT) {
         context->packed_weight = t_pack_matmul_rhs(context->weight);
         if (context->packed_weight == NULL) return 1;
+    } else if (kind == LINEAR_FORWARD) {
+        context->packed_weight = t_pack_matmul_rhs_transposed(context->weight);
+        if (context->packed_weight == NULL) return 1;
     }
     return 0;
 }
@@ -83,7 +88,14 @@ static int linear_gradient_operation(void* opaque, double* checksum)
     tensor* first = NULL;
     tensor* second = NULL;
     tensor* output = NULL;
-    if (context->kind == LINEAR_DINPUT) {
+    if (context->kind == LINEAR_FORWARD || context->kind == LINEAR_FORWARD_REPACK) {
+        if (context->kind == LINEAR_FORWARD_REPACK) {
+            tensor_mark_modified(context->weight);
+            t_free_matmul_packed_rhs(context->packed_weight);
+            context->packed_weight = t_pack_matmul_rhs_transposed(context->weight);
+        }
+        output = t_matmul_packed_rhs(context->input, context->packed_weight);
+    } else if (context->kind == LINEAR_DINPUT) {
         output = t_matmul_packed_rhs(context->output_gradient,
                                      context->packed_weight);
     } else if (context->kind == LINEAR_DWEIGHT) {
@@ -240,11 +252,21 @@ int bench_run_backward_matrix_suite(const bench_options* options, FILE* csv)
         {"linear_attention_output", 192, 192},
         {"linear_mlp_expand", 192, 768},
         {"linear_mlp_project", 768, 192},
-        {"linear_vocabulary", 192, 256}
+        {"linear_vocabulary", 192, 256},
+        {"linear_tail", 193, 257},
+        {"linear_narrow", 192, 17},
+        {"linear_skinny", 192, 7}
     };
     int status = 0;
     printf("Backward matrix components\n");
     for (size_t index = 0; index < sizeof(shapes) / sizeof(shapes[0]); ++index) {
+        for (int thread_index = 0; thread_index < options->thread_count; ++thread_index) {
+            int threads = options->threads[thread_index];
+            status |= run_linear_gradient(options, csv, &shapes[index],
+                LINEAR_FORWARD, "forward", "packed-weight", threads);
+            status |= run_linear_gradient(options, csv, &shapes[index],
+                LINEAR_FORWARD_REPACK, "forward_repack", "pack+multiply", threads);
+        }
         status |= run_linear_gradient(options, csv, &shapes[index],
                                       LINEAR_DINPUT, "dinput",
                                       "packed-weight", options->threads[0]);

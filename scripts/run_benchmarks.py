@@ -3,6 +3,7 @@
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import platform
@@ -10,6 +11,36 @@ import re
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
+
+
+def command_output(command):
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        return result.stdout.strip() if result.returncode == 0 else "unavailable"
+    except OSError:
+        return "unavailable"
+
+
+def build_metadata(executable, revision):
+    path = Path(executable).resolve()
+    cache = path.parent / "CMakeCache.txt"
+    settings = {}
+    if cache.exists():
+        for line in cache.read_text(encoding="utf-8").splitlines():
+            if re.match(r"(?:CMAKE_(?:BUILD_TYPE|C_COMPILER|C_FLAGS.*)|TENSORLIB_.*):", line):
+                key, value = line.split("=", 1)
+                settings[key] = value
+    return {
+        "source_revision": revision or "unverified",
+        "checkout_revision": command_output(["git", "rev-parse", "HEAD"]),
+        "checkout_status": command_output(["git", "status", "--porcelain", "--untracked-files=no"]),
+        "executable_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "build_settings": json.dumps(settings, sort_keys=True),
+        "cpu_topology": command_output(["lscpu", "-e=CPU,CORE,SOCKET,NODE,ONLINE"]),
+        "process_affinity": str(sorted(os.sched_getaffinity(0)))
+                            if hasattr(os, "sched_getaffinity") else "unavailable",
+    }
 
 
 def cpu_model():
@@ -33,12 +64,14 @@ def cpu_model():
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--executable", default="build/bench_tensorlib")
-    parser.add_argument("--profile", choices=("quick", "full"), default="quick")
-    parser.add_argument("--suite", choices=("all", "kernels", "autograd", "nn", "command", "scaling", "policy"),
+    parser.add_argument("--profile", choices=("quick", "full", "fixed"), default="quick")
+    parser.add_argument("--suite", choices=("all", "kernels", "autograd", "nn", "command", "training", "matmul", "scaling", "policy"),
                         default="all")
     parser.add_argument("--threads", help="comma-separated OpenMP thread ladder")
     parser.add_argument("--csv", default="benchmark-results.csv")
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--no-diagnostics", action="store_true")
+    parser.add_argument("--source-revision", help="verified revision used to build the executable")
     return parser.parse_args()
 
 
@@ -53,6 +86,7 @@ def main():
             if key.startswith(("TENSORLIB_", "OMP_"))
         }, sort_keys=True),
     }
+    metadata.update(build_metadata(args.executable, args.source_revision))
     print("Host:")
     for key, value in metadata.items():
         print(f"  {key.replace('_', ' ')}: {value}")
@@ -64,6 +98,8 @@ def main():
     command += ["--smoke"] if args.smoke else ["--profile", args.profile]
     if args.threads:
         command += ["--threads", args.threads]
+    if args.no_diagnostics:
+        command += ["--no-diagnostics"]
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=False)
         print(result.stdout, end="")

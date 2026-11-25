@@ -23,6 +23,7 @@ int main(void)
     bench_profile quick = bench_profile_named("quick");
     bench_profile full = bench_profile_named("full");
     bench_profile smoke = bench_profile_named("smoke");
+    bench_profile fixed = bench_profile_named("fixed");
     bench_measurement result;
     int calls = 0;
 
@@ -42,6 +43,13 @@ int main(void)
         result.checksum != 1.0 || !isfinite(result.median_seconds) ||
         result.median_seconds < 0.0 || result.p95_seconds < 0.0) {
         fprintf(stderr, "smoke measurement produced invalid statistics\n");
+        return 1;
+    }
+    calls = 0;
+    if (bench_measure(counted_operation, &calls, &fixed, &result) != 0 ||
+        calls != 5 || result.checksum != 5.0 ||
+        result.iterations_per_sample != 1) {
+        fprintf(stderr, "fixed profile must execute exactly five operations\n");
         return 1;
     }
     printf("benchmark harness tests passed\n");

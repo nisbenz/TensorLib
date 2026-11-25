@@ -1,6 +1,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "tensor_alloc_internal.h"
 #include "../../include/tensorlib/tensor.h"
 
 static tensor* make_view(tensor* base, int ndim, const int* dims, const int* strides, int offset) {
@@ -9,7 +10,7 @@ static tensor* make_view(tensor* base, int ndim, const int* dims, const int* str
     if (!tensor_checked_numel(ndim, dims, &unused)) return NULL;
     if (ndim > 0 && strides == NULL) return NULL;
 
-    tensor* view = (tensor*)calloc(1, sizeof(tensor));
+    tensor* view = (tensor*)tensor_profile_calloc(1, sizeof(tensor), TENSOR_ALLOC_METADATA);
     if (view == NULL) return NULL;
 
     view->ndim = ndim;
@@ -72,7 +73,7 @@ tensor* t_reshape(tensor* a, int new_ndim, int* new_dims) {
 
     int* new_strides = NULL;
     if (new_ndim > 0) {
-        new_strides = (int*)malloc((size_t)new_ndim * sizeof(int));
+        new_strides = (int*)tensor_profile_malloc((size_t)new_ndim * sizeof(int), TENSOR_ALLOC_METADATA);
         if (new_strides == NULL) return NULL;
         calc_strides(new_ndim, new_dims, new_strides);
     }
@@ -118,7 +119,7 @@ tensor* t_slice(tensor* a, int dim, int start, int end) {
         return NULL;
     }
 
-    int* new_dims = (int*)malloc((size_t)a->ndim * sizeof(int));
+    int* new_dims = (int*)tensor_profile_malloc((size_t)a->ndim * sizeof(int), TENSOR_ALLOC_METADATA);
     if (new_dims == NULL) return NULL;
 
     for (int i = 0; i < a->ndim; i++) {
@@ -140,12 +141,12 @@ tensor* t_squeeze(tensor* a, int dim) {
         return NULL;
     }
 
-    int* new_dims = (int*)malloc((size_t)(a->ndim - 1) * sizeof(int));
+    int* new_dims = (int*)tensor_profile_malloc((size_t)(a->ndim - 1) * sizeof(int), TENSOR_ALLOC_METADATA);
     if (new_dims == NULL) return NULL;
 
     int new_ndim = a->ndim - 1;
     int j = 0;
-    int* new_strides = (int*)malloc((size_t)new_ndim * sizeof(int));
+    int* new_strides = (int*)tensor_profile_malloc((size_t)new_ndim * sizeof(int), TENSOR_ALLOC_METADATA);
     if (new_strides == NULL) {
         free(new_dims);
         return NULL;
@@ -173,8 +174,8 @@ tensor* t_unsqueeze(tensor* a, int dim) {
     }
 
     int new_ndim = a->ndim + 1;
-    int* new_dims = (int*)malloc((size_t)new_ndim * sizeof(int));
-    int* new_strides = (int*)malloc((size_t)new_ndim * sizeof(int));
+    int* new_dims = (int*)tensor_profile_malloc((size_t)new_ndim * sizeof(int), TENSOR_ALLOC_METADATA);
+    int* new_strides = (int*)tensor_profile_malloc((size_t)new_ndim * sizeof(int), TENSOR_ALLOC_METADATA);
     if (new_dims == NULL || new_strides == NULL) {
         free(new_dims);
         free(new_strides);
@@ -223,7 +224,7 @@ tensor* t_expand(tensor* a, int new_ndim, const int* new_dims) {
 
     int* new_strides = NULL;
     if (new_ndim > 0) {
-        new_strides = (int*)malloc((size_t)new_ndim * sizeof(int));
+        new_strides = (int*)tensor_profile_malloc((size_t)new_ndim * sizeof(int), TENSOR_ALLOC_METADATA);
         if (new_strides == NULL) return NULL;
     }
 

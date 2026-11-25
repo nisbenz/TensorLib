@@ -94,8 +94,8 @@ int tensor_copy_metadata(int ndim, const int* dims, const int* strides, int** ou
     if (dims == NULL || strides == NULL) return 1;
 
     size_t metadata_bytes = (size_t)ndim * sizeof(int);
-    *out_dims = (int*)malloc(metadata_bytes);
-    *out_strides = (int*)malloc(metadata_bytes);
+    *out_dims = (int*)tensor_profile_malloc(metadata_bytes, TENSOR_ALLOC_METADATA);
+    *out_strides = (int*)tensor_profile_malloc(metadata_bytes, TENSOR_ALLOC_METADATA);
     if (*out_dims == NULL || *out_strides == NULL) {
         free(*out_dims);
         free(*out_strides);

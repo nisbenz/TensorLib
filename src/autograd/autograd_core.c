@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include "../tensor/tensor_alloc_internal.h"
 #include <string.h>
 
 #include "../../include/tensorlib/autograd.h"
@@ -13,7 +14,7 @@ ag_tensor* ag_from_owned_tensor(tensor* value, int requires_grad) {
         return NULL;
     }
 
-    ag_tensor* result = (ag_tensor*)calloc(1, sizeof(*result));
+    ag_tensor* result = (ag_tensor*)tensor_profile_calloc(1, sizeof(*result), TENSOR_ALLOC_GRAPH);
     if (result == NULL) {
         t_free(value);
         return NULL;
@@ -29,7 +30,7 @@ ag_tensor* ag_from_owned_tensor(tensor* value, int requires_grad) {
 ag_tensor* ag_detach(const ag_tensor* value) {
     if (value == NULL || !tensor_has_valid_metadata(value->value)) return NULL;
 
-    tensor* alias = (tensor*)calloc(1, sizeof(*alias));
+    tensor* alias = (tensor*)tensor_profile_calloc(1, sizeof(*alias), TENSOR_ALLOC_GRAPH);
     if (alias == NULL) return NULL;
     alias->ndim = value->value->ndim;
     alias->offset = value->value->offset;
@@ -114,21 +115,21 @@ ag_tensor* ag_make_result(tensor* output,
         return result;
     }
 
-    ag_node* node = (ag_node*)calloc(1, sizeof(*node));
+    ag_node* node = (ag_node*)tensor_profile_calloc(1, sizeof(*node), TENSOR_ALLOC_GRAPH);
     if (node == NULL) {
         if (free_context != NULL) free_context(context);
         ag_tensor_release(result);
         return NULL;
     }
-    node->inputs = (ag_tensor**)calloc((size_t)input_count, sizeof(*node->inputs));
+    node->inputs = (ag_tensor**)tensor_profile_calloc((size_t)input_count, sizeof(*node->inputs), TENSOR_ALLOC_GRAPH);
     if (node->inputs == NULL) {
         free(node);
         if (free_context != NULL) free_context(context);
         ag_tensor_release(result);
         return NULL;
     }
-    node->input_versions = (uint64_t*)calloc((size_t)input_count,
-                                             sizeof(*node->input_versions));
+    node->input_versions = (uint64_t*)tensor_profile_calloc((size_t)input_count,
+                                             sizeof(*node->input_versions), TENSOR_ALLOC_GRAPH);
     if (node->input_versions == NULL) {
         free(node->inputs);
         free(node);

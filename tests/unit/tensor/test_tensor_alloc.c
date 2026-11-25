@@ -79,6 +79,32 @@ TEST(test_t_alloc_scalar_ndim_zero) {
     t_free(t);
 }
 
+TEST(test_profile_counts_metadata_and_materialized_copies) {
+    int dims[2] = {2, 3};
+    tensor_alloc_stats before, after;
+    tensor_alloc_stats_enable(1);
+    tensor_alloc_stats_reset();
+    tensor* base = t_alloc(2, dims);
+    for (int i = 0; i < 6; ++i) base->storage->data[i] = (float)i;
+    tensor_alloc_stats_read(&before);
+    tensor* view = t_transpose(base, 0, 1);
+    tensor* copy = t_clone(view);
+    tensor_alloc_stats_read(&after);
+    ASSERT_TRUE(after.auxiliary_allocations[TENSOR_ALLOC_METADATA] >
+                before.auxiliary_allocations[TENSOR_ALLOC_METADATA]);
+    ASSERT_EQ_INT(after.copied_bytes, 6 * sizeof(float));
+    tensor_alloc_stats_reset_counters();
+    tensor_alloc_stats_read(&after);
+    ASSERT_EQ_INT(after.copied_bytes, 0);
+    ASSERT_EQ_INT(after.auxiliary_bytes[TENSOR_ALLOC_METADATA], 0);
+    ASSERT_EQ_INT(after.live_bytes, 12 * sizeof(float));
+    t_free(copy); t_free(view); t_free(base);
+    tensor_alloc_stats_enable(0);
+    tensor_alloc_record_copy(99);
+    tensor_alloc_stats_read(&after);
+    ASSERT_EQ_INT(after.copied_bytes, 0);
+}
+
 TEST(test_t_alloc_rejects_negative_ndim) {
     tensor* t = t_alloc(-1, NULL);
     ASSERT_NULL(t);
@@ -309,6 +335,7 @@ TEST(test_alloc_rejects_nonpositive_and_overflowing_dimensions) {
     ASSERT_NULL(t_alloc(2, overflow));
 }
 int main(void) {
+    RUN_TEST(test_profile_counts_metadata_and_materialized_copies);
     printf("== tensor_alloc.c ==\n");
     RUN_TEST(test_s_alloc_basic);
     RUN_TEST(test_s_alloc_ndim_zero_gives_size_one);

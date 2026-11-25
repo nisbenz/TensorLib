@@ -92,7 +92,7 @@ ag_tensor* ag_softmax_last_dim(const ag_tensor* input,
     if (causal && (input->value->ndim < 2 ||
                    input->value->dims[input->value->ndim - 2] != width)) return NULL;
     output = t_alloc(input->value->ndim, input->value->dims);
-    context = (softmax_context*)calloc(1, sizeof(*context));
+    context = (softmax_context*)tensor_profile_calloc(1, sizeof(*context), TENSOR_ALLOC_GRAPH);
     if (output == NULL || context == NULL) goto fail;
     context->width = width;
     context->rows = tensor_numel(input->value) / width;

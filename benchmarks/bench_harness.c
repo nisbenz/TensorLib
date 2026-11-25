@@ -33,6 +33,11 @@ bench_profile bench_profile_named(const char* name)
         profile.sample_count = 15;
         profile.minimum_sample_seconds = 0.1;
         profile.warmup_seconds = 0.25;
+    } else if (name != NULL && strcmp(name, "fixed") == 0) {
+        profile.profile = "fixed";
+        profile.sample_count = 5;
+        profile.minimum_sample_seconds = 0.0;
+        profile.warmup_seconds = 0.0;
     } else if (name != NULL && strcmp(name, "smoke") == 0) {
         profile.profile = "smoke";
         profile.sample_count = 1;
@@ -88,7 +93,9 @@ int bench_measure_with_reset(bench_operation operation,
         }
         warmup_elapsed += elapsed;
     }
-    if (run_iterations(operation, context, 1, &checksum, &elapsed) != 0) {
+    /* Fixed training sequences must not advance model/RNG state in a probe. */
+    if (strcmp(profile->profile, "fixed") != 0 &&
+        run_iterations(operation, context, 1, &checksum, &elapsed) != 0) {
         return 1;
     }
     if (elapsed > 0.0 && elapsed < profile->minimum_sample_seconds) {

@@ -65,7 +65,7 @@ ag_tensor* ag_gather_rows(const ag_tensor* table, const tensor* indices)
     }
     output = t_gather_rows(table->value, (tensor*)indices);
     if (output == NULL) return NULL;
-    context = (gather_context*)calloc(1, sizeof(*context));
+    context = (gather_context*)tensor_profile_calloc(1, sizeof(*context), TENSOR_ALLOC_GRAPH);
     if (context == NULL) {
         t_free(output);
         return NULL;

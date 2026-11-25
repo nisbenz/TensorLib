@@ -72,13 +72,13 @@ static int backward_layer_norm(const ag_node* node,
     (void)threads;
 #endif
     if (threads > 1 && weight_gradient != NULL) {
-        weight_partials = (float*)calloc((size_t)threads * (size_t)width,
-                                         sizeof(*weight_partials));
+        weight_partials = (float*)tensor_profile_calloc((size_t)threads * (size_t)width,
+                                         sizeof(*weight_partials), TENSOR_ALLOC_GRAPH);
         if (weight_partials == NULL) goto fail;
     }
     if (threads > 1 && bias_gradient != NULL) {
-        bias_partials = (float*)calloc((size_t)threads * (size_t)width,
-                                       sizeof(*bias_partials));
+        bias_partials = (float*)tensor_profile_calloc((size_t)threads * (size_t)width,
+                                       sizeof(*bias_partials), TENSOR_ALLOC_GRAPH);
         if (bias_partials == NULL) goto fail;
     }
 
@@ -186,12 +186,12 @@ ag_tensor* ag_layer_norm(const ag_tensor* input,
         return NULL;
     }
     output = t_alloc(input->value->ndim, input->value->dims);
-    context = (layer_norm_context*)calloc(1, sizeof(*context));
+    context = (layer_norm_context*)tensor_profile_calloc(1, sizeof(*context), TENSOR_ALLOC_GRAPH);
     if (output == NULL || context == NULL) goto fail;
     context->width = width;
     context->rows = tensor_numel(input->value) / width;
-    context->means = (float*)calloc((size_t)context->rows, sizeof(float));
-    context->inverse_stds = (float*)calloc((size_t)context->rows, sizeof(float));
+    context->means = (float*)tensor_profile_calloc((size_t)context->rows, sizeof(float), TENSOR_ALLOC_GRAPH);
+    context->inverse_stds = (float*)tensor_profile_calloc((size_t)context->rows, sizeof(float), TENSOR_ALLOC_GRAPH);
     if (context->means == NULL || context->inverse_stds == NULL) goto fail;
 
     for (int row = 0; row < context->rows; ++row) {
